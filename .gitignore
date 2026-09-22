@@ -44,3 +44,6 @@ build-canvas.log
 # SSH deploy keys (never commit these!)
 .deploy_key
 .deploy_key.pub
+
+# runtime data & secrets (admin hash, API keys, billing data)
+api-data/

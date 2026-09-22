@@ -15,6 +15,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const ADMIN_FILE = path.join(DATA_DIR, "admin.json");
+// ===== 计费系统数据文件 =====
+const USERS_FILE = path.join(DATA_DIR, "billing_users.json");       // 客户计费账本（按 Appwrite 用户 ID）
+const ORDERS_FILE = path.join(DATA_DIR, "billing_orders.json");     // 订单
+const CODES_FILE = path.join(DATA_DIR, "billing_codes.json");       // 兑换码
+const TX_FILE = path.join(DATA_DIR, "billing_transactions.json");   // 流水
+const PLANS_FILE = path.join(DATA_DIR, "billing_plans.json");       // 会员套餐
+const SETTINGS_FILE = path.join(DATA_DIR, "billing_settings.json"); // 系统设置（支付开关等）
 const PORT = process.env.PORT || 3001;
 
 // ---------- 数据存储 ----------
@@ -41,6 +48,123 @@ let keys = loadJSON(KEYS_FILE, []);
 
 // JWT 签名密钥
 const JWT_SECRET = process.env.JWT_SECRET || "qingyu-api-jwt-secret-2026-change-me";
+
+// ===================== 计费系统：数据加载与种子 =====================
+let billingUsers = loadJSON(USERS_FILE, []);       // 客户账本数组
+let billingOrders = loadJSON(ORDERS_FILE, []);     // 订单数组
+let billingCodes = loadJSON(CODES_FILE, []);       // 兑换码数组
+let billingTxs = loadJSON(TX_FILE, []);            // 流水数组
+let billingPlans = loadJSON(PLANS_FILE, []);      // 套餐数组
+let billingSettings = loadJSON(SETTINGS_FILE, null); // 设置
+
+// 默认套餐（首次启动写入）
+const DEFAULT_PLANS = [
+  { id: "free",   name: "免费版", priceCents: 0,      durationDays: 0,   monthlyQuota: 0,     level: "free",
+    description: "注册即用", features: ["每日 20 次对话", "3 个画布", "基础模型"] },
+  { id: "pro",    name: "Pro",    priceCents: 2900,   durationDays: 30,  monthlyQuota: 50000, level: "pro",
+    description: "个人创作者首选", features: ["每月 5 万积分", "全部模型", "50 个画布", "优先响应"] },
+  { id: "team",   name: "团队版", priceCents: 9900,   durationDays: 30,  monthlyQuota: 300000, level: "team",
+    description: "多人协作", features: ["每月 30 万积分", "无限画布", "团队协作", "专属支持"] },
+];
+
+if (!billingSettings) {
+  billingSettings = {
+    currency: "CNY",
+    payEnabled: { mock: true, epay: false, wechat: false, alipay: false },
+    inviteRewardCents: 0,          // 邀请人奖励（分），0 关闭
+    inviteRewardQuota: 500,        // 邀请人奖励积分
+    registeredBonusQuota: 100,     // 新注册赠送积分
+  };
+  saveJSON(SETTINGS_FILE, billingSettings);
+}
+if (!Array.isArray(billingPlans) || billingPlans.length === 0) {
+  billingPlans = DEFAULT_PLANS.map(p => ({ ...p }));
+  saveJSON(PLANS_FILE, billingPlans);
+}
+
+// ---- 计费辅助函数 ----
+function findUserByAppwriteId(uid) {
+  return billingUsers.find(u => u.id === uid) || null;
+}
+function upsertUser(uid, email) {
+  let u = findUserByAppwriteId(uid);
+  if (!u) {
+    u = {
+      id: uid,
+      email: email || "",
+      balance: billingSettings.registeredBonusQuota || 0,
+      memberLevel: "free",
+      memberExpireAt: 0,
+      inviteCode: genInviteCode(uid),
+      invitedBy: "",
+      totalSpent: 0,
+      createdAt: Date.now(),
+    };
+    billingUsers.push(u);
+    saveJSON(USERS_FILE, billingUsers);
+    if (u.balance > 0) {
+      pushTx({ userId: uid, change: u.balance, type: "register", note: "新用户赠送" });
+    }
+  }
+  return u;
+}
+function genInviteCode(uid) {
+  // 8 位短码，基于 uid 哈希
+  const h = crypto.createHash("sha1").update("invite_" + uid).digest("hex").toUpperCase();
+  return h.slice(0, 4) + "-" + h.slice(4, 8);
+}
+function pushTx({ userId, change, type, orderId = "", note = "" }) {
+  const u = findUserByAppwriteId(userId);
+  const balanceAfter = u ? u.balance : 0;
+  const tx = {
+    id: "TX" + Date.now().toString(36) + crypto.randomBytes(2).toString("hex"),
+    userId, change, balanceAfter, type, orderId, note,
+    createdAt: Date.now(),
+  };
+  billingTxs.push(tx);
+  saveJSON(TX_FILE, billingTxs);
+  return tx;
+}
+function adjustBalance(uid, delta, type, orderId = "", note = "") {
+  const u = findUserByAppwriteId(uid);
+  if (!u) return null;
+  u.balance = Math.max(0, (u.balance || 0) + delta);
+  saveJSON(USERS_FILE, billingUsers);
+  pushTx({ userId: uid, change: delta, type, orderId, note });
+  return u;
+}
+function issueMembership(uid, plan) {
+  const u = findUserByAppwriteId(uid);
+  if (!u) return;
+  const now = Date.now();
+  // 在现有到期时间上续期（若未过期），否则从现在起算
+  const base = u.memberExpireAt > now ? u.memberExpireAt : now;
+  u.memberLevel = plan.level;
+  u.memberExpireAt = base + plan.durationDays * 24 * 3600 * 1000;
+  // 会员套餐赠送额度
+  if (plan.monthlyQuota) {
+    u.balance = (u.balance || 0) + plan.monthlyQuota;
+  }
+  saveJSON(USERS_FILE, billingUsers);
+  if (plan.monthlyQuota) pushTx({ userId: uid, change: plan.monthlyQuota, type: "membership", note: `开通${plan.name}赠送额度` });
+}
+function newOrderId() {
+  return "O" + Date.now().toString(36) + crypto.randomBytes(3).toString("hex").toUpperCase();
+}
+function genRedeemCode() {
+  const seg = () => crypto.randomBytes(3).toString("hex").toUpperCase();
+  return "QY-" + seg() + "-" + seg() + "-" + seg();
+}
+// 校验客户计费 JWT（区分管理员与普通客户）
+function getBillingIdentity(req) {
+  const auth = req.headers["authorization"] || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return null;
+  const payload = verifyJWT(token);
+  if (!payload) return null;
+  return payload; // { sub, role, exp }
+}
+
 
 function base64url(buf) {
   return Buffer.from(buf).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -210,6 +334,290 @@ function proxyRequest(req, res, targetPath) {
   });
 }
 
+// ===================== 计费路由处理器 =====================
+// 返回 true 表示已处理
+async function handleBilling(req, res, pathname, method, url) {
+
+  // ---------- 客户端：/api/billing/* ----------
+  if (pathname.startsWith("/api/billing/") || pathname === "/api/billing") {
+
+    // POST /api/billing/login — 用 Appwrite 用户 ID 换取客户计费 JWT（前端在 Appwrite 登录成功后调用）
+    if (pathname === "/api/billing/login" && method === "POST") {
+      const body = await parseBody(req);
+      if (!body.userId) return sendJSON(res, 400, { error: "缺少用户标识" });
+      const user = upsertUser(body.userId, body.email || "");
+      // 邀请人绑定（仅首次）
+      if (!user.invitedBy && body.inviteCode) {
+        const inviter = billingUsers.find(u => u.inviteCode === body.inviteCode);
+        if (inviter && inviter.id !== user.id) {
+          user.invitedBy = inviter.id;
+          saveJSON(USERS_FILE, billingUsers);
+        }
+      }
+      const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+      const token = signJWT({ sub: user.id, role: "customer", iat: Math.floor(Date.now() / 1000), exp });
+      return sendJSON(res, 200, { token, user: publicUser(user) });
+    }
+
+    // 以下客户接口都需要客户 JWT
+    const identity = getBillingIdentity(req);
+    if (!identity || identity.role !== "customer") {
+      return sendJSON(res, 401, { error: "未登录或登录已过期" });
+    }
+    const me = findUserByAppwriteId(identity.sub);
+    if (!me) return sendJSON(res, 404, { error: "用户不存在，请重新登录" });
+
+    // GET /api/billing/me
+    if (pathname === "/api/billing/me" && method === "GET") {
+      return sendJSON(res, 200, { user: publicUser(me), settings: {
+        currency: billingSettings.currency,
+        inviteCode: me.inviteCode,
+        inviteRewardQuota: billingSettings.inviteRewardQuota,
+      }});
+    }
+
+    // GET /api/billing/plans — 公开套餐
+    if (pathname === "/api/billing/plans" && method === "GET") {
+      return sendJSON(res, 200, billingPlans);
+    }
+
+    // POST /api/billing/orders — 创建订单 { planId }
+    if (pathname === "/api/billing/orders" && method === "POST") {
+      const body = await parseBody(req);
+      const plan = billingPlans.find(p => p.id === body.planId);
+      if (!plan) return sendJSON(res, 400, { error: "套餐不存在" });
+      if (plan.priceCents <= 0) return sendJSON(res, 400, { error: "免费套餐无需下单" });
+      const order = {
+        id: newOrderId(),
+        userId: me.id,
+        type: "membership",
+        planId: plan.id,
+        amountCents: plan.priceCents,
+        status: "pending",
+        paymentMethod: body.method || "mock",
+        transactionId: "",
+        createdAt: Date.now(),
+        paidAt: 0,
+      };
+      billingOrders.push(order);
+      saveJSON(ORDERS_FILE, billingOrders);
+      return sendJSON(res, 200, order);
+    }
+
+    // POST /api/billing/orders/:id/pay — 支付（v1 走 mock/易支付沙箱，回调后加权益）
+    const payMatch = pathname.match(/^\/api\/billing\/orders\/([A-Za-z0-9]+)\/pay$/);
+    if (payMatch && method === "POST") {
+      const order = billingOrders.find(o => o.id === payMatch[1] && o.userId === me.id);
+      if (!order) return sendJSON(res, 404, { error: "订单不存在" });
+      if (order.status === "paid") return sendJSON(res, 400, { error: "订单已支付" });
+      // v1：mock 支付直接成功；接真实微信/支付宝时在此对接，异步回调里调 completeOrder
+      order.status = "paid";
+      order.paidAt = Date.now();
+      order.paymentMethod = order.paymentMethod || "mock";
+      saveJSON(ORDERS_FILE, billingOrders);
+      // 发权益
+      const plan = billingPlans.find(p => p.id === order.planId);
+      if (plan) issueMembership(me.id, plan);
+      // 邀请奖励
+      if (me.invitedBy && billingSettings.inviteRewardQuota > 0) {
+        adjustBalance(me.invitedBy, billingSettings.inviteRewardQuota, "invite", order.id, `邀请${me.email || me.id}充值奖励`);
+      }
+      const refreshed = findUserByAppwriteId(me.id);
+      return sendJSON(res, 200, { success: true, order, user: publicUser(refreshed) });
+    }
+
+    // POST /api/billing/redeem — 兑换码 { code }
+    if (pathname === "/api/billing/redeem" && method === "POST") {
+      const body = await parseBody(req);
+      const code = (body.code || "").trim().toUpperCase();
+      if (!code) return sendJSON(res, 400, { error: "请输入兑换码" });
+      const record = billingCodes.find(c => c.code === code);
+      if (!record) return sendJSON(res, 400, { error: "兑换码无效" });
+      if (record.usedBy) return sendJSON(res, 400, { error: "兑换码已被使用" });
+      if (record.expiredAt && Date.now() > record.expiredAt) return sendJSON(res, 400, { error: "兑换码已过期" });
+      record.usedBy = me.id;
+      record.usedAt = Date.now();
+      saveJSON(CODES_FILE, billingCodes);
+      if (record.kind === "membership" && record.planId) {
+        const plan = billingPlans.find(p => p.id === record.planId);
+        if (plan) issueMembership(me.id, plan);
+      } else {
+        adjustBalance(me.id, record.denomination, "redeem", "", "兑换码充值");
+      }
+      const refreshed = findUserByAppwriteId(me.id);
+      return sendJSON(res, 200, { success: true, user: publicUser(refreshed) });
+    }
+
+    // GET /api/billing/orders — 我的订单
+    if (pathname === "/api/billing/orders" && method === "GET") {
+      const list = billingOrders.filter(o => o.userId === me.id)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      return sendJSON(res, 200, list);
+    }
+
+    // GET /api/billing/transactions — 我的流水
+    if (pathname === "/api/billing/transactions" && method === "GET") {
+      const list = billingTxs.filter(t => t.userId === me.id)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      return sendJSON(res, 200, list.slice(0, 200));
+    }
+
+    // GET /api/billing/invite — 我的邀请
+    if (pathname === "/api/billing/invite" && method === "GET") {
+      const invited = billingUsers.filter(u => u.invitedBy === me.id);
+      return sendJSON(res, 200, {
+        inviteCode: me.inviteCode,
+        invitedCount: invited.length,
+        invitedList: invited.map(u => ({ email: u.email, totalSpent: u.totalSpent, createdAt: u.createdAt })),
+        rewardQuota: billingSettings.inviteRewardQuota,
+      });
+    }
+
+    return false;
+  }
+
+  // ---------- 管理端：/api/admin/billing/* ----------
+  if (pathname.startsWith("/api/admin/billing/")) {
+    // 管理端必须是管理员身份
+    const adminIdentity = getBillingIdentity(req);
+    if (!adminIdentity || adminIdentity.role !== "admin") {
+      return sendJSON(res, 403, { error: "无管理员权限" });
+    }
+
+    // 管理端统计
+    if (pathname === "/api/admin/billing/stats" && method === "GET") {
+      const now = Date.now();
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const paidOrders = billingOrders.filter(o => o.status === "paid");
+      const revenue = paidOrders.reduce((s, o) => s + o.amountCents, 0);
+      const todayRevenue = paidOrders.filter(o => o.paidAt >= today.getTime()).reduce((s, o) => s + o.amountCents, 0);
+      const activeMembers = billingUsers.filter(u => u.memberExpireAt > now).length;
+      return sendJSON(res, 200, {
+        userCount: billingUsers.length,
+        activeMemberCount: activeMembers,
+        orderCount: billingOrders.length,
+        paidOrderCount: paidOrders.length,
+        revenueCents: revenue,
+        todayRevenueCents: todayRevenue,
+        totalBalance: billingUsers.reduce((s, u) => s + (u.balance || 0), 0),
+        unusedCodes: billingCodes.filter(c => !c.usedBy).length,
+      });
+    }
+
+    // GET /api/admin/billing/users
+    if (pathname === "/api/admin/billing/users" && method === "GET") {
+      return sendJSON(res, 200, billingUsers.map(publicUser));
+    }
+
+    // POST /api/admin/billing/users/:id/adjust { delta, note }
+    const adjMatch = pathname.match(/^\/api\/admin\/billing\/users\/([^/]+)\/adjust$/);
+    if (adjMatch && method === "POST") {
+      const body = await parseBody(req);
+      const delta = Number(body.delta || 0);
+      if (!delta) return sendJSON(res, 400, { error: "调整额度不能为空" });
+      const u = adjustBalance(adjMatch[1], delta, "admin", "", body.note || "后台调整");
+      if (!u) return sendJSON(res, 404, { error: "用户不存在" });
+      return sendJSON(res, 200, publicUser(u));
+    }
+
+    // GET /api/admin/billing/orders
+    if (pathname === "/api/admin/billing/orders" && method === "GET") {
+      return sendJSON(res, 200, billingOrders.slice().sort((a, b) => b.createdAt - a.createdAt));
+    }
+
+    // POST /api/admin/billing/orders/:id/complete — 管理员手动标记订单已付
+    const completeMatch = pathname.match(/^\/api\/admin\/billing\/orders\/([A-Za-z0-9]+)\/complete$/);
+    if (completeMatch && method === "POST") {
+      const order = billingOrders.find(o => o.id === completeMatch[1]);
+      if (!order) return sendJSON(res, 404, { error: "订单不存在" });
+      if (order.status !== "paid") {
+        order.status = "paid";
+        order.paidAt = Date.now();
+        saveJSON(ORDERS_FILE, billingOrders);
+        const plan = billingPlans.find(p => p.id === order.planId);
+        if (plan) issueMembership(order.userId, plan);
+      }
+      return sendJSON(res, 200, order);
+    }
+
+    // GET /api/admin/billing/codes
+    if (pathname === "/api/admin/billing/codes" && method === "GET") {
+      return sendJSON(res, 200, billingCodes.slice().sort((a, b) => b.createdAt - a.createdAt));
+    }
+
+    // POST /api/admin/billing/codes — 批量生成 { count, denomination, kind, planId, days }
+    if (pathname === "/api/admin/billing/codes" && method === "POST") {
+      const body = await parseBody(req);
+      const count = Math.min(Math.max(1, Number(body.count || 1)), 1000);
+      const kind = body.kind === "membership" ? "membership" : "quota";
+      const batch = "B" + Date.now().toString(36);
+      const newCodes = [];
+      for (let i = 0; i < count; i++) {
+        const record = {
+          code: genRedeemCode(),
+          kind,
+          denomination: kind === "membership" ? 0 : Number(body.denomination || 100),
+          planId: kind === "membership" ? (body.planId || "pro") : "",
+          usedBy: "", usedAt: 0,
+          batch,
+          createdAt: Date.now(),
+          expiredAt: body.days ? Date.now() + Number(body.days) * 86400000 : 0,
+        };
+        billingCodes.push(record);
+        newCodes.push(record.code);
+      }
+      saveJSON(CODES_FILE, billingCodes);
+      return sendJSON(res, 200, { count: newCodes.length, batch, codes: newCodes });
+    }
+
+    // GET/PUT /api/admin/billing/plans
+    if (pathname === "/api/admin/billing/plans" && method === "GET") {
+      return sendJSON(res, 200, billingPlans);
+    }
+    if (pathname === "/api/admin/billing/plans" && method === "PUT") {
+      const body = await parseBody(req);
+      const idx = billingPlans.findIndex(p => p.id === body.id);
+      if (idx === -1) return sendJSON(res, 404, { error: "套餐不存在" });
+      Object.assign(billingPlans[idx], body);
+      saveJSON(PLANS_FILE, billingPlans);
+      return sendJSON(res, 200, billingPlans[idx]);
+    }
+
+    // GET /api/admin/billing/settings
+    if (pathname === "/api/admin/billing/settings" && method === "GET") {
+      return sendJSON(res, 200, billingSettings);
+    }
+    // PUT /api/admin/billing/settings
+    if (pathname === "/api/admin/billing/settings" && method === "PUT") {
+      const body = await parseBody(req);
+      Object.assign(billingSettings, body);
+      saveJSON(SETTINGS_FILE, billingSettings);
+      return sendJSON(res, 200, billingSettings);
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
+// 对外暴露的用户视图（脱敏）
+function publicUser(u) {
+  if (!u) return null;
+  const now = Date.now();
+  return {
+    id: u.id,
+    email: u.email,
+    balance: u.balance || 0,
+    memberLevel: u.memberLevel || "free",
+    memberExpireAt: u.memberExpireAt || 0,
+    memberActive: (u.memberExpireAt || 0) > now,
+    inviteCode: u.inviteCode,
+    totalSpent: u.totalSpent || 0,
+    createdAt: u.createdAt,
+  };
+}
+
 // ---------- 路由 ----------
 const server = http.createServer(async (req, res) => {
   // CORS 预检
@@ -253,16 +661,27 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       if (body.username === admin.username && hashPassword(body.password || "") === admin.password) {
         const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60; // 24h
-        const token = signJWT({ sub: admin.username, iat: Math.floor(Date.now() / 1000), exp });
+        const token = signJWT({ sub: admin.username, role: "admin", iat: Math.floor(Date.now() / 1000), exp });
         return sendJSON(res, 200, { token });
       }
       return sendJSON(res, 401, { error: "用户名或密码错误" });
     }
 
-    // ===== 管理接口（需认证）=====
+    // ===== 计费系统路由（客户 + 管理端计费）=====
+    if (await handleBilling(req, res, pathname, req.method, url)) {
+      return;
+    }
+
+    // ===== 管理接口（需管理员认证；客户 token 一律拒绝）=====
     if (pathname.startsWith("/api/admin/") && pathname !== "/api/admin/login") {
-      if (!verifyToken(req)) {
+      const auth = req.headers["authorization"] || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      const payload = token ? verifyJWT(token) : null;
+      if (!payload) {
         return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      }
+      if (payload.role && payload.role !== "admin") {
+        return sendJSON(res, 403, { error: "无管理员权限" });
       }
     }
 

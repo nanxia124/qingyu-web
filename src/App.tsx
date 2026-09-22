@@ -18,6 +18,7 @@ const FeedbackPage = lazy(() => import('@/pages/FeedbackPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const MonitorPage = lazy(() => import('@/pages/MonitorPage'))
 const SubscriptionPage = lazy(() => import('@/pages/SubscriptionPage'))
+const WalletPage = lazy(() => import('@/pages/WalletPage'))
 const AdminPage = lazy(() => import('@/pages/admin/AdminPage'))
 const ProfilePage = lazy(() => import('@/pages/account/ProfilePage'))
 const SecurityPage = lazy(() => import('@/pages/account/SecurityPage'))
@@ -27,6 +28,7 @@ const TeamMembersPage = lazy(() => import('@/pages/team/TeamMembersPage'))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'))
 const AdminTenantsPage = lazy(() => import('@/pages/admin/AdminTenantsPage'))
 const AdminAuditsPage = lazy(() => import('@/pages/admin/AdminAuditsPage'))
+const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage'))
 
 // 画布模块原生集成（替代 iframe）：整体懒加载，首次进入 /canvas 才拉取画布 chunk
 const CanvasRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasRoute })))
@@ -104,6 +106,7 @@ export default function App() {
           <Route path="/feedback" element={lazyPage(<FeedbackPage />)} />
           <Route path="/settings" element={lazyPage(<SettingsPage />)} />
           <Route path="/subscription" element={lazyPage(<SubscriptionPage />)} />
+          <Route path="/wallet" element={lazyPage(<WalletPage />)} />
           <Route path="/monitor" element={lazyPage(<MonitorPage />)} />
           {/* 个人中心 */}
           <Route path="/account/profile" element={lazyPage(<ProfilePage />)} />
@@ -116,6 +119,7 @@ export default function App() {
           <Route path="/admin/users" element={<AdminRoute>{lazyPage(<AdminUsersPage />)}</AdminRoute>} />
           <Route path="/admin/tenants" element={<AdminRoute>{lazyPage(<AdminTenantsPage />)}</AdminRoute>} />
           <Route path="/admin/audits" element={<AdminRoute>{lazyPage(<AdminAuditsPage />)}</AdminRoute>} />
+          <Route path="/admin/billing" element={<AdminRoute>{lazyPage(<AdminBillingPage />)}</AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

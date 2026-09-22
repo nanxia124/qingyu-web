@@ -24,24 +24,32 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Deploy to server via SSH
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "dist/*"
-          target: "/var/www/qingyu-web"
-          overwrite: true
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Reload Nginx
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            sudo nginx -t && sudo systemctl reload nginx
-            echo "Deploy completed successfully"
+      - name: Create deploy directory
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT || 22 }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "mkdir -p /var/www/qingyu-web"
+
+      - name: Upload dist
+        run: |
+          tar -czf dist.tar.gz -C dist .
+          scp -i ~/.ssh/deploy_key -P ${{ secrets.SSH_PORT || 22 }} \
+            dist.tar.gz \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/qingyu-web/
+
+      - name: Extract and reload
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.SSH_PORT || 22 }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "cd /var/www/qingyu-web && tar -xzf dist.tar.gz && rm dist.tar.gz && sudo nginx -t && sudo systemctl reload nginx && echo '✅ Deploy completed'"
+
+      - name: Clean up
+        if: always()
+        run: rm -f dist.tar.gz

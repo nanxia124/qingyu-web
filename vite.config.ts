@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs'
 import { parseChangelog } from './src/canvas/lib/release'
 
 // 画布模块（src/canvas）的版本与更新日志构建常量
-const localVersion = readFileSync(path.resolve(__dirname, '../VERSION'), 'utf8').trim() || 'dev'
-const localChangelog = readFileSync(path.resolve(__dirname, '../CHANGELOG.md'), 'utf8')
+const localVersion = readFileSync(path.resolve(__dirname, './VERSION'), 'utf8').trim() || 'dev'
+const localChangelog = readFileSync(path.resolve(__dirname, './CHANGELOG.md'), 'utf8')
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

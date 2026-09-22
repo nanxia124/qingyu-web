@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { account, teams } from "@/lib/appwrite";
 import { ID, AppwriteException } from "appwrite";
+import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
 
 // 类型定义
 export interface User {
@@ -103,6 +104,7 @@ export const useAuthStore = create<AuthState>()(
             isLoggedIn: true,
           });
           await get().fetchTeams();
+          trackEvent(AnalyticsEvent.LoginSuccess, { method: "email" });
         } finally {
           set({ isLoading: false });
         }
@@ -122,6 +124,7 @@ export const useAuthStore = create<AuthState>()(
           });
           // 创建默认团队
           await get().fetchTeams();
+          trackEvent(AnalyticsEvent.RegisterSuccess, { method: "email" });
         } finally {
           set({ isLoading: false });
         }

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api } from "@/lib/api";
+import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
 import { CreditCard, Download, Calendar } from "lucide-react";
 
 interface Invoice {
@@ -16,6 +17,8 @@ export default function BillingPage() {
   const { currentTeam } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  // 已经上报过 payment_success 的发票 id，避免每次进页面重复计数
+  const reportedPaidRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (currentTeam) {
@@ -28,11 +31,28 @@ export default function BillingPage() {
     try {
       const data = await api.get<Invoice[]>(`/teams/${currentTeam?.id}/invoices`);
       setInvoices(data);
+      // 检测新出现的已支付发票，上报一次支付成功事件
+      for (const inv of data) {
+        if (inv.status === "paid" && !reportedPaidRef.current.has(inv.id)) {
+          reportedPaidRef.current.add(inv.id);
+          trackEvent(AnalyticsEvent.PaymentSuccess, {
+            invoice_id: inv.id,
+            amount: inv.amount,
+            currency: inv.currency,
+          });
+        }
+      }
     } catch (err) {
       console.error("获取发票列表失败", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClickUpgrade = () => {
+    trackEvent(AnalyticsEvent.ClickUpgradePlan, {
+      current_plan: currentTeam?.plan || "free",
+    });
   };
 
   const getStatusText = (status: string) => {
@@ -74,7 +94,10 @@ export default function BillingPage() {
               {currentTeam?.plan || "免费版"} · 下次续费：2026-10-01
             </p>
           </div>
-          <button className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors">
+          <button
+            onClick={handleClickUpgrade}
+            className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+          >
             升级计划
           </button>
         </div>

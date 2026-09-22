@@ -9,6 +9,14 @@
       html { color-scheme: dark; }
       body { margin: 0; background-color: #171717; }
     </style>
+    <!-- Umami 网站访问统计（PV/UV/来源/页面路径自动采集）。
+         data-website-id 部署后到 Umami 后台「设置 → 网站」复制替换。
+         defer 保证不阻塞首屏。 -->
+    <script
+      defer
+      src="/umami/script.js"
+      data-website-id="REPLACE_WITH_YOUR_WEBSITE_ID"
+    ></script>
   </head>
   <body>
     <div id="root"></div>

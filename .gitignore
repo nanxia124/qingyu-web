@@ -40,3 +40,7 @@ pnpm-debug.log*
 dev-run.log
 dev-server.log
 build-canvas.log
+
+# SSH deploy keys (never commit these!)
+.deploy_key
+.deploy_key.pub

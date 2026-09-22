@@ -1,0 +1,155 @@
+%!PS-Adobe-3.0 EPSF-3.0
+%%Creator: Litzone Bezier Reconstruction (Illustrator 3 compatible)
+%%Title: litzone - smooth low-anchor vector wordmark
+%%CreationDate: 2026-09-22
+%%BoundingBox: 0 0 1774 887
+%%HiResBoundingBox: 0 0 1774 887
+%%DocumentProcessColors: Black
+%%DocumentSuppliedResources: procset Adobe_IllustratorA_AI3 1.0 0
+%%DocumentNeededResources:
+%%Pages: 1
+%%LanguageLevel: 2
+%AI3_ColorUsage: Black&White
+%AI3_Cropmarks: 0 0 1774 887
+%AI3_TemplateBox: 0 0 1774 887
+%AI3_TileBox: 0 0 1774 887
+%AI3_DocumentPreview: None
+%%EndComments
+%%BeginProlog
+%%BeginResource: procset Adobe_IllustratorA_AI3 1.0 0
+/Adobe_IllustratorA_AI3 64 dict dup begin
+/initialize { Adobe_IllustratorA_AI3 begin /compound false def } bind def
+/terminate { end } bind def
+/u { } bind def
+/U { } bind def
+/*u { /compound true def newpath } bind def
+/*U { fill /compound false def } bind def
+/m { moveto } bind def
+/L { lineto } bind def
+/l { lineto } bind def
+/C { curveto } bind def
+/c { curveto } bind def
+/f { closepath compound not { fill } if } bind def
+/F { compound not { fill } if } bind def
+/n { closepath newpath } bind def
+/N { newpath } bind def
+/g { setgray } bind def
+/G { pop } bind def
+/k { setcmykcolor } bind def
+/K { pop pop pop pop } bind def
+/O { pop } bind def
+/R { pop } bind def
+/A { pop } bind def
+/i { setflat } bind def
+end def
+%%EndResource
+%%EndProlog
+%%BeginSetup
+Adobe_IllustratorA_AI3 /initialize get exec
+%%EndSetup
+%%Page: 1 1
+0 g
+0 G
+0 O
+0 R
+0 A
+1 i
+u
+% Letter l: 8 unique anchors
+277.9899 583.5911 m
+324.0603 583.5911 L
+324.0603 386.4575 l
+324.0603 370.2037 339.5017 359.0996 350.9428 359.0996 c
+363.662 359.0996 L
+363.662 314.1479 L
+348.6412 314.1479 l
+312.8306 314.1479 277.9899 347.2065 277.9899 386.4312 c
+f
+% Letter i: 8 unique anchors
+*u
+414.2409 588.8067 m
+430.6154 588.8067 444.2323 575.7328 444.2323 559.5096 c
+444.2323 543.77 430.524 530.2962 414.259 530.2962 c
+397.8359 530.2962 384.1802 543.3436 384.1802 559.5118 c
+384.1802 575.7565 397.6797 588.8067 414.2409 588.8067 c
+f
+390.5833 512.5073 m
+437.7852 512.5073 L
+437.7852 313.9354 L
+390.5833 313.9354 L
+f
+*U
+% Letter t: 12 unique anchors
+476.4099 563.9439 m
+523.922 563.9439 L
+523.922 512.6272 L
+604.5242 512.6272 L
+604.5242 467.9597 L
+523.922 467.9597 L
+523.922 395.3932 l
+523.922 376.8688 542.6769 358.8 565.5197 358.8 c
+588.8804 358.8 L
+588.8804 313.8711 L
+561.5339 313.8711 l
+514.6003 313.8711 476.4099 355.26 476.4099 395.7943 c
+f
+% Letter z: 10 unique anchors
+631.1 512.6037 m
+819.1782 512.6037 L
+819.1782 504.404 L
+699.8738 358.9 L
+819.3745 358.9 L
+819.3745 313.9264 L
+608.4354 313.9264 L
+608.4354 320.4201 L
+731.2631 468.069 L
+631.1 468.069 L
+f
+% Letter o: 8 unique anchors
+*u
+933.5121 523.6408 m
+992.439 523.6408 1042.5132 474.541 1042.5132 417.0309 c
+1042.5132 357.5498 992.6778 307.9627 931.547 307.9627 c
+869.6497 307.9627 821.3789 356.6586 821.3789 416.9529 c
+821.3789 475.9877 872.2228 523.6408 933.5121 523.6408 c
+f
+931.5566 481.5059 m
+894.99 481.5059 865.7055 451.4051 865.7055 415.4995 c
+865.7055 381.7699 896.048 352.5223 931.5326 352.5223 c
+967.1905 352.5223 998.3872 381.1893 998.3872 415.5487 c
+998.3872 451.9858 969.0723 481.5059 931.5566 481.5059 c
+f
+*U
+% Letter n: 10 unique anchors
+1056.3708 313.9555 m
+1056.3708 420.5057 l
+1056.3708 479.9088 1103.9398 526.0282 1163.4951 526.0282 c
+1222.5026 526.0282 1268.6237 479.8548 1268.6237 420.5908 c
+1268.6237 313.9555 L
+1223.7111 313.9555 L
+1223.7111 420.849 l
+1223.7111 455.5946 1195.4456 481.5 1163.068 481.5 c
+1130.4181 481.5 1101.5399 455.7168 1101.5399 420.6815 c
+1101.5399 313.9555 L
+f
+% Letter e: 13 unique anchors
+1501.0127 405.1532 m
+1349.4 405.1532 L
+1366.2418 434.3997 L
+1455.795 434.3997 L
+1446.8136 462.2246 1421.4322 481.5994 1391.5333 481.5994 c
+1355.6204 481.5994 1324.8999 452.3369 1324.8999 416.4761 c
+1324.8999 381.6515 1354.3844 352.6072 1391.6314 352.6072 c
+1411.7988 352.6072 1423.8886 360.5302 1436.6951 369.45 C
+1489.3576 369.45 L
+1472.9664 332.29 1432.5584 307.8809 1391.5867 307.8809 c
+1329.7047 307.8809 1280.0947 356.0826 1280.0947 416.3648 c
+1280.0947 475.1922 1330.9006 523.6854 1391.6407 523.6854 c
+1451.4942 523.6854 1501.0127 477.6721 1501.0127 417.3777 c
+f
+U
+%%PageTrailer
+showpage
+%%Trailer
+Adobe_IllustratorA_AI3 /terminate get exec
+%%EOF

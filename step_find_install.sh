@@ -1,0 +1,1 @@
+sudo docker run --rm --entrypoint /bin/sh appwrite/appwrite:1.9.6 -c "ls /usr/src/code/; echo '=== install.php? ==='; ls /usr/src/code/install* 2>/dev/null; echo '=== scripts ==='; ls /usr/src/code/app/ 2>/dev/null | head"

@@ -1,0 +1,194 @@
+﻿button { cursor: pointer; }
+@import "tailwindcss";
+
+@keyframes bgFade {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.3; }
+}
+
+@theme {
+  /* 浅色主题 */
+  --color-bg: #f4f4f6;
+  --color-surface: #ffffff;
+  --color-surface-hover: #ececef;
+  --color-card: #ffffff;
+  --color-card-hover: #f4f4f6;
+  --color-border: #e2e2e8;
+  --color-border-light: #d4d4da;
+
+  --color-text: #1d1d1f;
+  --color-text-active: #09090b;
+  --color-text-secondary: #5f5f66;
+  --color-text-muted: #8a8a91;
+
+  --color-accent: #5051f8;
+  --color-accent-hover: #3f40e6;
+  --color-accent-soft: #eeeeff;
+  --color-accent-soft-text: #4446d8;
+  --color-accent-foreground: #ffffff;
+
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+
+  /* 侧边栏 / 导航 */
+  --color-nav-bg: #f4f4f6;
+  --color-nav-text: #5f5f66;
+  --color-nav-text-muted: #8a8a91;
+  --color-nav-hover: #e8e8ec;
+  --color-nav-active: #ffffff;
+  --color-nav-text-active: #1d1d1f;
+
+  /* 输入框 */
+  --color-input: #ffffff;
+  --color-input-focus: #eeeeff;
+
+
+  /* shadcn 兼容（供 canvas UI 组件用） */
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1d1d1f;
+  --color-muted: #f0f0f2;
+  --color-muted-foreground: #5f5f66;
+  --color-ring: #5051f8;
+  --color-secondary: #f0f0f2;
+  --color-secondary-foreground: #1d1d1f;
+  --color-primary: #5051f8;
+  --color-primary-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  /* shadcn 兼容变量（全局，供 Portal 出去的组件用） */
+  --background: #f4f4f6;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #5051f8;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f2;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f0f0f2;
+  --muted-foreground: #5f5f66;
+  --accent: #5051f8;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: #e2e2e8;
+  --input: #e2e2e8;
+  --ring: #5051f8;
+}
+
+/*
+ * 主站业务页面品牌变量锚点。
+ * 画布子应用（/canvas，React.lazy 懒加载）自带一套 shadcn 样式，其 @theme inline 会把
+ * .bg-accent / .bg-card / .border-border 等同名工具类编译为引用 --accent / --card / --border
+ * 等原始变量；该 CSS chunk 在 SPA 内运行时注入到 <head> 末尾，会全局覆盖主站同名工具类，
+ * 导致访问过画布后，主站页面主题蓝变灰（整页刷新后画布 chunk 未加载又恢复）。
+ * 这里在“非画布页面”子树（AppLayout 中 .app-brand 包裹层）把这些原始变量锚定为主站色板，
+ * 使画布版工具类在主站页面也解析为品牌色；画布页面不在该作用域内，不受影响。
+ * 色值与上方 @theme 保持一致，修改品牌色时请同步。
+ */
+.app-brand {
+  --background: #f4f4f6;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #5051f8;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f2;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f0f0f2;
+  --muted-foreground: #5f5f66;
+  --accent: #5051f8;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: #e2e2e8;
+  --input: #e2e2e8;
+  --ring: #5051f8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 所有文字最细不低于 semibold(600)，覆盖 Tailwind 的 font-normal(400) / font-medium(500) */
+.font-normal,
+.font-medium {
+  font-weight: 600 !important;
+}
+
+/* 滚动条 —— 对齐客户端 ScrollThumbBrush */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7c7cd;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8b0;
+}
+
+@keyframes toastIn { from { opacity: 0; margin-top: -8px; } to { opacity: 1; margin-top: 0; } }
+
+/* 自定义 Tooltip — 替代原生 title，立即显示 */
+[data-tip] {
+  position: relative;
+}
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #ffffff;
+  color: #1d1d1f;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 100;
+  pointer-events: none;
+}
+[data-tip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #ffffff;
+  z-index: 100;
+  pointer-events: none;
+}
+@keyframes flowDash {
+  to { stroke-dashoffset: -1160; }
+}
+.node-flow {
+  animation: flowDash 20s linear infinite;
+}

@@ -1,0 +1,140 @@
+import { useState, useEffect } from "react";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { api } from "@/lib/api";
+import { CreditCard, Download, Calendar } from "lucide-react";
+
+interface Invoice {
+  id: string;
+  amount: number;
+  currency: string;
+  status: "paid" | "pending" | "failed";
+  date: string;
+  pdfUrl?: string;
+}
+
+export default function BillingPage() {
+  const { currentTeam } = useAuthStore();
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (currentTeam) {
+      fetchInvoices();
+    }
+  }, [currentTeam]);
+
+  const fetchInvoices = async () => {
+    setLoading(true);
+    try {
+      const data = await api.get<Invoice[]>(`/teams/${currentTeam?.id}/invoices`);
+      setInvoices(data);
+    } catch (err) {
+      console.error("获取发票列表失败", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "paid":
+        return "已支付";
+      case "pending":
+        return "待支付";
+      case "failed":
+        return "支付失败";
+      default:
+        return status;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "paid":
+        return "bg-green-500/10 text-green-400";
+      case "pending":
+        return "bg-yellow-500/10 text-yellow-400";
+      case "failed":
+        return "bg-red-500/10 text-red-400";
+      default:
+        return "bg-gray-500/10 text-gray-500";
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold text-text mb-6">账单与发票</h1>
+
+      {/* 当前订阅 */}
+      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] p-6 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-medium text-text">当前订阅</h2>
+            <p className="text-sm text-text-muted mt-1">
+              {currentTeam?.plan || "免费版"} · 下次续费：2026-10-01
+            </p>
+          </div>
+          <button className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors">
+            升级计划
+          </button>
+        </div>
+      </div>
+
+      {/* 发票列表 */}
+      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#e5e5ea]">
+          <h2 className="text-lg font-medium text-text">历史发票</h2>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-text-muted">加载中...</div>
+        ) : invoices.length === 0 ? (
+          <div className="p-8 text-center text-text-muted">暂无发票记录</div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-[#ffffff]">
+              <tr>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">发票号</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">金额</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">状态</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">日期</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((invoice) => (
+                <tr key={invoice.id} className="border-t border-[#e5e5ea]">
+                  <td className="px-6 py-4 font-mono text-sm text-text">{invoice.id}</td>
+                  <td className="px-6 py-4 text-text">
+                    {(invoice.amount / 100).toFixed(2)} {invoice.currency.toUpperCase()}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex px-2 py-1 text-xs rounded-full ${getStatusColor(invoice.status)}`}>
+                      {getStatusText(invoice.status)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-text-muted">
+                    {new Date(invoice.date).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    {invoice.pdfUrl && (
+                      <a
+                        href={invoice.pdfUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg text-text-muted hover:text-text hover:bg-[#e5e5ea] transition-colors"
+                      >
+                        <Download size={14} />
+                        下载
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}

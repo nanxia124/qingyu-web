@@ -26,6 +26,8 @@
 
 `migrations/MANIFEST.sha256.json` 和 `scripts/Verify-MigrationManifest.ps1` 用 SHA-256 检查迁移文件是否被改动或漏传。执行数据库更新前先运行校验；已执行的 SQL 不直接修改，变更要新增编号。
 
+`scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件；`scripts/verify-backup-file.sh` 只做文件校验。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本并做隔离恢复演练。
+
 正式应用连接必须使用独立的业务数据库角色，不能长期复用 Appwrite 的 `user` 角色。前端不能直接连接 PostgreSQL；迁移、回滚和备份由服务器端受控执行。
 
 `0004_resource_integrity.sql` 使用复合外键拦截跨空间的生成结果、资产版本和文件关联，并限制评论只能回复同一资产下的评论。文件存储身份使用 PostgreSQL 16 支持的空值相等唯一约束，避免没有存储版本号时重复登记同一个对象。

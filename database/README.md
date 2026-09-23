@@ -26,6 +26,8 @@
 
 `0013_sessions_realtime.sql` 为设备会话增加最大并发数量、撤销动作记录、outbox 顺序号和同步游标。`revoke_other_sessions` 在事务内撤销其他会话；实时同步以后按顺序号从 outbox 补发，不能依赖客户端时间戳。
 
+`0014_organization_lifecycle.sql` 增加部门防环、成员入离职状态校验、团队成员角色绑定校验，以及数据导出、注销申请和删除墓碑记录。删除先留下事实，订单、支付、额度和审计不会因为用户删除请求被直接抹掉。
+
 `migrations/MANIFEST.sha256.json` 和 `scripts/Verify-MigrationManifest.ps1` 用 SHA-256 检查迁移文件是否被改动或漏传。执行数据库更新前先运行校验；已执行的 SQL 不直接修改，变更要新增编号。
 
 `scripts/Run-Migrations.ps1` 先执行清单校验，再按文件编号检查 `app.schema_migrations` 并跳过已执行版本；新版本执行失败会立即停止。连接信息从 `PGHOST`、`PGPORT`、`PGDATABASE` 和 `PGUSER` 读取，密码不写进脚本。

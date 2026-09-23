@@ -11,5 +11,6 @@
   "0010_billing_consistency.sql": "5b483ba792da743b842d687cee414a62731fb68f389fe1f1e5b727aed18fd84a",
   "0011_agent_governance.sql": "1cad9b440ac923c028ea388977f50fe3162faa9091adb3f2f304f1f9c135868a",
   "0012_backup_catalog.sql": "74a6dd8fe99941ab50b8f69827cb28f6732a34034e35d32ddd318389c96198f8",
-  "0013_sessions_realtime.sql": "176a6d6e8f3f8c873ee9a25b0ac35fc0b3304fc7640bff784d843ab6e2fcee9b"
+  "0013_sessions_realtime.sql": "176a6d6e8f3f8c873ee9a25b0ac35fc0b3304fc7640bff784d843ab6e2fcee9b",
+  "0014_organization_lifecycle.sql": "2129ffd84e7329325828a0002a1348ee867d1058091f9f6b5a82ea82c1fdcbfb"
 }

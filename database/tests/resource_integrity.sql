@@ -3,7 +3,7 @@
 BEGIN;
 DO $$
 DECLARE
- u uuid; wa uuid; wb uuid; aa uuid; ab uuid; av uuid; fa uuid; fb uuid; ca uuid;
+ u uuid; wa uuid; wb uuid; aa uuid; ab uuid; av uuid; fa uuid; fb uuid; ca uuid; col uuid;
 BEGIN
  INSERT INTO app.user_accounts(appwrite_user_id) VALUES ('test-' || gen_random_uuid()) RETURNING id INTO u;
  INSERT INTO app.workspaces(type,owner_user_id,name) VALUES ('personal',u,'隔离测试 A') RETURNING id INTO wa;
@@ -22,17 +22,30 @@ BEGIN
    INSERT INTO app.asset_files(asset_version_id,file_id,workspace_id,role) VALUES (av,fb,wa,'source');
    RAISE EXCEPTION '未拒绝跨空间文件';
  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
- INSERT INTO app.asset_comments(asset_id,content) VALUES (aa,'父评论') RETURNING id INTO ca;
- INSERT INTO app.asset_comments(asset_id,parent_id,content) VALUES (aa,ca,'合法回复');
+ INSERT INTO app.asset_comments(asset_id,workspace_id,content) VALUES (aa,wa,'父评论') RETURNING id INTO ca;
+ INSERT INTO app.asset_comments(asset_id,workspace_id,parent_id,content) VALUES (aa,wa,ca,'合法回复');
  BEGIN
-   INSERT INTO app.asset_comments(asset_id,parent_id,content) VALUES (ab,ca,'非法回复');
+   INSERT INTO app.asset_comments(asset_id,workspace_id,parent_id,content) VALUES (ab,wb,ca,'非法回复');
    RAISE EXCEPTION '未拒绝跨资产回复';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ INSERT INTO app.collections(workspace_id,name) VALUES (wa,'收藏夹 A') RETURNING id INTO col;
+ BEGIN
+   INSERT INTO app.collection_items(collection_id,asset_id,workspace_id) VALUES (col,ab,wa);
+   RAISE EXCEPTION '未拒绝跨空间收藏条目';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+   INSERT INTO app.asset_references(source_asset_id,target_asset_id,workspace_id) VALUES (aa,ab,wa);
+   RAISE EXCEPTION '未拒绝跨空间资产引用';
+ EXCEPTION WHEN foreign_key_violation THEN NULL; END;
+ BEGIN
+   INSERT INTO app.asset_likes(asset_id,user_id,workspace_id) VALUES (ab,u,wa);
+   RAISE EXCEPTION '未拒绝跨空间点赞';
  EXCEPTION WHEN foreign_key_violation THEN NULL; END;
  BEGIN
    INSERT INTO app.file_objects(workspace_id,storage_provider,bucket,object_key)
    SELECT workspace_id,storage_provider,bucket,object_key FROM app.file_objects WHERE id=fa;
    RAISE EXCEPTION '未拒绝空版本重复文件';
  EXCEPTION WHEN unique_violation THEN NULL; END;
- RAISE NOTICE 'PASS: 同空间文件、跨空间拒绝、同资产回复、跨资产拒绝、空版本去重';
+ RAISE NOTICE 'PASS: 同空间文件、跨空间文件/收藏/引用/点赞拒绝、同资产回复、跨资产回复拒绝、空版本去重';
 END $$;
 ROLLBACK;

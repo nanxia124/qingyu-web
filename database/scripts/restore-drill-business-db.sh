@@ -15,6 +15,8 @@ sha256sum -c "${BACKUP_FILE}.sha256"
 backup_id="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
   "select id from app.backup_runs where storage_key = '$BACKUP_FILE' and status in ('succeeded','verified') order by created_at desc limit 1")"
 test -n "$backup_id"
+expected_schema_version="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
+  "select coalesce(schema_version,'unknown') from app.backup_runs where id = '$backup_id'")"
 drill_id="$(cat /proc/sys/kernel/random/uuid)"
 started_epoch="$(date +%s)"
 restored=0
@@ -55,7 +57,7 @@ table_count="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRILL_DB" -
 schema_version="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRILL_DB" -Atqc \
   "select coalesce(max(version),'unknown') from app.schema_migrations")"
 test "$table_count" -ge 1
-test "$schema_version" = "0014_organization_lifecycle"
+test "$schema_version" = "$expected_schema_version"
 rto_seconds="$(( $(date +%s) - started_epoch ))"
 
 sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_STOP=1 \

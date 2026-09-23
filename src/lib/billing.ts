@@ -126,4 +126,6 @@ export const adminBillingApi = {
     request<any>("/api/admin/billing/settings", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: settings }),
   supplierBalance: () => request<any>("/api/admin/billing/supplier/balance", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   supplierKeyLimits: () => request<any>("/api/admin/billing/supplier/key-limits", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  supplierModels: () => request<any>("/api/admin/billing/supplier/models", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  supplierAnnouncements: () => request<any>("/api/admin/billing/supplier/announcements", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
 };

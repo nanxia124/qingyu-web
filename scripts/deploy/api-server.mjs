@@ -855,6 +855,65 @@ async function handleBilling(req, res, pathname, method, url) {
       }
     }
 
+    // GET /api/admin/billing/supplier/models — 查询模型列表与价格
+    if (pathname === "/api/admin/billing/supplier/models" && method === "GET") {
+      const sup = billingSettings.supplier?.maizitech;
+      if (!sup?.baseUrl) return sendJSON(res, 400, { error: "未配置供应商 Base URL" });
+      try {
+        const url = new URL(`${sup.baseUrl}/v1/models`);
+        const result = await new Promise((resolve, reject) => {
+          const r = https.request(url, {
+            method: "GET",
+            timeout: 10000,
+          }, resp => {
+            const chunks = [];
+            resp.on("data", c => chunks.push(c));
+            resp.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              try { resolve({ status: resp.statusCode, data: JSON.parse(text) }); }
+              catch { resolve({ status: resp.statusCode, data: { raw: text } }); }
+            });
+          });
+          r.on("error", reject);
+          r.on("timeout", () => { r.destroy(); reject(new Error("请求超时")); });
+          r.end();
+        });
+        return sendJSON(res, result.status, result.data);
+      } catch (e) {
+        return sendJSON(res, 502, { error: `供应商请求失败: ${e.message}` });
+      }
+    }
+
+    // GET /api/admin/billing/supplier/announcements — 查询供应商公告
+    if (pathname === "/api/admin/billing/supplier/announcements" && method === "GET") {
+      const sup = billingSettings.supplier?.maizitech;
+      if (!sup?.apiKey) return sendJSON(res, 400, { error: "未配置供应商 API Key" });
+      try {
+        const url = new URL(`${sup.baseUrl}/api/web/announcements/content`);
+        const result = await new Promise((resolve, reject) => {
+          const r = https.request(url, {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sup.apiKey}` },
+            timeout: 10000,
+          }, resp => {
+            const chunks = [];
+            resp.on("data", c => chunks.push(c));
+            resp.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              try { resolve({ status: resp.statusCode, data: JSON.parse(text) }); }
+              catch { resolve({ status: resp.statusCode, data: { raw: text } }); }
+            });
+          });
+          r.on("error", reject);
+          r.on("timeout", () => { r.destroy(); reject(new Error("请求超时")); });
+          r.end();
+        });
+        return sendJSON(res, result.status, result.data);
+      } catch (e) {
+        return sendJSON(res, 502, { error: `供应商请求失败: ${e.message}` });
+      }
+    }
+
     return false;
   }
 

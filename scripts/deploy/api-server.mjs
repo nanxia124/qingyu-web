@@ -361,9 +361,16 @@ async function handleBilling(req, res, pathname, method, url) {
       if (!body.userId) return sendJSON(res, 400, { error: "缺少用户标识" });
       if (postgresBilling) {
         const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "");
+        const session = await postgresBilling.registerSession(body.userId, {
+          installationId: body.installationId,
+          displayName: body.displayName,
+          clientType: body.clientType,
+          osFamily: body.osFamily,
+          browserFamily: body.browserFamily,
+        });
         const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
-        const token = signJWT({ sub: body.userId, role: "customer", iat: Math.floor(Date.now() / 1000), exp });
-        return sendJSON(res, 200, { token, user });
+        const token = signJWT({ sub: body.userId, role: "customer", sid: session.id, iat: Math.floor(Date.now() / 1000), exp });
+        return sendJSON(res, 200, { token, user, session });
       }
       const user = upsertUser(body.userId, body.email || "");
       // 邀请人绑定（仅首次）
@@ -908,6 +915,17 @@ const server = http.createServer(async (req, res) => {
     // ===== 团队路由（客户身份，数据来自 PostgreSQL）=====
     if (await handleTeams(req, res, pathname, req.method)) {
       return;
+    }
+
+    if (postgresBilling && (pathname === "/api/account/sessions" || pathname.startsWith("/api/account/sessions/"))) {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try {
+        if (pathname === "/api/account/sessions" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listSessions(identity.sub));
+        const sessionMatch = pathname.match(/^\/api\/account\/sessions\/([^/]+)$/);
+        if (sessionMatch && req.method === "DELETE") return sendJSON(res, 200, await postgresBilling.revokeSession(identity.sub, sessionMatch[1]));
+        return sendJSON(res, 404, { error: "会话接口不存在" });
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
     }
 
     if (await handleAssets(req, res, pathname, req.method, url)) {

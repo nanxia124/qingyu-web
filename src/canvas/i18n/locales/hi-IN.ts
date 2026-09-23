@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "{{language}} में बदलें",
+      shortcuts: "कीबोर्ड शॉर्टकट",
+      lightTheme: "लाइट थीम",
+      darkTheme: "डार्क थीम",
+    },
+    home: {
+      start: "शुरू करें",
+    },
     videoWorkbench: {
       title: "वीडियो स्टूडियो",
       promptPlaceholder: "कैमरा मूवमेंट बताएं…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "एसेट में सहेजें",
     },
     canvas: {
+      sidePanel: {
+              canvas: "कैनवस",
+              assets: "एसेट",
+              prompts: "प्रॉम्प्ट लाइब्रेरी",
+              elements: "कैनवस तत्व",
+              searchNodes: "नोड खोजें",
+              noNodes: "कोई नोड नहीं",
+              clearAll: "साफ़ करें",
+              searchAssets: "एसेट खोजें",
+              noAssets: "कोई एसेट नहीं",
+            },
+            imageTools: {
+              copyPrompt: "प्रॉम्प्ट कॉपी",
+              replace: "इमेज बदलें",
+              crop: "क्रॉप",
+              upscale: "उच्च रिज़ॉल्यूशน",
+              view: "इमेज देखें",
+              more: "और",
+            },
+            nodeToolbar: {
+              info: "जानकारी",
+              removeTitle: "नोड हटाएं",
+              downloadImage: "इमेज डाउनलोड",
+              downloadVideo: "वीडियो डाउनलोड",
+              downloadAudio: "ऑडियो डाउनलोड",
+              editText: "टेक्स्ट एडिट",
+              saveAsset: "एसेट में सहेजें",
+            },
+            configNode: {
+              title: "कॉन्फ़िगरेशन",
+              prompt: "प्रॉम्प्ट",
+              generate: "जनरेट",
+              stop: "रोकें",
+            },
+            promptPanel: {
+              generate: "जनरेट",
+              stop: "रोकें",
+              image: "इमेज बताएं…",
+              video: "वीडियो बताएं…",
+            },
+            controls: {
+              ratio: "अनुपात",
+              duplicate: "डुप्लिकेट",
+              delete: "हटाएं",
+            },
       library: "कैनवस लाइब्रेरी",
       projects: "मेरे कैनवस",
       create: "नया कैनवस",

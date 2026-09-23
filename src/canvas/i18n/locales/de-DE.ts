@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Zu {{language}} wechseln",
+      shortcuts: "Tastenkombinationen",
+      lightTheme: "Zum hellen Thema",
+      darkTheme: "Zum dunklen Thema",
+    },
+    home: {
+      start: "Los geht's",
+    },
     videoWorkbench: {
       title: "Video-Studio",
       promptPlaceholder: "Kamera, Stimmung beschreiben…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "In Assets speichern",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Canvas",
+              assets: "Assets",
+              prompts: "Prompt-Bibliothek",
+              elements: "Canvas-Elemente",
+              searchNodes: "Nodes suchen",
+              noNodes: "Keine Knoten",
+              clearAll: "Alles löschen",
+              searchAssets: "Assets suchen",
+              noAssets: "Keine Assets",
+            },
+            imageTools: {
+              copyPrompt: "Prompt kopieren",
+              replace: "Bild ersetzen",
+              crop: "Zuschneiden",
+              upscale: "Hochskalieren",
+              view: "Bild ansehen",
+              more: "Mehr",
+            },
+            nodeToolbar: {
+              info: "Info",
+              removeTitle: "Knoten entfernen",
+              downloadImage: "Bild herunterladen",
+              downloadVideo: "Video herunterladen",
+              downloadAudio: "Audio herunterladen",
+              editText: "Text bearbeiten",
+              saveAsset: "In Assets speichern",
+            },
+            configNode: {
+              title: "Generierungs-Konfiguration",
+              prompt: "Prompt",
+              generate: "Generieren",
+              stop: "Stopp",
+            },
+            promptPanel: {
+              generate: "Generieren",
+              stop: "Stopp",
+              image: "Bild beschreiben…",
+              video: "Video beschreiben…",
+            },
+            controls: {
+              ratio: "Seitenverhältnis",
+              duplicate: "Duplizieren",
+              delete: "Löschen",
+            },
       library: "Canvas-Bibliothek",
       projects: "Meine Canvases",
       create: "Neues Canvas",

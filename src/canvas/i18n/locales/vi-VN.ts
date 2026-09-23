@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Chuyển sang {{language}}",
+      shortcuts: "Phím tắt",
+      lightTheme: "Chuyển sang giao diện sáng",
+      darkTheme: "Chuyển sang giao diện tối",
+    },
+    home: {
+      start: "Bắt đầu",
+    },
     videoWorkbench: {
       title: "Studio video",
       promptPlaceholder: "Mô tả chuyển động máy ảnh…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Lưu vào tài sản",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Canvas",
+              assets: "Tài sản",
+              prompts: "Thư viện gợi ý",
+              elements: "Phần tử canvas",
+              searchNodes: "Tìm nút",
+              noNodes: "Không có nút",
+              clearAll: "Xóa tất cả",
+              searchAssets: "Tìm tài sản",
+              noAssets: "Không có tài sản",
+            },
+            imageTools: {
+              copyPrompt: "Sao chép gợi ý",
+              replace: "Thay ảnh",
+              crop: "Cắt",
+              upscale: "Tăng độ phân giải",
+              view: "Xem ảnh",
+              more: "Thêm",
+            },
+            nodeToolbar: {
+              info: "Thông tin",
+              removeTitle: "Xóa nút",
+              downloadImage: "Tải ảnh xuống",
+              downloadVideo: "Tải video xuống",
+              downloadAudio: "Tải âm thanh xuống",
+              editText: "Sửa văn bản",
+              saveAsset: "Lưu vào tài sản",
+            },
+            configNode: {
+              title: "Cấu hình tạo",
+              prompt: "Gợi ý",
+              generate: "Tạo",
+              stop: "Dừng",
+            },
+            promptPanel: {
+              generate: "Tạo",
+              stop: "Dừng",
+              image: "Mô tả ảnh bạn muốn…",
+              video: "Mô tả video bạn muốn…",
+            },
+            controls: {
+              ratio: "Tỷ lệ",
+              duplicate: "Nhân đôi",
+              delete: "Xóa",
+            },
       library: "Thư viện canvas",
       projects: "Canvas của tôi",
       create: "Canvas mới",

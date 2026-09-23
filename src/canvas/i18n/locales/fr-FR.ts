@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Passer en {{language}}",
+      shortcuts: "Raccourcis clavier",
+      lightTheme: "Passer au thème clair",
+      darkTheme: "Passer au thème sombre",
+    },
+    home: {
+      start: "Commencer",
+    },
     videoWorkbench: {
       title: "Studio vidéo",
       promptPlaceholder: "Décrivez mouvement, ambiance…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Enregistrer dans les ressources",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Toile",
+              assets: "Ressources",
+              prompts: "Bibliothèque de prompts",
+              elements: "Éléments de la toile",
+              searchNodes: "Rechercher des nœuds",
+              noNodes: "Aucun nœud",
+              clearAll: "Tout effacer",
+              searchAssets: "Rechercher des ressources",
+              noAssets: "Aucune ressource",
+            },
+            imageTools: {
+              copyPrompt: "Copier le prompt",
+              replace: "Remplacer l'image",
+              crop: "Rogner",
+              upscale: "Agrandir",
+              view: "Voir l'image",
+              more: "Plus",
+            },
+            nodeToolbar: {
+              info: "Infos",
+              removeTitle: "Supprimer le nœud",
+              downloadImage: "Télécharger l'image",
+              downloadVideo: "Télécharger la vidéo",
+              downloadAudio: "Télécharger l'audio",
+              editText: "Modifier le texte",
+              saveAsset: "Enregistrer dans les ressources",
+            },
+            configNode: {
+              title: "Configuration",
+              prompt: "Invite",
+              generate: "Générer",
+              stop: "Arrêter",
+            },
+            promptPanel: {
+              generate: "Générer",
+              stop: "Arrêter",
+              image: "Décrivez l'image…",
+              video: "Décrivez la vidéo…",
+            },
+            controls: {
+              ratio: "Ratio",
+              duplicate: "Dupliquer",
+              delete: "Supprimer",
+            },
       library: "Toiles",
       projects: "Mes toiles",
       create: "Nouvelle toile",

@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "เปลี่ยนเป็น {{language}}",
+      shortcuts: "แป้นพิมพ์ลัด",
+      lightTheme: "ธีมสว่าง",
+      darkTheme: "ธีมมืด",
+    },
+    home: {
+      start: "เริ่มต้น",
+    },
     videoWorkbench: {
       title: "สตูดิโอวิดีโอ",
       promptPlaceholder: "อธิบายการเคลื่อนไหวกล้อง…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "บันทึกลงเนื้อหา",
     },
     canvas: {
+      sidePanel: {
+              canvas: "แคนวาส",
+              assets: "เนื้อหา",
+              prompts: "คลังพร้อมป์",
+              elements: "องค์ประกอบแคนวาส",
+              searchNodes: "ค้นหาโหนด",
+              noNodes: "ไม่มีโหนด",
+              clearAll: "ล้างทั้งหมด",
+              searchAssets: "ค้นหาเนื้อหา",
+              noAssets: "ไม่มีเนื้อหา",
+            },
+            imageTools: {
+              copyPrompt: "คัดลอกพร้อมป์",
+              replace: "เปลี่ยนภาพ",
+              crop: "ครอป",
+              upscale: "ขยายความละเอียด",
+              view: "ดูภาพ",
+              more: "เพิ่มเติม",
+            },
+            nodeToolbar: {
+              info: "ข้อมูล",
+              removeTitle: "ลบโหนด",
+              downloadImage: "ดาวน์โหลดภาพ",
+              downloadVideo: "ดาวน์โหลดวิดีโอ",
+              downloadAudio: "ดาวน์โหลดเสียง",
+              editText: "แก้ไขข้อความ",
+              saveAsset: "บันทึกลงเนื้อหา",
+            },
+            configNode: {
+              title: "ตั้งค่าการสร้าง",
+              prompt: "พร้อมป์",
+              generate: "สร้าง",
+              stop: "หยุด",
+            },
+            promptPanel: {
+              generate: "สร้าง",
+              stop: "หยุด",
+              image: "อธิบายภาพที่ต้องการ…",
+              video: "อธิบายวิดีโอที่ต้องการ…",
+            },
+            controls: {
+              ratio: "สัดส่วน",
+              duplicate: "ทำซ้ำ",
+              delete: "ลบ",
+            },
       library: "คลังแคนวาส",
       projects: "แคนวาสของฉัน",
       create: "สร้างแคนวาสใหม",

@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Cambiar a {{language}}",
+      shortcuts: "Atajos de teclado",
+      lightTheme: "Paso al tema claro",
+      darkTheme: "Paso al tema oscuro",
+    },
+    home: {
+      start: "Empezar",
+    },
     videoWorkbench: {
       title: "Estudio de vídeo",
       promptPlaceholder: "Describe movimiento, ambiente…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Guardar en recursos",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Lienzo",
+              assets: "Recursos",
+              prompts: "Biblioteca de prompts",
+              elements: "Elementos de lienzo",
+              searchNodes: "Buscar nodos",
+              noNodes: "Sin nodos",
+              clearAll: "Limpiar todo",
+              searchAssets: "Buscar recursos",
+              noAssets: "Sin recursos",
+            },
+            imageTools: {
+              copyPrompt: "Copiar prompt",
+              replace: "Reemplazar imagen",
+              crop: "Recortar",
+              upscale: "Ampliar",
+              view: "Ver imagen",
+              more: "Más",
+            },
+            nodeToolbar: {
+              info: "Información",
+              removeTitle: "Eliminar nodo",
+              downloadImage: "Descargar imagen",
+              downloadVideo: "Descargar vídeo",
+              downloadAudio: "Descargar audio",
+              editText: "Editar texto",
+              saveAsset: "Guardar en recursos",
+            },
+            configNode: {
+              title: "Configuración",
+              prompt: "Prompt",
+              generate: "Generar",
+              stop: "Detener",
+            },
+            promptPanel: {
+              generate: "Generar",
+              stop: "Detener",
+              image: "Describe la imagen…",
+              video: "Describe el vídeo…",
+            },
+            controls: {
+              ratio: "Proporción",
+              duplicate: "Duplicar",
+              delete: "Eliminar",
+            },
       library: "Lienzos",
       projects: "Mis lienzos",
       create: "Nuevo lienzo",

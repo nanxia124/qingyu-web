@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Mudar para {{language}}",
+      shortcuts: "Atalhos de teclado",
+      lightTheme: "Tema claro",
+      darkTheme: "Tema escuro",
+    },
+    home: {
+      start: "Começar",
+    },
     videoWorkbench: {
       title: "Estúdio de vídeo",
       promptPlaceholder: "Descreva movimento, clima…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Salvar nos recursos",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Tela",
+              assets: "Recursos",
+              prompts: "Biblioteca de prompts",
+              elements: "Elementos da tela",
+              searchNodes: "Buscar nós",
+              noNodes: "Sem nós",
+              clearAll: "Limpar tudo",
+              searchAssets: "Buscar recursos",
+              noAssets: "Sem recursos",
+            },
+            imageTools: {
+              copyPrompt: "Copiar prompt",
+              replace: "Substituir imagem",
+              crop: "Recortar",
+              upscale: "Ampliar",
+              view: "Ver imagem",
+              more: "Mais",
+            },
+            nodeToolbar: {
+              info: "Info",
+              removeTitle: "Remover nó",
+              downloadImage: "Baixar imagem",
+              downloadVideo: "Baixar vídeo",
+              downloadAudio: "Baixar áudio",
+              editText: "Editar texto",
+              saveAsset: "Salvar nos recursos",
+            },
+            configNode: {
+              title: "Configuração",
+              prompt: "Prompt",
+              generate: "Gerar",
+              stop: "Parar",
+            },
+            promptPanel: {
+              generate: "Gerar",
+              stop: "Parar",
+              image: "Descreva a imagem…",
+              video: "Descreva o vídeo…",
+            },
+            controls: {
+              ratio: "Proporção",
+              duplicate: "Duplicar",
+              delete: "Excluir",
+            },
       library: "Canavas",
       projects: "Minhas telas",
       create: "Nova tela",

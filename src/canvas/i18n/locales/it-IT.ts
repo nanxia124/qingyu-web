@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Passa a {{language}}",
+      shortcuts: "Scorciatoie da tastiera",
+      lightTheme: "Tema chiaro",
+      darkTheme: "Tema scuro",
+    },
+    home: {
+      start: "Inizia",
+    },
     videoWorkbench: {
       title: "Studio video",
       promptPlaceholder: "Descrivi movimento, atmosfera…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Salva nelle risorse",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Tavola",
+              assets: "Risorse",
+              prompts: "Libreria prompt",
+              elements: "Elementi della tavola",
+              searchNodes: "Cerca nodi",
+              noNodes: "Nessun nodo",
+              clearAll: "Pulisci tutto",
+              searchAssets: "Cerca risorse",
+              noAssets: "Nessuna risorsa",
+            },
+            imageTools: {
+              copyPrompt: "Copia prompt",
+              replace: "Sostituisci immagine",
+              crop: "Ritaglia",
+              upscale: "Migliora risoluzione",
+              view: "Vedi immagine",
+              more: "Altro",
+            },
+            nodeToolbar: {
+              info: "Info",
+              removeTitle: "Rimuovi nodo",
+              downloadImage: "Scarica immagine",
+              downloadVideo: "Scarica video",
+              downloadAudio: "Scarica audio",
+              editText: "Modifica testo",
+              saveAsset: "Salva nelle risorse",
+            },
+            configNode: {
+              title: "Configurazione",
+              prompt: "Prompt",
+              generate: "Genera",
+              stop: "Ferma",
+            },
+            promptPanel: {
+              generate: "Genera",
+              stop: "Ferma",
+              image: "Descrivi l'immagine…",
+              video: "Descrivi il video…",
+            },
+            controls: {
+              ratio: "Proporzione",
+              duplicate: "Duplica",
+              delete: "Elimina",
+            },
       library: "Tavole",
       projects: "Le mie tele",
       create: "Nuova tela",

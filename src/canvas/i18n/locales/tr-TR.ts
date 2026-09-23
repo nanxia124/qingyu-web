@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "{{language}} diline geç",
+      shortcuts: "Klavye kısayolları",
+      lightTheme: "Açık tema",
+      darkTheme: "Koyu tema",
+    },
+    home: {
+      start: "Başla",
+    },
     videoWorkbench: {
       title: "Video stüdyosu",
       promptPlaceholder: "Kamera hareketini anlat…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Varlıklara kaydet",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Tuval",
+              assets: "Varlıklar",
+              prompts: "İstem kitaplığı",
+              elements: "Tuval öğeleri",
+              searchNodes: "Düğüm ara",
+              noNodes: "Düğüm yok",
+              clearAll: "Hepsini temizle",
+              searchAssets: "Varlık ara",
+              noAssets: "Varlık yok",
+            },
+            imageTools: {
+              copyPrompt: "İstemi kopyala",
+              replace: "Görseli değiştir",
+              crop: "Kırp",
+              upscale: "Büyült",
+              view: "Görseli görüntüle",
+              more: "Daha fazla",
+            },
+            nodeToolbar: {
+              info: "Bilgi",
+              removeTitle: "Düğümü sil",
+              downloadImage: "Görseli indir",
+              downloadVideo: "Videoyu indir",
+              downloadAudio: "Sesi indir",
+              editText: "Metni düzenle",
+              saveAsset: "Varlıklara kaydet",
+            },
+            configNode: {
+              title: "Üretim yapılandırması",
+              prompt: "İstem",
+              generate: "Üret",
+              stop: "Durdur",
+            },
+            promptPanel: {
+              generate: "Üret",
+              stop: "Durdur",
+              image: "Görseli anlat…",
+              video: "Videoyu anlat…",
+            },
+            controls: {
+              ratio: "Oran",
+              duplicate: "Çoğalt",
+              delete: "Sil",
+            },
       library: "Tuval kitaplığı",
       projects: "Tuvallerim",
       create: "Yeni tuval",

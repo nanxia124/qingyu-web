@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Переключить на {{language}}",
+      shortcuts: "Горячие клавиши",
+      lightTheme: "Светлая тема",
+      darkTheme: "Тёмная тема",
+    },
+    home: {
+      start: "Начать",
+    },
     videoWorkbench: {
       title: "Видео-студия",
       promptPlaceholder: "Опишите движение камеры…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Сохранить в ассеты",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Холст",
+              assets: "Ассеты",
+              prompts: "Библиотека промптов",
+              elements: "Элементы холста",
+              searchNodes: "Поиск узлов",
+              noNodes: "Нет узлов",
+              clearAll: "Очистить всё",
+              searchAssets: "Поиск ассетов",
+              noAssets: "Нет ассетов",
+            },
+            imageTools: {
+              copyPrompt: "Копировать промпт",
+              replace: "Заменить изображение",
+              crop: "Обрезать",
+              upscale: "Увеличить",
+              view: "Смотреть изображение",
+              more: "Ещё",
+            },
+            nodeToolbar: {
+              info: "Инфо",
+              removeTitle: "Удалить узел",
+              downloadImage: "Скачать изображение",
+              downloadVideo: "Скачать видео",
+              downloadAudio: "Скачать аудио",
+              editText: "Редактировать текст",
+              saveAsset: "Сохранить в ассеты",
+            },
+            configNode: {
+              title: "Конфигурация генерации",
+              prompt: "Промпт",
+              generate: "Создать",
+              stop: "Остановить",
+            },
+            promptPanel: {
+              generate: "Создать",
+              stop: "Остановить",
+              image: "Опишите изображение…",
+              video: "Опишите видео…",
+            },
+            controls: {
+              ratio: "Пропорция",
+              duplicate: "Дублировать",
+              delete: "Удалить",
+            },
       library: "Холсты",
       projects: "Мои холсты",
       create: "Новый холст",

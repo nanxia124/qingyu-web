@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "Beralih ke {{language}}",
+      shortcuts: "Pintasan keyboard",
+      lightTheme: "Tema terang",
+      darkTheme: "Tema gelap",
+    },
+    home: {
+      start: "Mulai",
+    },
     videoWorkbench: {
       title: "Studio video",
       promptPlaceholder: "Jelaskan gerakan kamera…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "Simpan ke aset",
     },
     canvas: {
+      sidePanel: {
+              canvas: "Kanvas",
+              assets: "Aset",
+              prompts: "Pustaka prompt",
+              elements: "Elemen kanvas",
+              searchNodes: "Cari node",
+              noNodes: "Tidak ada node",
+              clearAll: "Bersihkan semua",
+              searchAssets: "Cari aset",
+              noAssets: "Tidak ada aset",
+            },
+            imageTools: {
+              copyPrompt: "Salin prompt",
+              replace: "Ganti gambar",
+              crop: "Potong",
+              upscale: "Perbesar",
+              view: "Lihat gambar",
+              more: "Lainnya",
+            },
+            nodeToolbar: {
+              info: "Info",
+              removeTitle: "Hapus node",
+              downloadImage: "Unduh gambar",
+              downloadVideo: "Unduh video",
+              downloadAudio: "Unduh audio",
+              editText: "Edit teks",
+              saveAsset: "Simpan ke aset",
+            },
+            configNode: {
+              title: "Konfigurasi",
+              prompt: "Prompt",
+              generate: "Buat",
+              stop: "Hentikan",
+            },
+            promptPanel: {
+              generate: "Buat",
+              stop: "Hentikan",
+              image: "Jelaskan gambar yang Anda inginkan…",
+              video: "Jelaskan video yang Anda inginkan…",
+            },
+            controls: {
+              ratio: "Rasio",
+              duplicate: "Duplikat",
+              delete: "Hapus",
+            },
       library: "Galeri kanvas",
       projects: "Kanvas saya",
       create: "Kanvas baru",

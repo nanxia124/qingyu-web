@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "{{language}}に切替",
+      shortcuts: "キーボードショートカット",
+      lightTheme: "ライトテーマに切替",
+      darkTheme: "ダークテーマに切替",
+    },
+    home: {
+      start: "はじめる",
+    },
     videoWorkbench: {
       title: "動画スタジオ",
       promptPlaceholder: "カメラの動き・動作・雰囲気を説明…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "アセットに保存",
     },
     canvas: {
+      sidePanel: {
+              canvas: "キャンバス",
+              assets: "アセット",
+              prompts: "プロンプトライブラリ",
+              elements: "キャンバス要素",
+              searchNodes: "ノードを検索",
+              noNodes: "このキャンバスにはノードがありません",
+              clearAll: "すべてクリア",
+              searchAssets: "アセットを検索",
+              noAssets: "アセットなし",
+            },
+            imageTools: {
+              copyPrompt: "プロンプトをコピー",
+              replace: "画像を差し替え",
+              crop: "切り抜き",
+              upscale: "高解像度化",
+              view: "画像を見る",
+              more: "その他",
+            },
+            nodeToolbar: {
+              info: "情報",
+              removeTitle: "ノードを削除",
+              downloadImage: "画像をダウンロード",
+              downloadVideo: "動画をダウンロード",
+              downloadAudio: "音声をダウンロード",
+              editText: "テキストを編集",
+              saveAsset: "アセットに保存",
+            },
+            configNode: {
+              title: "生成設定",
+              prompt: "プロンプト",
+              generate: "生成",
+              stop: "停止",
+            },
+            promptPanel: {
+              generate: "生成",
+              stop: "停止",
+              image: "生成したい画像を説明",
+              video: "生成したい動画を説明",
+            },
+            controls: {
+              ratio: "比率",
+              duplicate: "複製",
+              delete: "削除",
+            },
       library: "キャンバスライブラリ",
       projects: "マイキャンバス",
       create: "新規キャンバス",

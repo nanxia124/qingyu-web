@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "التبديل إلى {{language}}",
+      shortcuts: "اختصارات لوحة المفاتيح",
+      lightTheme: "الوضع الفاتح",
+      darkTheme: "الوضع الداكن",
+    },
+    home: {
+      start: "ابدأ",
+    },
     videoWorkbench: {
       title: "استوديو الفيديو",
       promptPlaceholder: "صف الحركة والأجواء…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "حفظ في الأصول",
     },
     canvas: {
+      sidePanel: {
+              canvas: "اللوحة",
+              assets: "الأصول",
+              prompts: "مكتبة النصوص",
+              elements: "عناصر اللوحة",
+              searchNodes: "بحث في العقد",
+              noNodes: "لا توجد عقد",
+              clearAll: "مسح الكل",
+              searchAssets: "بحث في الأصول",
+              noAssets: "لا توجد أصول",
+            },
+            imageTools: {
+              copyPrompt: "نسخ النص",
+              replace: "استبدال الصورة",
+              crop: "قص",
+              upscale: "تكبير",
+              view: "عرض الصورة",
+              more: "المزيد",
+            },
+            nodeToolbar: {
+              info: "معلومات",
+              removeTitle: "حذف العقد",
+              downloadImage: "تنزيل الصورة",
+              downloadVideo: "تنزيل الفيديو",
+              downloadAudio: "تنزيل الصوت",
+              editText: "تحرير النص",
+              saveAsset: "حفظ في الأصول",
+            },
+            configNode: {
+              title: "إعداد التوليد",
+              prompt: "النص",
+              generate: "إنشاء",
+              stop: "إيقاف",
+            },
+            promptPanel: {
+              generate: "إنشاء",
+              stop: "إيقاف",
+              image: "صف الصورة…",
+              video: "صف الفيديو…",
+            },
+            controls: {
+              ratio: "النسبة",
+              duplicate: "تكرار",
+              delete: "حذف",
+            },
       library: "اللوحات",
       projects: "لوحاتي",
       create: "لوحة جديدة",

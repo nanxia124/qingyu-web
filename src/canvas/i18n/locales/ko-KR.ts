@@ -2,6 +2,15 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    topNav: {
+      switchLanguage: "{{language}}(으)로 전환",
+      shortcuts: "단축키",
+      lightTheme: "라이트 테마로",
+      darkTheme: "다크 테마로",
+    },
+    home: {
+      start: "시작하기",
+    },
     videoWorkbench: {
       title: "비디오 스튜디오",
       promptPlaceholder: "카메라 움직임, 분위기 설명…",
@@ -21,6 +30,51 @@ const override={
       saveAsset: "에셋에 저장",
     },
     canvas: {
+      sidePanel: {
+              canvas: "캔버스",
+              assets: "에셋",
+              prompts: "프롬프트 라이브러리",
+              elements: "캔버스 요소",
+              searchNodes: "노드 검색",
+              noNodes: "노드 없음",
+              clearAll: "모두 지우기",
+              searchAssets: "에셋 검색",
+              noAssets: "에셋 없음",
+            },
+            imageTools: {
+              copyPrompt: "프롬프트 복사",
+              replace: "이미지 교체",
+              crop: "자르기",
+              upscale: "고해상도화",
+              view: "이미지 보기",
+              more: "더보기",
+            },
+            nodeToolbar: {
+              info: "정보",
+              removeTitle: "노드 삭제",
+              downloadImage: "이미지 다운로드",
+              downloadVideo: "비디오 다운로드",
+              downloadAudio: "오디오 다운로드",
+              editText: "텍스트 편집",
+              saveAsset: "에셋에 저장",
+            },
+            configNode: {
+              title: "생성 설정",
+              prompt: "프롬프트",
+              generate: "생성",
+              stop: "정지",
+            },
+            promptPanel: {
+              generate: "생성",
+              stop: "정지",
+              image: "원하는 이미지 설명",
+              video: "원하는 비디오 설명",
+            },
+            controls: {
+              ratio: "비율",
+              duplicate: "복제",
+              delete: "삭제",
+            },
       library: "캔버스 라이브러리",
       projects: "내 캔버스",
       create: "새 캔버스",

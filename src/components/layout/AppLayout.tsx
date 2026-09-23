@@ -454,25 +454,27 @@ export default function AppLayout() {
         <div className="pointer-events-none fixed inset-x-0 top-4 z-[100] flex justify-center px-4">
           <div
             role="status"
-            className="pointer-events-auto w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl animate-[languageToastIn_0.35s_ease-out]"
+            className="pointer-events-auto flex w-full max-w-3xl flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-border bg-card px-5 py-4 shadow-2xl animate-[languageToastIn_0.35s_ease-out]"
           >
-            <div className="mb-3 flex items-center gap-2">
-              <Globe className="size-[20px] text-accent" />
-              <span className="text-[15px] font-semibold text-text">语言检测</span>
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-center gap-2">
+                <Globe className="size-[18px] shrink-0 text-accent" />
+                <span className="text-[15px] font-semibold text-text">语言检测</span>
+              </div>
+              <p className="text-[14px] leading-[22px] text-text-secondary">
+                检测到您的 IP 可能来自 {suggested.country || '当前地区'}，是否切换到{LANG_LABELS[suggested.locale] ?? suggested.locale}？
+              </p>
             </div>
-            <p className="mb-5 text-[14px] leading-[22px] text-text-secondary">
-              检测到您的 IP 可能来自 {suggested.country || '当前地区'}，是否切换到{LANG_LABELS[suggested.locale] ?? suggested.locale}？
-            </p>
-            <div className="flex gap-3">
+            <div className="flex shrink-0 gap-3">
               <button
                 onClick={() => pickLocale(suggested.locale)}
-                className="flex-1 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground hover:bg-accent-hover"
+                className="rounded-lg bg-accent px-6 py-2 text-[14px] font-medium text-accent-foreground hover:bg-accent-hover"
               >
                 切换
               </button>
               <button
                 onClick={() => setSuggested(null)}
-                className="flex-1 rounded-lg bg-secondary px-4 py-2 text-[14px] text-text-secondary hover:bg-surface-hover"
+                className="rounded-lg bg-secondary px-6 py-2 text-[14px] text-text-secondary hover:bg-surface-hover"
               >
                 保持当前
               </button>

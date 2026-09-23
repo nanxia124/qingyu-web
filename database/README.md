@@ -44,6 +44,8 @@
 
 `scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量和迁移版本后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
 
+`scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成备份和 SHA-256 校验文件，再按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务；异机副本仍需另配对象存储或另一台服务器。
+
 正式应用连接必须使用独立的业务数据库角色，不能长期复用 Appwrite 的 `user` 角色。前端不能直接连接 PostgreSQL；迁移、回滚和备份由服务器端受控执行。
 
 `0004_resource_integrity.sql` 使用复合外键拦截跨空间的生成结果、资产版本和文件关联，并限制评论只能回复同一资产下的评论。文件存储身份使用 PostgreSQL 16 支持的空值相等唯一约束，避免没有存储版本号时重复登记同一个对象。

@@ -600,10 +600,18 @@ export async function createPostgresBillingStore() {
       if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
       const workspaceId = owner.rows[0].workspace_id;
       const object = await client.query(`insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status) values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`, [workspaceId, owner.rows[0].id, file.storageProvider || 'local', file.bucket || 'qingyu-assets', file.objectKey, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream']);
-      const asset = await client.query(`insert into app.assets(workspace_id,created_by,asset_type,title,visibility,moderation_status,status) values($1,$2,$3,$4,'private','approved','active') returning id,title,asset_type,visibility,status,created_at,updated_at`, [workspaceId, owner.rows[0].id, assetType, title]);
-      const versionMetadata = { ...(file.metadata && typeof file.metadata === 'object' ? file.metadata : {}), mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum };
+      const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : {};
+      let generationTaskId = null;
+      if (metadata.source === 'image_generation') {
+        const task = await client.query(`insert into app.generation_tasks(workspace_id,created_by,task_type,provider,model,prompt,parameters,status,request_id,idempotency_key,started_at,finished_at)
+          values($1,$2,'image',$3,$4,$5,$6::jsonb,'succeeded',$7,$8,now(),now()) returning id`, [workspaceId, owner.rows[0].id, String(metadata.provider || 'configured').slice(0,80), String(metadata.model || '').slice(0,160), String(metadata.prompt || '').slice(0,2000), JSON.stringify({ quality: metadata.quality || null, size: metadata.size || null }), `asset-${crypto.randomUUID()}`, `asset-upload-${crypto.randomUUID()}`]);
+        generationTaskId = task.rows[0].id;
+      }
+      const asset = await client.query(`insert into app.assets(workspace_id,created_by,source_generation_id,asset_type,title,visibility,moderation_status,status) values($1,$2,$3,$4,$5,'private','approved','active') returning id,title,asset_type,visibility,status,created_at,updated_at`, [workspaceId, owner.rows[0].id, generationTaskId, assetType, title]);
+      const versionMetadata = { ...metadata, mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum };
       const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`, [asset.rows[0].id, workspaceId, owner.rows[0].id, JSON.stringify(versionMetadata)]);
       await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`, [version.rows[0].id, object.rows[0].id, workspaceId]);
+      if (generationTaskId) await client.query(`insert into app.generation_outputs(task_id,file_id,output_type,content_status,metadata) values($1,$2,'image','approved',$3::jsonb)`, [generationTaskId, object.rows[0].id, JSON.stringify({ assetId: asset.rows[0].id, width: metadata.width || null, height: metadata.height || null })]);
       await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('asset.created','asset',$1,$2,$3::jsonb)`, [asset.rows[0].id, workspaceId, JSON.stringify({ title, assetType })]);
       await client.query('commit');
       return { id: asset.rows[0].id, name: asset.rows[0].title, type: asset.rows[0].asset_type, visibility: asset.rows[0].visibility, favorited: false, createdAt: new Date(asset.rows[0].created_at).toISOString(), updatedAt: new Date(asset.rows[0].updated_at).toISOString(), objectKey: file.objectKey };

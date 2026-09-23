@@ -18,7 +18,9 @@ export class ApiError extends Error {
 }
 
 function getToken(): string | null {
-  return localStorage.getItem("token");
+  // 管理后台和普通站点共用请求封装。管理员登录后使用 admin_token，
+  // 普通用户继续使用 token；管理员 token 优先，避免后台页面请求被当成匿名请求。
+  return localStorage.getItem("admin_token") || localStorage.getItem("token") || localStorage.getItem("billing_token");
 }
 
 interface RequestOptions {

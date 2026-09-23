@@ -670,6 +670,37 @@ async function handleBilling(req, res, pathname, method, url) {
   return false;
 }
 
+// ===================== 团队路由（业务数据统一走 PostgreSQL） =====================
+async function handleTeams(req, res, pathname, method) {
+  if (!postgresBilling || !(pathname === "/teams" || pathname.startsWith("/teams/"))) return false;
+  const identity = getBillingIdentity(req);
+  if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
+  try {
+    if (pathname === "/teams" && method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listTeams(identity.sub));
+    }
+    if (pathname === "/teams" && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.createTeam(identity.sub, body.name));
+    }
+    const membersMatch = pathname.match(/^\/teams\/([^/]+)\/members$/);
+    if (membersMatch && method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listTeamMembers(identity.sub, membersMatch[1]));
+    }
+    const inviteMatch = pathname.match(/^\/teams\/([^/]+)\/invite$/);
+    if (inviteMatch && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.inviteToTeam(identity.sub, inviteMatch[1], body.email));
+    }
+    sendJSON(res, 404, { error: "团队接口不存在" });
+    return true;
+  } catch (error) {
+    console.error("[teams]", error.message);
+    sendJSON(res, 400, { error: error.message || "团队操作失败" });
+    return true;
+  }
+}
+
 // 对外暴露的用户视图（脱敏）
 function publicUser(u) {
   if (!u) return null;
@@ -738,6 +769,11 @@ const server = http.createServer(async (req, res) => {
 
     // ===== 计费系统路由（客户 + 管理端计费）=====
     if (await handleBilling(req, res, pathname, req.method, url)) {
+      return;
+    }
+
+    // ===== 团队路由（客户身份，数据来自 PostgreSQL）=====
+    if (await handleTeams(req, res, pathname, req.method)) {
       return;
     }
 

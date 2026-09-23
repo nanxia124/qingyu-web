@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -13,6 +13,9 @@ import {
   Sun,
   Moon,
   Globe,
+  Crown,
+  Languages,
+  ClipboardList,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
@@ -30,7 +33,8 @@ import {
   QingyuLogoIcon,
 } from './SidebarIcons'
 
-type IconComp = (props: { className?: string }) => React.ReactElement
+// 统一接受自定义 SVG 图标和 lucide-react 图标。
+type IconComp = React.ComponentType<{ className?: string }>
 
 const navItems: { to: string; label: string; tooltip: string; icon: IconComp; exact?: boolean; preload?: () => void; requireAuth?: boolean }[] = [
   { to: '/', label: 'nav.home', tooltip: 'nav.home', icon: SidebarHomeIcon, exact: true },
@@ -40,6 +44,8 @@ const navItems: { to: string; label: string; tooltip: string; icon: IconComp; ex
   { to: '/canvas?mode=recent', label: 'nav.canvas', tooltip: 'nav.canvas', icon: SidebarCanvasIcon, preload: () => { void import('@canvas/index') } },
   { to: '/assets', label: 'nav.assets', tooltip: 'nav.assets', icon: SidebarTeamIcon, requireAuth: true },
   { to: '/favorites', label: 'nav.favorites', tooltip: 'nav.favorites', icon: SidebarFavoriteIcon, requireAuth: true },
+  { to: '/subscription', label: 'nav.subscription', tooltip: 'nav.subscription', icon: Crown },
+  { to: '/plan', label: 'nav.plan', tooltip: 'nav.plan', icon: ClipboardList },
 ]
 
 const utilityItems: { to: string; label: string; tooltip: string; icon: typeof Settings; requireAuth?: boolean }[] = [
@@ -54,6 +60,9 @@ const pageTitleKeys: Record<string, string> = {
   '/canvas': 'nav.canvas',
   '/assets': 'nav.assets',
   '/favorites': 'nav.favorites',
+  '/subscription': 'nav.subscription',
+  '/translate': 'nav.translate',
+  '/plan': 'nav.plan',
   '/feedback': 'nav.teams',
   '/settings': 'nav.teams',
 }
@@ -62,7 +71,7 @@ export default function AppLayout() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => localStorage.getItem('sidebar-expanded') === 'true')
   const currentTitleKey = pageTitleKeys[location.pathname]
   const currentTitle = currentTitleKey ? t(currentTitleKey) : t('brand.name')
 
@@ -265,9 +274,9 @@ export default function AppLayout() {
         )}
       >
         {/* Logo 区：点 LOGO 切换折叠/展开，悬浮时变成折叠按钮图标 */}
-        <div className="flex h-[60px] shrink-0 items-center px-2">
+        <div className="mt-1 flex h-[44px] shrink-0 items-center gap-[10px] px-2">
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => { const next = !expanded; setExpanded(next); localStorage.setItem('sidebar-expanded', String(next)) }}
             className="group relative flex size-[34px] shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-nav-hover"
             title={expanded ? '收起侧栏' : '展开侧栏'}
           >
@@ -294,12 +303,12 @@ export default function AppLayout() {
               expanded ? 'w-[104px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
             )}
           >
-            <img src="/litzone-wordmark.svg" alt="litzone" className="h-7 w-[104px] max-w-none object-contain dark:invert" />
+            <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
           </span>
         </div>
 
         {/* 主导航 */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 py-2">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 pt-0 pb-2">
           {navItems.map((item) =>
             renderItem(item.to, item.label, item.tooltip, item.icon, item.exact, item.preload, item.requireAuth),
           )}
@@ -415,11 +424,6 @@ export default function AppLayout() {
               </div>
             )}
           </div>
-          {expanded && (
-            <div className="mt-2 px-1 text-[11px] leading-[16px] text-text-muted/50">
-              v1.0.0
-            </div>
-          )}
         </div>
       </aside>
 

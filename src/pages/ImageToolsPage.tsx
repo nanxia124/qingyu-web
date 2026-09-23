@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+﻿import { useRef, useState, useEffect } from 'react'
 import { ModelPicker } from '@canvas/components/model-picker'
 import { useConfigStore } from '@canvas/stores/use-config-store'
 import { createPortal } from 'react-dom'
@@ -67,7 +67,6 @@ function GeneratePanel() {
   const [queueNum, setQueueNum] = useState('10')
   const [generating, setGenerating] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
-  const [models, setModels] = useState<string[]>([])
   const [model, setModel] = useState('')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
@@ -158,7 +157,6 @@ function GeneratePanel() {
           m.includes('image') || m.includes('gpt-image') || m.includes('nano-banana') || m.includes('grok-imagine') || m.includes('seedream') || m.includes('gemini.*image') || m.includes('qwen-image')
         )
         const unique = Array.from(new Set(imageModels))
-        setModels(unique)
         if (unique.length && !model) setModel(unique[0])
       })
       .catch(() => {})
@@ -510,7 +508,15 @@ function GeneratePanel() {
             <Search className="size-[14px]" />
           </button>
           <div className="ml-auto flex items-center gap-2">
-            <input type="range" min={60} max={160} value={thumbScale} onChange={(e) => setThumbScale(Number(e.target.value))} className="w-24 accent-accent" />
+            <input
+              type="range"
+              min={60}
+              max={160}
+              value={thumbScale}
+              onChange={(e) => setThumbScale(Number(e.target.value))}
+              className="thumb-scale-slider w-24"
+              style={{ ['--pct' as string]: `${thumbScale - 60}%` }}
+            />
             <button onClick={() => setViewMode('list')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='list' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <List className="size-[14px]" />
             </button>
@@ -905,70 +911,214 @@ function BlendPanel() {
 }
 
 /* ── 图片翻译 Tab ── */
+const MAX_TRANSLATE_SIZE_MB = 10
+
+interface TranslatePair {
+  id: number
+  name: string
+  size: string
+  width: number
+  height: number
+  type: string
+  originalUrl: string
+  translatedUrl: string | null
+  sourceLang: string
+  prompt: string
+  status: 'pending' | 'translating' | 'done'
+}
+
+function formatTranslateSize(bytes: number) {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 function TranslatePanel() {
   const { t } = useTranslation()
+  const config = useConfigStore((s) => s.config)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
-  const [targetLang, setTargetLang] = useState('中文')
-  const [images, setImages] = useState<{ name: string; status: string }[]>([])
+  const [model, setModel] = useState('')
+  const [items, setItems] = useState<TranslatePair[]>([])
+  const [translating, setTranslating] = useState(false)
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
 
   const onUpload = (files: FileList | null) => {
     if (!files) return
-    const list = Array.from(files).map((f) => ({ name: f.name, status: '待翻译' }))
-    setImages((x) => [...x, ...list])
+    const accepted: TranslatePair[] = []
+    Array.from(files).forEach((f, i) => {
+      if (!f.type.startsWith('image/')) return
+      if (f.size > MAX_TRANSLATE_SIZE_MB * 1024 * 1024) return
+      const url = URL.createObjectURL(f)
+      const img = new Image()
+      img.onload = () => {
+        setItems((list) => list.map((p) =>
+          p.id === Date.now() + i ? { ...p, width: img.naturalWidth, height: img.naturalHeight } : p
+        ))
+      }
+      img.src = url
+      accepted.push({
+        id: Date.now() + i,
+        name: f.name,
+        size: formatTranslateSize(f.size),
+        width: 0,
+        height: 0,
+        type: f.type.split('/')[1]?.toUpperCase() || 'JPG',
+        originalUrl: url,
+        translatedUrl: null,
+        sourceLang: '英语',
+        prompt: '',
+        status: 'pending' as const,
+      })
+    })
+    if (accepted.length > 0) setItems((x) => [...x, ...accepted])
+  }
+
+  const startTranslate = () => {
+    if (items.length === 0 || translating) return
+    if (!isLoggedIn) { openAuthModal(); return }
+    setTranslating(true)
+    setItems((list) => list.map((p) => ({ ...p, status: 'translating' as const })))
+    setTimeout(() => {
+      setItems((list) => list.map((p) => ({ ...p, status: 'done' as const, translatedUrl: p.originalUrl })))
+      setTranslating(false)
+    }, 1500)
+  }
+
+  const clearAll = () => {
+    items.forEach((p) => URL.revokeObjectURL(p.originalUrl))
+    setItems([])
+  }
+
+  const removeItem = (id: number) => {
+    setItems((list) => list.filter((p) => p.id !== id))
+  }
+
+  const updateItem = (id: number, field: 'prompt', value: string) => {
+    setItems((list) => list.map((p) => p.id === id ? { ...p, [field]: value } : p))
   }
 
   return (
-    <div className="flex h-full gap-2">
-      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
-        <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl bg-card">
+      <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
+        {/* 模型选择器 */}
+        <div className="mb-6">
+          <ModelPicker
+            config={config}
+            value={model}
+            onChange={setModel}
+            capability="image"
+            fullWidth
+          />
+        </div>
+
+        {items.length === 0 && (
+          <div className="mb-6">
           <div
-            className="flex h-[360px] cursor-pointer flex-col items-center justify-center rounded-lg bg-[repeating-radial-gradient(circle_at_8px_8px,#242424_1.15px,transparent_1.15px)] bg-[length:16px_16px]"
+            className="flex h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
             onClick={() => fileRef.current?.click()}>
-            <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-secondary">
-              <Languages className="size-[20px] text-accent" />
-            </div>
-            <div className="text-[14px] font-medium text-text">{t("imageTools.blendClickUpload")}</div>
-            <div className="mt-1 text-[12px] text-text-secondary">PNG / JPG / WEBP / BMP</div>
+            <Upload className="mb-2 size-5 text-text-muted" />
+            <div className="text-[13px] font-medium text-text">点击上传需要翻译的图片</div>
+            <div className="mt-1 text-[11px] text-text-muted">PNG / JPG / WebP，单张 ≤ 10MB，可多选</div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => onUpload(e.target.files)} />
-          <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-text-secondary">{t("imageTools.transTarget")}</label>
-            <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
-              className="w-full rounded-xl bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent">
-              {(['zh','en','ja','ko','fr','de'] as const).map((l) => <option key={l}>{t(`imageTools.targetLangs.${l}`)}</option>)}
-            </select>
+        </div>
+        )}
+
+        {/* 图片对比区 */}
+        {items.length === 0 ? (
+          <div className="flex h-[300px] flex-col items-center justify-center text-text-muted">
+            <Languages className="mb-3 size-12" />
+            <span className="text-[14px]">上传图片后开始翻译</span>
           </div>
-          {images.length > 0 && (
-            <div className="mt-4 space-y-1.5">
-              {images.map((img, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2">
-                  <span className="truncate text-[12px] text-text">{img.name}</span>
-                  <span className="text-[12px] text-text-secondary">{img.status}</span>
+        ) : (
+          <div className="space-y-6">
+            {items.map((it, idx) => (
+              <div key={it.id} className="grid grid-cols-[260px_1fr_260px] gap-6 items-center">
+                {/* 原图 */}
+                <div className="text-center">
+                  <div className="mb-2 text-[13px] text-text-muted">{idx + 1}. {it.name}</div>
+                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl bg-secondary overflow-hidden">
+                    <img src={it.originalUrl} alt={it.name} className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.originalUrl, name: it.name }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
+                  </div>
+                  <div className="mt-2 text-[12px] text-text-muted">{it.type} · {it.size}</div>
                 </div>
-              ))}
+
+                {/* 中间输入框 */}
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <div className="flex size-7 items-center justify-center rounded-full bg-accent/20 text-accent text-[12px] font-bold">
+                    {idx + 1}
+                  </div>
+                  <textarea
+                    placeholder="输入要改成的文案…"
+                    value={it.prompt}
+                    onChange={(e) => updateItem(it.id, 'prompt', e.target.value)}
+                    rows={9}
+                    className="w-full resize-none rounded-lg bg-input px-3 py-2 text-[13px] text-text outline-none focus:ring-1 focus:ring-accent"
+                  />
+                  {it.status === 'translating' && <Loader2 className="size-4 animate-spin text-accent" />}
+                </div>
+
+                {/* 译后图 */}
+                <div className="text-center">
+                  <div className="mb-2 text-[13px] text-text-muted">
+                    {it.status === 'done' ? '翻译结果' : '等待翻译'}
+                  </div>
+                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl bg-secondary overflow-hidden">
+                    {it.translatedUrl ? (
+                      <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.translatedUrl!, name: it.name + " (翻译后)" }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
+                    ) : (
+                      <span className="text-[13px] text-text-muted">
+                        {it.status === 'translating' ? '翻译中…' : '上传后点击开始翻译'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center justify-center gap-2">
+                    {it.translatedUrl && (
+                      <>
+                        <button className="rounded-lg p-1.5 text-text-muted hover:bg-surface-hover hover:text-text">
+                          <RefreshCw className="size-4" />
+                        </button>
+                        <button className="rounded-lg p-1.5 text-text-muted hover:bg-surface-hover hover:text-text">
+                          <Download className="size-4" />
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => removeItem(it.id)} className="rounded-lg p-1.5 text-red-400 hover:bg-surface-hover">
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* 继续添加 */}
+            <div
+              className="flex h-[100px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
+              onClick={() => fileRef.current?.click()}>
+              <Plus className="mb-1 size-6 text-text-muted" />
+              <div className="text-[13px] text-text-muted">继续添加</div>
             </div>
-          )}
-        </div>
-        <div className="shrink-0 p-4 pt-2">
-          <button disabled={images.length === 0} onClick={() => { if (!isLoggedIn) { openAuthModal(); return } }}
-            className="flex h-[58px] w-full items-center justify-center gap-2 rounded-lg bg-accent text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40">
-            <Languages className="size-4" />{t('imageTools.transStart')}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-center rounded-xl bg-card">
-        <div className="flex flex-col items-center text-text-secondary">
-          <Languages className="mb-3 size-12" />
-          <span className="text-[14px]">{t("imageTools.transEmpty")}</span>
-        </div>
+      {/* 底部按钮 */}
+      <div className="shrink-0 p-4 pt-2">
+        <button onClick={startTranslate} disabled={items.length === 0 || translating}
+          className="flex h-[58px] w-full items-center justify-center gap-2 rounded-lg bg-accent text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40">
+          {translating ? <Loader2 className="size-4 animate-spin" /> : <Languages className="size-4" />}
+          {translating ? '翻译中…' : '开始翻译'}
+        </button>
       </div>
     </div>
   )
 }
-
 export default function ImageToolsPage() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabId>('generate')

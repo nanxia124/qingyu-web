@@ -90,7 +90,7 @@ function GeneratePanel() {
   const [storagePath, setStoragePath] = useState('')
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
 
-  const ratios = ['原图', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
+  const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
   const counts = ['1', '2', '3', '4']
 
@@ -284,8 +284,8 @@ function GeneratePanel() {
                 <button key={r} onClick={() => setRatio(r)}
                   className={cn('flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors',
                     ratio === r ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
-                  {r !== '原图' && <span className="inline-block size-[8px] rounded-[2px] bg-current opacity-60" style={{ width: r === '1:1' ? 8 : r === '2:3' || r === '3:4' || r === '4:5' ? 6 : 10, height: 8 }} />}
-                  {r}
+                  {r !== '__ORIG__' && <span className="inline-block size-[8px] rounded-[2px] bg-current opacity-60" style={{ width: r === '1:1' ? 8 : r === '2:3' || r === '3:4' || r === '4:5' ? 6 : 10, height: 8 }} />}
+                  {r === '__ORIG__' ? t('imageTools.original') : r}
                 </button>
               ))}
             </div>
@@ -432,8 +432,8 @@ function GeneratePanel() {
           </div>
           <div className="mb-2 flex items-center gap-1.5">
             <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queue1")}</button>
-            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+5张</button>
-            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+10张</button>
+            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+5`}{t('imageTools.queueCustom')}</button>
+            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+10`}{t('imageTools.queueCustom')}</button>
             <div className="flex h-[30px] w-[72px] items-center rounded-md bg-card px-2">
               <input value={queueNum} onChange={(e) => setQueueNum(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 className="w-full bg-transparent text-center text-[12px] text-text outline-none" />
@@ -443,7 +443,7 @@ function GeneratePanel() {
           </div>
           {showQueue && (
             <div className="mb-2 rounded-lg bg-card p-3 text-[12px] text-text-secondary">
-              {queueSize === 0 ? t('imageTools.queueEmpty') : `${t('imageTools.queueEmpty').slice(0,0)}队列中有 ${queueSize} 张待生成`}
+              {queueSize === 0 ? t('imageTools.queueEmpty') : `${t('imageTools.viewQueue')} ${queueSize}`}
             </div>
           )}
         </div>
@@ -609,18 +609,18 @@ function GeneratePanel() {
             className="w-[480px] rounded-xl bg-card p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-4 text-[16px] text-text">添加常用提示词</h3>
+            <h3 className="mb-4 text-[16px] text-text">{t("imageTools.addCommon")}</h3>
             <input
               type="text"
               value={newPromptTitle}
               onChange={(e) => setNewPromptTitle(e.target.value)}
-              placeholder="标题（如：日系动漫风）"
+              placeholder={t("imageTools.titlePlaceholder")}
               className="mb-3 w-full rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
             />
             <textarea
               value={newPromptContent}
               onChange={(e) => setNewPromptContent(e.target.value)}
-              placeholder="提示词内容"
+              placeholder={t("imageTools.promptContent")}
               rows={4}
               className="mb-4 w-full resize-none rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
             />
@@ -642,7 +642,7 @@ function GeneratePanel() {
                 onClick={() => setShowCommonPromptModal(false)}
                 className="h-[32px] rounded-md bg-secondary px-4 text-[13px] text-text-secondary hover:bg-surface-hover"
               >
-                取消
+                {t('imageTools.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -654,7 +654,7 @@ function GeneratePanel() {
                 }}
                 className="h-[32px] rounded-md bg-accent px-4 text-[13px] text-accent-foreground hover:bg-accent-hover"
               >
-                保存
+                {t('imageTools.save')}
               </button>
             </div>
           </div>
@@ -792,7 +792,7 @@ function BlendPanel() {
                 <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-secondary">
                   <Upload className="size-[20px] text-accent" />
                 </div>
-                <div className="text-[14px] font-medium text-text">点击或拖放图片</div>
+                <div className="text-[14px] font-medium text-text">{t("imageTools.blendClickUpload")}</div>
                 <div className="mt-1 text-[12px] text-text-secondary">PNG / JPG / WEBP / BMP</div>
               </div>
             ) : (
@@ -816,14 +816,14 @@ function BlendPanel() {
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
           <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-text-secondary">提示词</label>
+            <label className="mb-2 block text-[12px] font-medium text-text-secondary">{t("imageTools.prompt")}</label>
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4}
-              placeholder="描述你想要的效果…"
+              placeholder={t("imageTools.describeEffect")}
               className="min-h-[120px] w-full resize-none rounded-xl bg-card px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-secondary focus:ring-1 focus:ring-accent" />
           </div>
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-[12px] font-medium text-text-secondary">融合强度</label>
+              <label className="text-[12px] font-medium text-text-secondary">{t("imageTools.blendStrength")}</label>
               <span className="text-[12px] text-accent">{Math.round(strength * 100)}%</span>
             </div>
             <input type="range" min={0} max={100} value={strength * 100}
@@ -834,13 +834,13 @@ function BlendPanel() {
         <div className="shrink-0 p-4 pt-2">
           <button onClick={generate} disabled={!sourceImage || generating}
             className="flex h-[58px] w-full items-center justify-center gap-2 rounded-lg bg-accent text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40">
-            {generating ? <><Loader2 className="size-4 animate-spin" />生成中…</> : <><Sparkles className="size-4" />开始生成</>}
+            {generating ? <><Loader2 className="size-4 animate-spin" />{t("imageTools.generating")}</> : <><Sparkles className="size-4" />{t("imageTools.startGen")}</>}
           </button>
         </div>
       </div>
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex h-[44px] shrink-0 items-center px-4 pt-3">
-          <span className="text-[12px] font-medium text-text-secondary">结果预览</span>
+          <span className="text-[12px] font-medium text-text-secondary">{t("imageTools.blendResult")}</span>
         </div>
         <div className="flex-1 overflow-hidden p-4 pt-0">
           {!result && !generating ? (
@@ -849,15 +849,15 @@ function BlendPanel() {
                 <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-secondary">
                   <Wand2 className="size-[18px] text-accent" />
                 </div>
-                <span className="text-[14px] font-medium text-text">等待图片</span>
-                <span className="mt-1.5 text-[12px] text-text-secondary">上传后可查看原图、结果和滑动对比</span>
+                <span className="text-[14px] font-medium text-text">{t("imageTools.blendWait")}</span>
+                <span className="mt-1.5 text-[12px] text-text-secondary">{t("imageTools.blendWaitHint")}</span>
               </div>
             </div>
           ) : generating ? (
             <div className="flex h-full items-center justify-center rounded-lg bg-card">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="size-8 animate-spin text-accent" />
-                <span className="text-[14px] text-text-secondary">AI 正在处理…</span>
+                <span className="text-[14px] text-text-secondary">{t("imageTools.blendProcessing")}</span>
               </div>
             </div>
           ) : (
@@ -896,16 +896,16 @@ function TranslatePanel() {
             <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-secondary">
               <Languages className="size-[20px] text-accent" />
             </div>
-            <div className="text-[14px] font-medium text-text">点击或拖放图片</div>
+            <div className="text-[14px] font-medium text-text">{t("imageTools.blendClickUpload")}</div>
             <div className="mt-1 text-[12px] text-text-secondary">PNG / JPG / WEBP / BMP</div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => onUpload(e.target.files)} />
           <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-text-secondary">目标语言</label>
+            <label className="mb-2 block text-[12px] font-medium text-text-secondary">{t("imageTools.transTarget")}</label>
             <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
               className="w-full rounded-xl bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent">
-              {['中文', '英文', '日文', '韩文', '法文', '德文'].map((l) => <option key={l}>{l}</option>)}
+              {(['zh','en','ja','ko','fr','de'] as const).map((l) => <option key={l}>{t(`imageTools.targetLangs.${l}`)}</option>)}
             </select>
           </div>
           {images.length > 0 && (
@@ -922,14 +922,14 @@ function TranslatePanel() {
         <div className="shrink-0 p-4 pt-2">
           <button disabled={images.length === 0} onClick={() => { if (!isLoggedIn) { openAuthModal(); return } }}
             className="flex h-[58px] w-full items-center justify-center gap-2 rounded-lg bg-accent text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40">
-            <Languages className="size-4" />开始翻译
+            <Languages className="size-4" />{t('imageTools.transStart')}
           </button>
         </div>
       </div>
       <div className="flex min-w-0 flex-1 items-center justify-center rounded-xl bg-card">
         <div className="flex flex-col items-center text-text-secondary">
           <Languages className="mb-3 size-12" />
-          <span className="text-[14px]">上传图片后，翻译结果将显示在这里</span>
+          <span className="text-[14px]">{t("imageTools.transEmpty")}</span>
         </div>
       </div>
     </div>

@@ -1,3 +1,92 @@
-// TODO: real translation pending; fall back to en-US for now
 import enUS from "@canvas/i18n/locales/en-US";
-export default enUS;
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
+    nav: {
+      home: "홈",
+      chat: "채팅",
+      image: "이미지",
+      video: "비디오",
+      canvas: "캔버스",
+      assets: "에셋",
+      favorites: "즐겨찾기",
+      teams: "팀",
+      my: "내 정보",
+      darkMode: "다크",
+      lightMode: "라이트",
+      language: "언어",
+    },
+    mainHome: {
+      invite: "초대하고 적립",
+      points: "포인트 샵",
+      vip: "멤버십",
+      soon: "곧 공개",
+      text2img: "텍스트→이미지",
+      expand: "스마트 확장",
+      style: "스타일 변환",
+      works: "내 작품",
+      catAll: "전체",
+      catEcommerce: "커머스",
+      catPoster: "포스터",
+      catPhoto: "사진",
+      catIllustration: "일러스트",
+      recommend: "추천",
+      latest: "최신",
+      empty: "일치하는 작품이 없습니다",
+      inputPlaceholder: "만들고 싶은 것을 설명하세요…",
+    },
+    auth: {
+      subtitleLogin: "로그인 또는 회원가입",
+      useGoogle: "Google로 계속",
+      useApple: "Apple로 계속",
+      or: "또는",
+      email: "이메일",
+      nickname: "닉네임",
+      password: "비밀번호 (6자 이상)",
+      forgot: "비밀번호를 잊으셨나요?",
+      continue: "계속",
+      login: "로그인",
+      register: "회원가입",
+      agree: "계속 진행하면 ",
+      and: " 및 ",
+      terms: "이용약관",
+      privacy: "개인정보처리방침",
+    },
+    chat: {
+      greeting: "무엇을 도와드릴까요?",
+      send: "전송",
+    },
+    pages: {
+      settings: {
+        api: "API",
+        notify: "알림",
+        security: "보안",
+        appearance: "화면",
+        team: "팀",
+        data: "데이터",
+        serverAddr: "서버 URL",
+        save: "저장",
+      },
+      subscription: {
+        title: "요금제",
+        free: "무료",
+      },
+      wallet: {
+        title: "내 지갑",
+        currentBalance: "잔액",
+      },
+      feedback: {
+        title: "피드백",
+        submit: "전송",
+      },
+      favorites: {
+        title: "즐겨찾기",
+      },
+      assets: {
+        all: "전체",
+        image: "이미지",
+        video: "비디오",
+        upload: "업로드",
+      },
+    },
+};
+export default dm(enUS,override);

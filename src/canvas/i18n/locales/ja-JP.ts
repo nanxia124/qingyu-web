@@ -1,3 +1,92 @@
-// TODO: real translation pending; fall back to en-US for now
 import enUS from "@canvas/i18n/locales/en-US";
-export default enUS;
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
+    nav: {
+      home: "ホーム",
+      chat: "チャット",
+      image: "画像生成",
+      video: "動画",
+      canvas: "キャンバス",
+      assets: "アセット",
+      favorites: "お気に入り",
+      teams: "チーム",
+      my: "マイ",
+      darkMode: "ダーク",
+      lightMode: "ライト",
+      language: "言語",
+    },
+    mainHome: {
+      invite: "招待して獲得",
+      points: "ポイントショップ",
+      vip: "メンバーシップ",
+      soon: "近日公開",
+      text2img: "テキストから画像生成",
+      expand: "スマート拡張",
+      style: "スタイル変換",
+      works: "マイ作品",
+      catAll: "すべて",
+      catEcommerce: "EC",
+      catPoster: "ポスター",
+      catPhoto: "写真",
+      catIllustration: "イラスト",
+      recommend: "おすすめ",
+      latest: "最新",
+      empty: "該当する作品が見つかりません",
+      inputPlaceholder: "作りたいものを入力してください…",
+    },
+    auth: {
+      subtitleLogin: "サインインまたは新規登録",
+      useGoogle: "Googleで続行",
+      useApple: "Appleで続行",
+      or: "または",
+      email: "メールアドレス",
+      nickname: "ニックネーム",
+      password: "パスワード（6文字以上）",
+      forgot: "パスワードをお忘れですか？",
+      continue: "続行",
+      login: "サインイン",
+      register: "登録",
+      agree: "続行することで、",
+      and: "と",
+      terms: "利用規約",
+      privacy: "プライバシーポリシー",
+    },
+    chat: {
+      greeting: "こんにちは",
+      send: "送信",
+    },
+    pages: {
+      settings: {
+        api: "API",
+        notify: "通知",
+        security: "セキュリティ",
+        appearance: "外観",
+        team: "チーム",
+        data: "データ",
+        serverAddr: "サーバーURL",
+        save: "保存",
+      },
+      subscription: {
+        title: "プラン",
+        free: "無料",
+      },
+      wallet: {
+        title: "マイウォレット",
+        currentBalance: "残高",
+      },
+      feedback: {
+        title: "フィードバック",
+        submit: "送信",
+      },
+      favorites: {
+        title: "お気に入り",
+      },
+      assets: {
+        all: "すべて",
+        image: "画像",
+        video: "動画",
+        upload: "アップロード",
+      },
+    },
+};
+export default dm(enUS,override);

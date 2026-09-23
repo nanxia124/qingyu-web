@@ -1,3 +1,88 @@
-// TODO: real translation pending; fall back to en-US for now
+// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-export default enUS;
+function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
+const override = {
+    nav: {
+      home: "Accueil",
+      chat: "Discussion",
+      image: "Image",
+      video: "Vidéo",
+      canvas: "Toile",
+      assets: "Ressources",
+      favorites: "Favoris",
+      teams: "Équipes",
+      my: "Compte",
+      darkMode: "Sombre",
+      lightMode: "Clair",
+      language: "Langue",
+    },
+    mainHome: {
+      invite: "Inviter et gagner",
+      points: "Points",
+      vip: "Abonnement",
+      soon: "Bientôt",
+      text2img: "Texte en image",
+      expand: "Étendre",
+      style: "Styles",
+      works: "Mes œuvres",
+      catAll: "Tout",
+      catEcommerce: "E-commerce",
+      catPoster: "Affiche",
+      catPhoto: "Photo",
+      catIllustration: "Illustration",
+      recommend: "Recommandé",
+      latest: "Récent",
+      empty: "Aucune œuvre trouvée",
+    },
+    auth: {
+      subtitleLogin: "Connectez-vous ou inscrivez dich",
+      useGoogle: "Continuer avec Google",
+      useApple: "Continuer avec Apple",
+      or: "ou",
+      email: "E-mail",
+      nickname: "Pseudo",
+      password: "Mot de passe (min. 6)",
+      forgot: "Mot de passe oublié ?",
+      continue: "Continuer",
+      login: "Se connecter",
+      register: "S'inscrire",
+    },
+    chat: {
+      greeting: "Comment puis-je vous aider ?",
+      send: "Envoyer",
+    },
+    pages: {
+      settings: {
+        api: "API",
+        notify: "Notifications",
+        security: "Sécurité",
+        appearance: "Apparence",
+        team: "Équipe",
+        data: "Données",
+        serverAddr: "URL du serveur",
+        save: "Enregistrer",
+      },
+      subscription: {
+        title: "Plans",
+        free: "Gratuit",
+      },
+      wallet: {
+        title: "Mon portefeuille",
+        currentBalance: "Solde",
+      },
+      feedback: {
+        title: "Feedback",
+        submit: "Envoyer",
+      },
+      assets: {
+        upload: "Importer",
+        all: "Tout",
+        image: "Images",
+        video: "Vidéos",
+      },
+      favorites: {
+        title: "Favoris",
+      },
+    },
+};
+export default dm(enUS, override);

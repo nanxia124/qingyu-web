@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "الرئيسية",
       chat: "محادثة",
@@ -17,14 +17,19 @@ const override = {
       language: "اللغة",
     },
     mainHome: {
+      searchPlaceholder: "بحث…",
       invite: "ادعُ واكسب",
       points: "النقاط",
       vip: "العضوية",
       soon: "قريباً",
       text2img: "نص إلى صورة",
+      text2imgDesc: "حوّل النص إلى صورة",
       expand: "توسيع",
+      expandDesc: "توسيع تلقائي",
       style: "الأنماط",
+      styleDesc: "إعادة تصميم بنقرة واحدة",
       works: "أعمالي",
+      worksDesc: "إدارة السجل",
       catAll: "الكل",
       catEcommerce: "التجارة الإلكترونية",
       catPoster: "ملصق",
@@ -33,6 +38,7 @@ const override = {
       recommend: "موصى به",
       latest: "الأحدث",
       empty: "لا توجد أعمال",
+      inputPlaceholder: "صف ما تريد إنشاءه…",
     },
     auth: {
       subtitleLogin: "سجّل الدخول أو اشترك",
@@ -42,14 +48,15 @@ const override = {
       email: "البريد الإلكتروني",
       nickname: "اللقب",
       password: "كلمة المرور (6 أحرف على الأقل)",
-      forgot: "هل نسيت كلمة المرور?",
+      forgot: "هل نسيت كلمة المرور؟",
       continue: "متابعة",
       login: "تسجيل الدخول",
       register: "اشتراك",
     },
     chat: {
-      greeting: "كيف يمكنني مساعدتك?",
+      greeting: "كيف يمكنني مساعدتك؟",
       send: "إرسال",
+      selectModel: "اختر النموذج",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "البيانات",
         serverAddr: "رابط الخادم",
         save: "حفظ",
+        developing: "قريباً",
       },
       subscription: {
         title: "الباقات",
         free: "مجاني",
+        perMonth: "/شهر",
       },
       wallet: {
         title: "محفظتي",
@@ -74,15 +83,25 @@ const override = {
         title: "الملاحظات",
         submit: "إرسال",
       },
-      assets: {
-        upload: "رفع",
-        all: "الكل",
-        image: "الصور",
-        video: "الفيديوهات",
-      },
       favorites: {
         title: "المفضلة",
       },
+      assets: {
+        all: "الكل",
+        image: "الصور",
+        video: "الفيديوهات",
+        upload: "رفع",
+      },
+    },
+    imageTools: {
+      generate: "إنشاء",
+      blend: "دمج",
+      translate: "ترجمة",
+      clear: "مسح",
+      upload: "رفع",
+      cancel: "إلغاء",
+      save: "حفظ",
+      generating: "جارٍ الإنشاء…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

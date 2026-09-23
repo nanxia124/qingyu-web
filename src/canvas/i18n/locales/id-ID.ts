@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Beranda",
       chat: "Chat",
@@ -17,14 +17,19 @@ const override = {
       language: "Bahasa",
     },
     mainHome: {
+      searchPlaceholder: "Cari…",
       invite: "Undang dan dapatkan",
       points: "Poin",
       vip: "Keanggotaan",
       soon: "Segera",
       text2img: "Teks ke gambar",
+      text2imgDesc: "Ubah teks jadi gambar",
       expand: "Perluas",
+      expandDesc: "Perluas otomatis",
       style: "Gaya",
+      styleDesc: "Ganti gaya satu klik",
       works: "Karya saya",
+      worksDesc: "Kelola riwayat",
       catAll: "Semua",
       catEcommerce: "E-commerce",
       catPoster: "Poster",
@@ -33,6 +38,7 @@ const override = {
       recommend: "Rekomendasi",
       latest: "Terbaru",
       empty: "Tidak ada karya",
+      inputPlaceholder: "Jelaskan yang ingin kamu buat…",
     },
     auth: {
       subtitleLogin: "Masuk atau daftar",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Ada yang bisa saya bantu?",
       send: "Kirim",
+      selectModel: "Pilih model",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Data",
         serverAddr: "URL server",
         save: "Simpan",
+        developing: "Segera",
       },
       subscription: {
         title: "Paket",
         free: "Gratis",
+        perMonth: "/bln",
       },
       wallet: {
         title: "Dompet saya",
@@ -74,15 +83,25 @@ const override = {
         title: "Umpan balik",
         submit: "Kirim",
       },
-      assets: {
-        upload: "Unggah",
-        all: "Semua",
-        image: "Gambar",
-        video: "Video",
-      },
       favorites: {
         title: "Favorit",
       },
+      assets: {
+        all: "Semua",
+        image: "Gambar",
+        video: "Video",
+        upload: "Unggah",
+      },
+    },
+    imageTools: {
+      generate: "Buat",
+      blend: "Gabung",
+      translate: "Terjemahkan",
+      clear: "Bersihkan",
+      upload: "Unggah",
+      cancel: "Batal",
+      save: "Simpan",
+      generating: "Sedang membuat…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

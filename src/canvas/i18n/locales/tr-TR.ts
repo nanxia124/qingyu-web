@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Ana sayfa",
       chat: "Sohbet",
@@ -17,14 +17,19 @@ const override = {
       language: "Dil",
     },
     mainHome: {
+      searchPlaceholder: "Ara…",
       invite: "Davet et kazan",
       points: "Puanlar",
       vip: "Üyelik",
       soon: "Yakında",
       text2img: "Metinden görsele",
+      text2imgDesc: "Metni görsele dönüştürें",
       expand: "Genişlet",
+      expandDesc: "Otomatik genişletme",
       style: "Stil",
+      styleDesc: "Tek tıkla yeniden stil",
       works: "Çalışmalarım",
+      worksDesc: "Geçmişi yönet",
       catAll: "Tümü",
       catEcommerce: "E-ticaret",
       catPoster: "Poster",
@@ -33,6 +38,7 @@ const override = {
       recommend: "Önerilen",
       latest: "En son",
       empty: "Çalışma bulunamadı",
+      inputPlaceholder: "Oluşturmak istediğini anlat…",
     },
     auth: {
       subtitleLogin: "Giriş yap veya kaydol",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Size nasıl yardım edebilirim?",
       send: "Gönder",
+      selectModel: "Model seç",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Veriler",
         serverAddr: "Sunucu URL",
         save: "Kaydet",
+        developing: "Yakında",
       },
       subscription: {
         title: "Paketler",
         free: "Ücretsiz",
+        perMonth: "/ay",
       },
       wallet: {
         title: "Cüzdanım",
@@ -74,15 +83,25 @@ const override = {
         title: "Geri bildirim",
         submit: "Gönder",
       },
-      assets: {
-        upload: "Yükle",
-        all: "Tümü",
-        image: "Görseller",
-        video: "Videolar",
-      },
       favorites: {
         title: "Favoriler",
       },
+      assets: {
+        all: "Tümü",
+        image: "Görseller",
+        video: "Videolar",
+        upload: "Yükle",
+      },
+    },
+    imageTools: {
+      generate: "Üret",
+      blend: "Karıştır",
+      translate: "Çevir",
+      clear: "Temizle",
+      upload: "Yükle",
+      cancel: "İptal",
+      save: "Kaydet",
+      generating: "Üretiliyor…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

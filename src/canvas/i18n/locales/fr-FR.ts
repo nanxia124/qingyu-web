@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Accueil",
       chat: "Discussion",
@@ -17,14 +17,19 @@ const override = {
       language: "Langue",
     },
     mainHome: {
+      searchPlaceholder: "Rechercher…",
       invite: "Inviter et gagner",
       points: "Points",
       vip: "Abonnement",
       soon: "Bientôt",
       text2img: "Texte en image",
+      text2imgDesc: "Transforme le texte en image",
       expand: "Étendre",
+      expandDesc: "Auto-extrapolation",
       style: "Styles",
+      styleDesc: "Restyle en un clic",
       works: "Mes œuvres",
+      worksDesc: "Gérer l'historique",
       catAll: "Tout",
       catEcommerce: "E-commerce",
       catPoster: "Affiche",
@@ -33,9 +38,10 @@ const override = {
       recommend: "Recommandé",
       latest: "Récent",
       empty: "Aucune œuvre trouvée",
+      inputPlaceholder: "Décris ce que tu veux créer…",
     },
     auth: {
-      subtitleLogin: "Connectez-vous ou inscrivez dich",
+      subtitleLogin: "Connectez-vous ou inscrivez-vous",
       useGoogle: "Continuer avec Google",
       useApple: "Continuer avec Apple",
       or: "ou",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Comment puis-je vous aider ?",
       send: "Envoyer",
+      selectModel: "Choisir un modèle",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Données",
         serverAddr: "URL du serveur",
         save: "Enregistrer",
+        developing: "Bientôt",
       },
       subscription: {
         title: "Plans",
         free: "Gratuit",
+        perMonth: "/mois",
       },
       wallet: {
         title: "Mon portefeuille",
@@ -74,15 +83,25 @@ const override = {
         title: "Feedback",
         submit: "Envoyer",
       },
-      assets: {
-        upload: "Importer",
-        all: "Tout",
-        image: "Images",
-        video: "Vidéos",
-      },
       favorites: {
         title: "Favoris",
       },
+      assets: {
+        all: "Tout",
+        image: "Images",
+        video: "Vidéos",
+        upload: "Importer",
+      },
+    },
+    imageTools: {
+      generate: "Générer",
+      blend: "Fusionner",
+      translate: "Traduire",
+      clear: "Effacer",
+      upload: "Téléverser",
+      cancel: "Annuler",
+      save: "Enregistrer",
+      generating: "Génération…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

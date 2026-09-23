@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "หน้าแรก",
       chat: "แชท",
@@ -17,14 +17,19 @@ const override = {
       language: "ภาษา",
     },
     mainHome: {
+      searchPlaceholder: "ค้นหา…",
       invite: "เชิญและรับรางวัล",
       points: "คะแนน",
       vip: "สมาชิก",
       soon: "เร็วๆ นี้",
       text2img: "ข้อความเป็นภาพ",
+      text2imgDesc: "แปลงข้อความเป็นภาพ",
       expand: "ขยาย",
+      expandDesc: "ขยายอัตโนมัต",
       style: "สไตล์",
+      styleDesc: "เปลี่ยนสไตล์คลิกเดียว",
       works: "ผลงานของฉัน",
+      worksDesc: "จัดการประวัติ",
       catAll: "ทั้งหมด",
       catEcommerce: "อีคอมเมิร์ซ",
       catPoster: "โปสเตอร์",
@@ -33,6 +38,7 @@ const override = {
       recommend: "แนะนำ",
       latest: "ล่าสุด",
       empty: "ไม่พบผลงาน",
+      inputPlaceholder: "อธิบายสิ่งที่ต้องการสร้าง…",
     },
     auth: {
       subtitleLogin: "เข้าสู่ระบบหรือสมัครสมาชิก",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "มีอะไรให้ช่วยไหม?",
       send: "ส่ง",
+      selectModel: "เลือกโมเดล",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "ข้อมูล",
         serverAddr: "URL เซิร์ฟเวอร์",
         save: "บันทึก",
+        developing: "เร็วๆ นี้",
       },
       subscription: {
         title: "แผน",
         free: "ฟรี",
+        perMonth: "/เดือน",
       },
       wallet: {
         title: "กระเป๋าเงิน",
@@ -74,15 +83,25 @@ const override = {
         title: "ข้อเสนอแนะ",
         submit: "ส่ง",
       },
-      assets: {
-        upload: "อัปโหลด",
-        all: "ทั้งหมด",
-        image: "ภาพ",
-        video: "วิดีโอ",
-      },
       favorites: {
         title: "รายการโปรด",
       },
+      assets: {
+        all: "ทั้งหมด",
+        image: "ภาพ",
+        video: "วิดีโอ",
+        upload: "อัปโหลด",
+      },
+    },
+    imageTools: {
+      generate: "สร้าง",
+      blend: "ผสม",
+      translate: "แปล",
+      clear: "ล้าง",
+      upload: "อัปโหลด",
+      cancel: "ยกเลิก",
+      save: "บันทึก",
+      generating: "กำลังสร้าง…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

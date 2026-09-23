@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "होम",
       chat: "चैट",
@@ -17,14 +17,19 @@ const override = {
       language: "भाषा",
     },
     mainHome: {
+      searchPlaceholder: "खोजें…",
       invite: "आमंत्रित करें और कमाएं",
       points: "पॉइंट्स",
       vip: "सदस्यता",
       soon: "जल्द",
       text2img: "टेक्स्ट से इमेज",
+      text2imgDesc: "टेक्स्ट से इमेज बनाएं",
       expand: "विस्तार",
+      expandDesc: "ऑटो विस्तार",
       style: "स्टाइल",
+      styleDesc: "एक क्लिक में स्टाइल",
       works: "मेरे काम",
+      worksDesc: "इतिहास प्रबंधित करें",
       catAll: "सभी",
       catEcommerce: "ई-कॉमर्स",
       catPoster: "पोस्टर",
@@ -33,6 +38,7 @@ const override = {
       recommend: "अनुशंसित",
       latest: "नवीनतम",
       empty: "कोई काम नहीं",
+      inputPlaceholder: "क्या बनाना है बताएं…",
     },
     auth: {
       subtitleLogin: "साइन इन करें या रजिस्टर करें",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "मैं आपकी कैसे मदद कर सकता हूँ?",
       send: "भेजें",
+      selectModel: "मॉडल चुनें",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "डेटा",
         serverAddr: "सर्वर URL",
         save: "सहेजें",
+        developing: "जल्द",
       },
       subscription: {
         title: "प्लान",
         free: "मुफ़्त",
+        perMonth: "/माह",
       },
       wallet: {
         title: "मेरा वॉलेट",
@@ -74,15 +83,25 @@ const override = {
         title: "प्रतिक्रिया",
         submit: "सबमिट करें",
       },
-      assets: {
-        upload: "अपलोड",
-        all: "सभी",
-        image: "इमेज",
-        video: "वीडियो",
-      },
       favorites: {
         title: "पसंदीदा",
       },
+      assets: {
+        all: "सभी",
+        image: "इमेज",
+        video: "वीडियो",
+        upload: "अपलोड",
+      },
+    },
+    imageTools: {
+      generate: "जनरेट",
+      blend: "मिलाएं",
+      translate: "अनुवाद",
+      clear: "साफ़",
+      upload: "अपलोड",
+      cancel: "रद्द",
+      save: "सहेजें",
+      generating: "जनरेट हो रहा…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

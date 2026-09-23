@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Главная",
       chat: "Чат",
@@ -17,14 +17,19 @@ const override = {
       language: "Язык",
     },
     mainHome: {
+      searchPlaceholder: "Поиск…",
       invite: "Пригласить и получить",
       points: "Баллы",
       vip: "Подписка",
       soon: "Скоро",
       text2img: "Текст в изображение",
+      text2imgDesc: "Превратить текст в изображение",
       expand: "Расширить",
+      expandDesc: "Авто-достраивание",
       style: "Стили",
+      styleDesc: "Смена стиля в один клик",
       works: "Мои работы",
+      worksDesc: "История",
       catAll: "Все",
       catEcommerce: "Электронная коммерция",
       catPoster: "Плакат",
@@ -33,6 +38,7 @@ const override = {
       recommend: "Рекомендуем",
       latest: "Новое",
       empty: "Работы не найдены",
+      inputPlaceholder: "Опишите, что хотите создать…",
     },
     auth: {
       subtitleLogin: "Войдите или зарегистрируйтесь",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Чем могу помочь?",
       send: "Отправить",
+      selectModel: "Выбор модели",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Данные",
         serverAddr: "URL сервера",
         save: "Сохранить",
+        developing: "Скоро",
       },
       subscription: {
         title: "Тарифы",
         free: "Бесплатно",
+        perMonth: "/мес",
       },
       wallet: {
         title: "Мой кошелёк",
@@ -74,15 +83,25 @@ const override = {
         title: "Обратная связь",
         submit: "Отправить",
       },
-      assets: {
-        upload: "Загрузить",
-        all: "Все",
-        image: "Изображения",
-        video: "Видео",
-      },
       favorites: {
         title: "Избранное",
       },
+      assets: {
+        all: "Все",
+        image: "Изображения",
+        video: "Видео",
+        upload: "Загрузить",
+      },
+    },
+    imageTools: {
+      generate: "Создать",
+      blend: "Смешать",
+      translate: "Перевод",
+      clear: "Очистить",
+      upload: "Загрузить",
+      cancel: "Отмена",
+      save: "Сохранить",
+      generating: "Создание…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

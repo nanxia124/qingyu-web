@@ -1,3 +1,4 @@
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
@@ -16,14 +17,19 @@ const override={
       language: "言語",
     },
     mainHome: {
+      searchPlaceholder: "作品・チュートリアルを検索…",
       invite: "招待して獲得",
-      points: "ポイントショップ",
+      points: "ポイント",
       vip: "メンバーシップ",
       soon: "近日公開",
-      text2img: "テキストから画像生成",
+      text2img: "テキストから画像",
+      text2imgDesc: "テキストを画像に変換",
       expand: "スマート拡張",
+      expandDesc: "自動アウトペイント",
       style: "スタイル変換",
+      styleDesc: "ワンクリックで変更",
       works: "マイ作品",
+      worksDesc: "履歴を管理",
       catAll: "すべて",
       catEcommerce: "EC",
       catPoster: "ポスター",
@@ -31,29 +37,26 @@ const override={
       catIllustration: "イラスト",
       recommend: "おすすめ",
       latest: "最新",
-      empty: "該当する作品が見つかりません",
-      inputPlaceholder: "作りたいものを入力してください…",
+      empty: "該当する作品がありません",
+      inputPlaceholder: "作りたいものを入力…",
     },
     auth: {
       subtitleLogin: "サインインまたは新規登録",
       useGoogle: "Googleで続行",
       useApple: "Appleで続行",
       or: "または",
-      email: "メールアドレス",
+      email: "メール",
       nickname: "ニックネーム",
       password: "パスワード（6文字以上）",
       forgot: "パスワードをお忘れですか？",
       continue: "続行",
       login: "サインイン",
       register: "登録",
-      agree: "続行することで、",
-      and: "と",
-      terms: "利用規約",
-      privacy: "プライバシーポリシー",
     },
     chat: {
       greeting: "こんにちは",
       send: "送信",
+      selectModel: "モデルを選択",
     },
     pages: {
       settings: {
@@ -65,10 +68,12 @@ const override={
         data: "データ",
         serverAddr: "サーバーURL",
         save: "保存",
+        developing: "近日公開",
       },
       subscription: {
         title: "プラン",
         free: "無料",
+        perMonth: "/月",
       },
       wallet: {
         title: "マイウォレット",
@@ -87,6 +92,16 @@ const override={
         video: "動画",
         upload: "アップロード",
       },
+    },
+    imageTools: {
+      generate: "生成",
+      blend: "ブレンド",
+      translate: "翻訳",
+      clear: "クリア",
+      upload: "アップロード",
+      cancel: "キャンセル",
+      save: "保存",
+      generating: "生成中…",
     },
 };
 export default dm(enUS,override);

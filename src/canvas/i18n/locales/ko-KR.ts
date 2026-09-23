@@ -1,3 +1,4 @@
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
@@ -16,14 +17,19 @@ const override={
       language: "언어",
     },
     mainHome: {
+      searchPlaceholder: "작품·튜토리얼 검색…",
       invite: "초대하고 적립",
-      points: "포인트 샵",
+      points: "포인트",
       vip: "멤버십",
       soon: "곧 공개",
       text2img: "텍스트→이미지",
+      text2imgDesc: "글자를 이미지로",
       expand: "스마트 확장",
+      expandDesc: "자동 외부 채우기",
       style: "스타일 변환",
+      styleDesc: "원클릭 스타일 변경",
       works: "내 작품",
+      worksDesc: "기록 관리",
       catAll: "전체",
       catEcommerce: "커머스",
       catPoster: "포스터",
@@ -46,14 +52,11 @@ const override={
       continue: "계속",
       login: "로그인",
       register: "회원가입",
-      agree: "계속 진행하면 ",
-      and: " 및 ",
-      terms: "이용약관",
-      privacy: "개인정보처리방침",
     },
     chat: {
       greeting: "무엇을 도와드릴까요?",
       send: "전송",
+      selectModel: "모델 선택",
     },
     pages: {
       settings: {
@@ -65,10 +68,12 @@ const override={
         data: "데이터",
         serverAddr: "서버 URL",
         save: "저장",
+        developing: "곧 공개",
       },
       subscription: {
         title: "요금제",
         free: "무료",
+        perMonth: "/월",
       },
       wallet: {
         title: "내 지갑",
@@ -87,6 +92,16 @@ const override={
         video: "비디오",
         upload: "업로드",
       },
+    },
+    imageTools: {
+      generate: "생성",
+      blend: "블렌드",
+      translate: "번역",
+      clear: "지우기",
+      upload: "업로드",
+      cancel: "취소",
+      save: "저장",
+      generating: "생성 중…",
     },
 };
 export default dm(enUS,override);

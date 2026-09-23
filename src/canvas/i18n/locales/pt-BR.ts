@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Início",
       chat: "Chat",
@@ -17,14 +17,19 @@ const override = {
       language: "Idioma",
     },
     mainHome: {
+      searchPlaceholder: "Buscar…",
       invite: "Convide e ganhe",
       points: "Pontos",
       vip: "Assinatura",
       soon: "Em breve",
       text2img: "Texto para imagem",
+      text2imgDesc: "Transforme texto em imagem",
       expand: "Expandir",
+      expandDesc: "Preenchimento automático",
       style: "Estilos",
+      styleDesc: "Restilo com um clique",
       works: "Minhas obras",
+      worksDesc: "Gerenciar histórico",
       catAll: "Tudo",
       catEcommerce: "E-commerce",
       catPoster: "Pôster",
@@ -33,6 +38,7 @@ const override = {
       recommend: "Recomendados",
       latest: "Recentes",
       empty: "Nenhuma obra encontrada",
+      inputPlaceholder: "Descreva o que quer criar…",
     },
     auth: {
       subtitleLogin: "Entre ou cadastre-se",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Como posso ajudar?",
       send: "Enviar",
+      selectModel: "Selecionar modelo",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Dados",
         serverAddr: "URL do servidor",
         save: "Salvar",
+        developing: "Em breve",
       },
       subscription: {
         title: "Planos",
         free: "Grátis",
+        perMonth: "/mês",
       },
       wallet: {
         title: "Minha carteira",
@@ -74,15 +83,25 @@ const override = {
         title: "Feedback",
         submit: "Enviar",
       },
-      assets: {
-        upload: "Enviar",
-        all: "Tudo",
-        image: "Imagens",
-        video: "Vídeos",
-      },
       favorites: {
         title: "Favoritos",
       },
+      assets: {
+        all: "Tudo",
+        image: "Imagens",
+        video: "Vídeos",
+        upload: "Enviar",
+      },
+    },
+    imageTools: {
+      generate: "Gerar",
+      blend: "Fundir",
+      translate: "Traduzir",
+      clear: "Limpar",
+      upload: "Enviar",
+      cancel: "Cancelar",
+      save: "Salvar",
+      generating: "Gerando…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

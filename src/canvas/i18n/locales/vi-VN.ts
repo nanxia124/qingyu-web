@@ -1,7 +1,7 @@
-// Auto-generated partial translation: main-site strings. Canvas editor strings fall back to en-US.
+// Auto-generated partial translation: main-site strings. Canvas editor falls back to en-US.
 import enUS from "@canvas/i18n/locales/en-US";
-function dm(a, b) { const o = { ...a }; for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k])) o[k] = dm(a[k] || {}, b[k]); else o[k] = b[k]; } return o; }
-const override = {
+function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
+const override={
     nav: {
       home: "Trang chủ",
       chat: "Trò chuyện",
@@ -17,14 +17,19 @@ const override = {
       language: "Ngôn ngữ",
     },
     mainHome: {
+      searchPlaceholder: "Tìm kiếm…",
       invite: "Mời và nhận quà",
       points: "Điểm",
       vip: "Gói hội viên",
       soon: "Sắp có",
       text2img: "Văn bản thành ảnh",
+      text2imgDesc: "Biến văn bản thành ảnh",
       expand: "Mở rộng",
+      expandDesc: "Tự mở rộng",
       style: "Phong cách",
+      styleDesc: "Đổi phong cách một chạm",
       works: "Tác phẩm của tôi",
+      worksDesc: "Quản lý lịch sử",
       catAll: "Tất cả",
       catEcommerce: "Thương mại điện tử",
       catPoster: "Áp phích",
@@ -33,6 +38,7 @@ const override = {
       recommend: "Đề xuất",
       latest: "Mới nhất",
       empty: "Không tìm thấy tác phẩm",
+      inputPlaceholder: "Mô tả điều bạn muốn tạo…",
     },
     auth: {
       subtitleLogin: "Đăng nhập hoặc đăng ký",
@@ -50,6 +56,7 @@ const override = {
     chat: {
       greeting: "Tôi có thể giúp gì cho bạn?",
       send: "Gửi",
+      selectModel: "Chọn mô hình",
     },
     pages: {
       settings: {
@@ -61,10 +68,12 @@ const override = {
         data: "Dữ liệu",
         serverAddr: "URL máy chủ",
         save: "Lưu",
+        developing: "Sắp có",
       },
       subscription: {
         title: "Gói cước",
         free: "Miễn phí",
+        perMonth: "/tháng",
       },
       wallet: {
         title: "Ví của tôi",
@@ -74,15 +83,25 @@ const override = {
         title: "Phản hồi",
         submit: "Gửi",
       },
-      assets: {
-        upload: "Tải lên",
-        all: "Tất cả",
-        image: "Ảnh",
-        video: "Video",
-      },
       favorites: {
         title: "Yêu thích",
       },
+      assets: {
+        all: "Tất cả",
+        image: "Ảnh",
+        video: "Video",
+        upload: "Tải lên",
+      },
+    },
+    imageTools: {
+      generate: "Tạo",
+      blend: "Trộn",
+      translate: "Dịch",
+      clear: "Xóa",
+      upload: "Tải lên",
+      cancel: "Hủy",
+      save: "Lưu",
+      generating: "Đang tạo…",
     },
 };
-export default dm(enUS, override);
+export default dm(enUS,override);

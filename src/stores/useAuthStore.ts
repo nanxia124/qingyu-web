@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 import { account, teams } from "@/lib/appwrite";
 import { ID, AppwriteException } from "appwrite";
 import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
+import { api } from "@/lib/api";
+import { billingApi, setBillingToken } from "@/lib/billing";
 
 // 类型定义
 export interface User {
@@ -155,6 +157,20 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchTeams: async () => {
+        // 业务团队以 PostgreSQL 为准；登录后先建立计费/业务会话，再读取团队。
+        // 失败时保留 Appwrite 兜底，避免后端短暂不可用导致前台没有团队列表。
+        try {
+          const authUser = get().user;
+          if (authUser) {
+            const billingSession = await billingApi.login({ userId: authUser.id, email: authUser.email });
+            setBillingToken(billingSession.token);
+            const postgresTeams = await api.get<Team[]>("/teams");
+            set({ teams: postgresTeams, currentTeam: postgresTeams[0] || null });
+            return;
+          }
+        } catch {
+          // 继续使用 Appwrite 旧数据作为短暂兜底。
+        }
         try {
           const teamList = await teams.list();
           // 转换格式

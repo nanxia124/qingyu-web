@@ -787,6 +787,11 @@ async function handleAssets(req, res, pathname, method, url) {
       const rawName = String(req.headers["x-asset-name"] || "未命名文件");
       let title = rawName;
       try { title = decodeURIComponent(rawName); } catch { /* 使用原始文件名 */ }
+      let metadata = {};
+      try {
+        const rawMetadata = req.headers["x-asset-metadata"];
+        if (rawMetadata) metadata = JSON.parse(decodeURIComponent(String(rawMetadata)));
+      } catch { metadata = {}; }
       const mimeType = String(req.headers["content-type"] || "application/octet-stream").split(';')[0];
       const assetType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : mimeType.includes('pdf') || mimeType.includes('document') ? 'doc' : 'file';
       const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
@@ -810,7 +815,7 @@ async function handleAssets(req, res, pathname, method, url) {
         output.on('error', fail);
       });
       try {
-        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum: hash.digest('hex'), objectKey }));
+        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum: hash.digest('hex'), objectKey, metadata }));
       } catch (error) {
         try { fs.unlinkSync(outputPath); } catch { /* 文件已不存在 */ }
         throw error;

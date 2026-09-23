@@ -29,6 +29,7 @@ import {
   ClipboardPaste,
   Trash2 as TrashIcon,
   PanelRightOpen,
+  ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +38,7 @@ import { requestGeneration, requestEdit } from '@canvas/services/api/image'
 import type { ReferenceImage } from '@canvas/types/image'
 import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
 import { api } from '@/lib/api'
+import { motion } from 'motion/react'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
@@ -62,7 +64,7 @@ const models = [
   '65538 · Nano Banana',
 ]
 
-function GeneratePanel() {
+function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) {
   const { t } = useTranslation()
   const config = useConfigStore((s) => s.config)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
@@ -82,6 +84,9 @@ function GeneratePanel() {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [thumbScale, setThumbScale] = useState(100)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
+  const [filterMenu, setFilterMenu] = useState<'time' | 'stars' | null>(null)
+  const [timeFilter, setTimeFilter] = useState('all')
+  const [starFilter, setStarFilter] = useState('all')
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const [refImages, setRefImages] = useState<string[]>([])
   const refInputRef = useRef<HTMLInputElement>(null)
@@ -237,7 +242,13 @@ function GeneratePanel() {
           const response = await fetch(image.dataUrl)
           const blob = await response.blob()
           const file = new File([blob], `生成结果-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
-          return await api.uploadAsset<{ id: string }>(file)
+          return await api.uploadAsset<{ id: string }>(file, {
+            source: 'image_generation',
+            prompt: prompt.trim(),
+            model: modelLabel,
+            quality,
+            size: ratio === '__ORIG__' ? 'auto' : ratio,
+          })
         } catch {
           return null
         }
@@ -269,7 +280,7 @@ function GeneratePanel() {
   return (
     <div className="flex h-full gap-2">
       {/* ── 左栏 ── */}
-      <div className="flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
+      <div className={cn('flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-tr-xl rounded-br-xl rounded-bl-xl bg-card', connectTopLeft ? 'rounded-tl-none' : 'rounded-tl-md')}>
         <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
           {/* 模型选择器 */}
           <div className="mb-6">
@@ -508,17 +519,71 @@ function GeneratePanel() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
         {/* 顶部工具栏 */}
         <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
-          <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
-            <option>{t("imageTools.allTime")}</option>
-            <option>{t("imageTools.today")}</option>
-            <option>{t("imageTools.last7")}</option>
-            <option>{t("imageTools.last30")}</option>
-          </select>
-          <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
-            <option>{t("imageTools.allStars")}</option>
-            <option>{t("imageTools.favorited")}</option>
-            <option>{t("imageTools.notFavorited")}</option>
-          </select>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setFilterMenu((menu) => menu === 'time' ? null : 'time')}
+              className="flex h-[30px] items-center gap-1 rounded-lg bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
+              aria-haspopup="listbox"
+              aria-expanded={filterMenu === 'time'}
+            >
+              {t(timeFilter === 'today' ? 'imageTools.today' : timeFilter === 'last7' ? 'imageTools.last7' : timeFilter === 'last30' ? 'imageTools.last30' : 'imageTools.allTime')}
+              <ChevronDown className="size-3.5" />
+            </button>
+            {filterMenu === 'time' && (
+              <div className="absolute left-0 top-full z-50 mt-1 min-w-full overflow-hidden rounded-lg bg-card p-1 shadow-xl" role="listbox">
+                {[
+                  ['all', 'imageTools.allTime'],
+                  ['today', 'imageTools.today'],
+                  ['last7', 'imageTools.last7'],
+                  ['last30', 'imageTools.last30'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="option"
+                    aria-selected={timeFilter === value}
+                    onClick={() => { setTimeFilter(value); setFilterMenu(null) }}
+                    className={cn('flex w-full whitespace-nowrap rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-hover hover:text-text', timeFilter === value ? 'bg-secondary text-text' : 'text-text-secondary')}
+                  >
+                    {t(label)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setFilterMenu((menu) => menu === 'stars' ? null : 'stars')}
+              className="flex h-[30px] items-center gap-1 rounded-lg bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
+              aria-haspopup="listbox"
+              aria-expanded={filterMenu === 'stars'}
+            >
+              {t(starFilter === 'favorite' ? 'imageTools.favorited' : starFilter === 'notFavorite' ? 'imageTools.notFavorited' : 'imageTools.allStars')}
+              <ChevronDown className="size-3.5" />
+            </button>
+            {filterMenu === 'stars' && (
+              <div className="absolute left-0 top-full z-50 mt-1 min-w-full overflow-hidden rounded-lg bg-card p-1 shadow-xl" role="listbox">
+                {[
+                  ['all', 'imageTools.allStars'],
+                  ['favorite', 'imageTools.favorited'],
+                  ['notFavorite', 'imageTools.notFavorited'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="option"
+                    aria-selected={starFilter === value}
+                    onClick={() => { setStarFilter(value); setFilterMenu(null) }}
+                    className={cn('flex w-full whitespace-nowrap rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-hover hover:text-text', starFilter === value ? 'bg-secondary text-text' : 'text-text-secondary')}
+                  >
+                    {t(label)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={() => showToast(t('imageTools.toasts.search'))} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
           </button>
@@ -806,7 +871,7 @@ function GeneratePanel() {
   )
 }
 /* ── 融图 Tab ── */
-function BlendPanel() {
+function BlendPanel({ connectTopLeft = false }: { connectTopLeft?: boolean }) {
   const { t } = useTranslation()
   const config = useConfigStore((s) => s.config)
   const [model, setModel] = useState('')
@@ -846,7 +911,7 @@ function BlendPanel() {
 
   return (
     <div className="flex h-full gap-2">
-      <div className="flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
+      <div className={cn('flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-tr-xl rounded-br-xl rounded-bl-xl bg-card', connectTopLeft ? 'rounded-tl-none' : 'rounded-tl-md')}>
         <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
           {/* 模型选择器 */}
           <div className="mb-6">
@@ -971,7 +1036,7 @@ function formatTranslateSize(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-function TranslatePanel() {
+function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }) {
   const { t } = useTranslation()
   const config = useConfigStore((s) => s.config)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
@@ -1042,7 +1107,7 @@ function TranslatePanel() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-xl bg-card">
+    <div className={cn('flex h-full flex-col overflow-hidden rounded-tr-xl rounded-br-xl rounded-bl-xl bg-card', connectTopLeft ? 'rounded-tl-none' : 'rounded-tl-md')}>
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
         {/* 模型选择器 */}
         <div className="mb-6">
@@ -1168,27 +1233,45 @@ export default function ImageToolsPage() {
 
   return (
     <div className="flex h-full flex-col bg-bg p-3">
-      <div className="flex shrink-0 items-end gap-0.5 px-3 pt-1 pb-0">
+      <div className="flex shrink-0 items-end gap-0.5 pt-1 pb-0">
         {tabs.map((tab) => (
           <button
             key={tab.id ?? tab.label}
             type="button"
             disabled={!tab.id}
-            onClick={() => tab.id && setActiveTab(tab.id)}
+            title={!tab.id ? '正在开发' : undefined}
+            onClick={() => {
+              if (!tab.id) return
+              setActiveTab(tab.id)
+            }}
             aria-selected={tab.id ? activeTab === tab.id : undefined}
             className={cn(
-              cn('flex h-[34px] shrink-0 items-center justify-center whitespace-nowrap px-3 font-sans text-[12px] font-medium leading-none transition-colors', tab.width),
-              activeTab === tab.id
-                ? 'relative z-10 rounded-t-xl bg-card text-text'
-                : tab.id ? 'rounded-t-xl text-text-secondary hover:bg-secondary hover:text-text' : 'rounded-t-xl text-text-muted/50',
+              cn('relative flex h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-t-xl px-3 text-[11px] font-medium leading-none transition-colors', tab.width),
+              activeTab === tab.id ? 'z-10 text-text' : tab.id ? 'text-text-secondary hover:text-text' : 'cursor-not-allowed text-text-muted/50',
             )}
           >
-            {tab.translation ? t(tab.label) : tab.label}
+            {activeTab === tab.id && (
+              <motion.span
+                layoutId="image-tab-active-background"
+                className="absolute inset-0 rounded-t-xl will-change-transform"
+                transition={{ type: 'spring', stiffness: 240, damping: 18, mass: 1 }}
+                aria-hidden="true"
+              >
+                <motion.span
+                  key={activeTab}
+                  className="absolute inset-0 rounded-t-xl bg-card"
+                  initial={{ scaleX: 1.12, scaleY: 0.88, borderRadius: '18px 18px 0 0' }}
+                  animate={{ scaleX: 1, scaleY: 1, borderRadius: '12px 12px 0 0' }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 17, mass: 0.7 }}
+                />
+              </motion.span>
+            )}
+            <span className="relative z-10">{tab.translation ? t(tab.label) : tab.label}</span>
           </button>
         ))}
       </div>
       <div className="min-h-0 flex-1">
-        {activeTab === 'generate' && <GeneratePanel />}
+        {activeTab === 'generate' && <GeneratePanel connectTopLeft />}
         {activeTab === 'blend' && <BlendPanel />}
         {activeTab === 'translate' && <TranslatePanel />}
       </div>

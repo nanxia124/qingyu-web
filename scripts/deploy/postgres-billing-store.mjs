@@ -468,9 +468,10 @@ export async function createPostgresBillingStore() {
   async function listAssets(appwriteUserId, type = 'all', keyword = '') {
     const r = await pool.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
       coalesce((select sum(1) from app.asset_likes l where l.asset_id=a.id),0) like_count,
+      coalesce((select v.metadata from app.asset_versions v where v.asset_id=a.id order by v.version_no desc limit 1),'{}'::jsonb) metadata,
       exists(select 1 from app.collections c join app.collection_items ci on ci.collection_id=c.id where c.workspace_id=a.workspace_id and c.created_by=(select id from app.user_accounts where appwrite_user_id=$1) and c.name='favorites' and ci.asset_id=a.id) is_favorite
       from app.assets a where a.status='active' and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword]);
-    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), favorited: x.is_favorite, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
+    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
   }
 
   async function listFavorites(appwriteUserId) { return listAssets(appwriteUserId, 'all', '').then(items => items.filter(x => x.favorited)); }
@@ -505,7 +506,8 @@ export async function createPostgresBillingStore() {
       const workspaceId = owner.rows[0].workspace_id;
       const object = await client.query(`insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status) values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`, [workspaceId, owner.rows[0].id, file.storageProvider || 'local', file.bucket || 'qingyu-assets', file.objectKey, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream']);
       const asset = await client.query(`insert into app.assets(workspace_id,created_by,asset_type,title,visibility,moderation_status,status) values($1,$2,$3,$4,'private','approved','active') returning id,title,asset_type,visibility,status,created_at,updated_at`, [workspaceId, owner.rows[0].id, assetType, title]);
-      const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`, [asset.rows[0].id, workspaceId, owner.rows[0].id, JSON.stringify({ mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum })]);
+      const versionMetadata = { ...(file.metadata && typeof file.metadata === 'object' ? file.metadata : {}), mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum };
+      const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`, [asset.rows[0].id, workspaceId, owner.rows[0].id, JSON.stringify(versionMetadata)]);
       await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`, [version.rows[0].id, object.rows[0].id, workspaceId]);
       await client.query('commit');
       return { id: asset.rows[0].id, name: asset.rows[0].title, type: asset.rows[0].asset_type, visibility: asset.rows[0].visibility, favorited: false, createdAt: new Date(asset.rows[0].created_at).toISOString(), updatedAt: new Date(asset.rows[0].updated_at).toISOString(), objectKey: file.objectKey };

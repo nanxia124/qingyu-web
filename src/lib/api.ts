@@ -126,7 +126,7 @@ export const api = {
   delete: <T = any>(path: string) =>
     apiRequest<T>(path, { method: "DELETE" }),
 
-  uploadAsset: async <T = any>(file: File): Promise<T> => {
+  uploadAsset: async <T = any>(file: File, metadata?: Record<string, unknown>): Promise<T> => {
     const token = getToken();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -136,6 +136,7 @@ export const api = {
         headers: {
           "Content-Type": file.type || "application/octet-stream",
           "X-Asset-Name": encodeURIComponent(file.name),
+          ...(metadata ? { "X-Asset-Metadata": encodeURIComponent(JSON.stringify(metadata)) } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: file,

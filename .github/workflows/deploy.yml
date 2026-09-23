@@ -66,7 +66,7 @@ jobs:
             sudo ln -sfn /etc/nginx/sites-available/qingyu-web /etc/nginx/sites-enabled/qingyu-web
             sudo nginx -t && sudo systemctl reload nginx
             if [ -f /home/ubuntu/appwrite/.env ]; then
-              sudo sed -i -E 's|^_APP_DOMAIN=.*|_APP_DOMAIN=litzone.art|; s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=litzone.art|; s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=litzone.art|; s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=litzone.art|; s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=litzone.art|' /home/ubuntu/appwrite/.env
+              sudo sed -i -E 's|^_APP_DOMAIN=.*|_APP_DOMAIN=litzone.art|; s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=litzone.art|; s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=litzone.art|; s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=litzone.art|; s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=litzone.art|; s|^_APP_OPTIONS_FORCE_HTTPS=.*|_APP_OPTIONS_FORCE_HTTPS=disabled|; s|^_APP_OPTIONS_ROUTER_FORCE_HTTPS=.*|_APP_OPTIONS_ROUTER_FORCE_HTTPS=disabled|' /home/ubuntu/appwrite/.env
               cd /home/ubuntu/appwrite
               sudo docker compose up -d
             fi

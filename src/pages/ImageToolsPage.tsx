@@ -102,16 +102,16 @@ function GeneratePanel() {
   const addToQueue = (n: number) => {
     if (!isLoggedIn) { openAuthModal(); return }
     setQueueSize((q) => q + n)
-    showToast(`已加入队列 ${n} 张，当前排队 ${queueSize + n} 张`)
+    showToast(t('imageTools.toasts.queuedInfo', { n, total: queueSize + n }))
   }
 
   const copyPrompt = (text: string) => {
-    navigator.clipboard?.writeText(text).then(() => showToast('已复制提示词')).catch(() => showToast('复制失败', 'error'))
+    navigator.clipboard?.writeText(text).then(() => showToast(t('imageTools.toasts.copiedPrompt'))).catch(() => showToast(t('imageTools.toasts.copyFailed'), 'error'))
   }
 
   const deleteResult = (id: number) => {
     setResults((r) => r.filter((x) => x.id !== id))
-    showToast('已删除')
+    showToast(t('imageTools.toasts.deleted'))
   }
 
   const toggleFavorite = (id: number) => {
@@ -134,7 +134,7 @@ function GeneratePanel() {
               }
               return [...xs, data]
             })
-            showToast('已粘贴图片')
+            showToast(t('imageTools.toasts.pasted'))
           }
           reader.readAsDataURL(blob)
           break
@@ -174,7 +174,7 @@ function GeneratePanel() {
             const reader = new FileReader()
             reader.onload = () => {
               setRefImages((xs) => [...xs, reader.result as string])
-              showToast('已粘贴图片')
+              showToast(t('imageTools.toasts.pasted'))
             }
             reader.readAsDataURL(blob)
             e.preventDefault()
@@ -198,7 +198,7 @@ function GeneratePanel() {
   const reuseParams = (r: typeof results[0]) => {
     setPrompt(r.prompt)
     setQuality(r.quality)
-    showToast('已复用参数')
+    showToast(t('imageTools.toasts.reused'))
   }
 
   const generate = () => {
@@ -213,7 +213,7 @@ function GeneratePanel() {
         ...r,
       ])
       setGenerating(false)
-      showToast('生成完成')
+      showToast(t('imageTools.toasts.done'))
     }, 1500)
   }
 
@@ -247,7 +247,7 @@ function GeneratePanel() {
                 onChange={(e) => {
                   const val = e.target.value
                   if (val.length > MAX_PROMPT_LENGTH) {
-                    showToast(`提示词不能超过 ${MAX_PROMPT_LENGTH} 字`, 'error')
+                    showToast(t('imageTools.toasts.promptTooLong'), 'error')
                     return
                   }
                   setPrompt(val)
@@ -266,13 +266,13 @@ function GeneratePanel() {
               />
               <div className="absolute bottom-2 right-2 flex gap-1">
                 
-                <button data-tip="清空" onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast('已清空提示词', 'success', { label: '撤销', onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><Trash2 className="size-[13px]" /></button>
-                <button data-tip="格式" className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button>
+                <button data-tip={t("imageTools.clear")} onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast(t('imageTools.toasts.cleared'), 'success', { label: t('imageTools.undo'), onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><Trash2 className="size-[13px]" /></button>
+                <button data-tip={t("imageTools.tipFormat")} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button>
               </div>
             </div>
             <div className="mt-2 flex items-center gap-2">
               <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
-              <button data-tip="添加常用提示词" onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
+              <button data-tip={t("imageTools.tipAddCommon")} onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
             </div>
           </div>
 
@@ -333,16 +333,16 @@ function GeneratePanel() {
                   <img src={img} alt="" className="h-full w-full rounded-lg object-cover" />
                   {/* hover 4格操作 */}
                   <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 rounded-lg opacity-0 transition-opacity group-hover:opacity-100">
-                    <button data-tip="替换图片" onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    <button data-tip={t("imageTools.replace")} onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <RefreshCw className="size-4" />
                     </button>
-                    <button data-tip="放大查看" onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    <button data-tip={t("imageTools.zoom")} onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ZoomIn className="size-4" />
                     </button>
-                    <button data-tip="粘贴替换" onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    <button data-tip={t("imageTools.pasteReplace")} onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ClipboardPaste className="size-4" />
                     </button>
-                    <button data-tip="删除" onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-white hover:text-red-400">
+                    <button data-tip={t("imageTools.delete")} onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-white hover:text-red-400">
                       <TrashIcon className="size-4" />
                     </button>
                   </div>
@@ -360,14 +360,14 @@ function GeneratePanel() {
                   <button
                     onClick={() => refInputRef.current?.click()}
                     className="flex flex-col items-center justify-end pb-2 text-text-muted hover:text-accent"
-                    data-tip="上传图片"
+                    data-tip={t("imageTools.uploadImageShort")}
                   >
                     <Upload className="size-4" />
                   </button>
                   <button
                     onClick={() => pasteImage()}
                     className="flex flex-col items-center justify-start pt-2 text-text-muted hover:text-accent"
-                    data-tip="粘贴图片 (Ctrl+V)"
+                    data-tip={t("imageTools.pasteImageShortcut")}
                   >
                     <ClipboardPaste className="size-4" />
                   </button>
@@ -384,7 +384,7 @@ function GeneratePanel() {
                 const files = Array.from(e.target.files || [])
                 for (const f of files) {
                   if (f.size > 10 * 1024 * 1024) {
-                    showToast('图片不能超过 10MB', 'error')
+                    showToast(t('imageTools.toasts.imageTooLarge'), 'error')
                     continue
                   }
                   const reader = new FileReader()
@@ -397,7 +397,7 @@ function GeneratePanel() {
                         return next
                       }
                       if (xs.length >= 4) {
-                        showToast('最多上传 4 张参考图', 'error')
+                        showToast(t('imageTools.toasts.maxRefs'), 'error')
                         return xs
                       }
                       return [...xs, data]
@@ -418,15 +418,15 @@ function GeneratePanel() {
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[14px] text-text">{t("imageTools.storage")}</span>
             <span className="flex-1 truncate text-[12px] text-text-secondary">{storagePath}</span>
-            <button onClick={() => showToast('已打开存储文件夹')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.open")}</button>
+            <button onClick={() => showToast(t('imageTools.toasts.openedFolder'))} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.open")}</button>
             <button onClick={async () => {
               try {
                 // @ts-ignore
                 const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
                 setStoragePath(dirHandle.name)
-                showToast(`已切换到: ${dirHandle.name}`)
+                showToast(`${t('imageTools.toasts.switchedDir')}: ${dirHandle.name}`)
               } catch {
-                showToast('已取消选择文件夹')
+                showToast(t('imageTools.toasts.cancelledDir'))
               }
             }} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.change")}</button>
           </div>
@@ -473,7 +473,7 @@ function GeneratePanel() {
             <option>{t("imageTools.favorited")}</option>
             <option>{t("imageTools.notFavorited")}</option>
           </select>
-          <button onClick={() => showToast('搜索')} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
+          <button onClick={() => showToast(t('imageTools.toasts.search'))} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
           </button>
           <div className="ml-auto flex items-center gap-2">
@@ -503,14 +503,14 @@ function GeneratePanel() {
               {results.map((r) => (
                 <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
                   <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
-                    <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">图 {r.id}</div>
+                    <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>
-                      <span className="text-[12px] text-text-secondary">尺寸 {r.size}</span>
-                      <span className="text-[12px] text-text-secondary">大小 {r.fileSize}</span>
-                      <span className="text-[12px] text-text-secondary">画质 {r.quality}</span>
+                      <span className="text-[12px] text-text-secondary">{t("imageTools.size")} {r.size}</span>
+                      <span className="text-[12px] text-text-secondary">{t("imageTools.fileSize")} {r.fileSize}</span>
+                      <span className="text-[12px] text-text-secondary">{t("imageTools.qualityLabel")} {r.quality}</span>
                       <span className="ml-auto text-[12px] text-text-secondary">{r.time}</span>
                     </div>
                                         <div className="mb-2">
@@ -522,15 +522,15 @@ function GeneratePanel() {
                       )}
                     </div>
                     <div className="mt-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制图片" onClick={() => showToast('已复制图片')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="引用" onClick={() => showToast('已引用')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="团队分享" onClick={() => showToast('已发起团队分享')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="所在文件夹" onClick={() => showToast('已打开所在文件夹')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipReuse")} onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipCopyPrompt")} onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipCopyImage")} onClick={() => showToast(t('imageTools.toasts.copiedImage'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipQuote")} onClick={() => showToast(t('imageTools.toasts.quoted'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipTeamShare")} onClick={() => showToast(t('imageTools.toasts.shared'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipDownload")} onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipFolder")} onClick={() => showToast(t('imageTools.toasts.openedInFolder'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.delete")} onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
                     </div>
                   </div>
                 </div>
@@ -541,7 +541,7 @@ function GeneratePanel() {
             <div className="grid grid-cols-3 gap-3">
               {results.map((r) => (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
-                  <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">图 {r.id}</div>
+                  <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
@@ -558,11 +558,11 @@ function GeneratePanel() {
             <div className="space-y-4">
               {results.map((r) => (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
-                  <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">图 {r.id}（大图预览）</div>
+                  <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>
-                      <span className="text-[12px] text-text-secondary">尺寸 {r.size}</span>
+                      <span className="text-[12px] text-text-secondary">{t("imageTools.size")} {r.size}</span>
                       <span className="text-[12px] text-text-secondary">{r.time}</span>
                     </div>
                                         <div className="mb-2">
@@ -574,11 +574,11 @@ function GeneratePanel() {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipReuse")} onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipCopyPrompt")} onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.tipDownload")} onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip={t("imageTools.delete")} onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
                     </div>
                   </div>
                 </div>
@@ -591,7 +591,7 @@ function GeneratePanel() {
 
       {/* 右栏折叠/展开按钮 */}
       <button
-        data-tip={resultsCollapsed ? '展开结果区' : '折叠结果区'}
+        data-tip={resultsCollapsed ? t('imageTools.expandResult') : t('imageTools.collapseResult')}
         onClick={() => setResultsCollapsed((v) => !v)}
         className="fixed right-3 top-1/2 z-30 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-secondary text-text-muted shadow-lg ring-1 ring-border hover:bg-surface-hover hover:text-text"
       >
@@ -629,7 +629,7 @@ function GeneratePanel() {
                 {commonPrompts.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => { setPrompt(p.content); setShowCommonPromptModal(false); showToast('已填入提示词') }}
+                    onClick={() => { setPrompt(p.content); setShowCommonPromptModal(false); showToast(t('imageTools.toasts.filled')) }}
                     className="mb-1 block w-full rounded-lg bg-secondary px-3 py-2 text-left text-[13px] text-text hover:bg-surface-hover"
                   >
                     {p.title}
@@ -650,7 +650,7 @@ function GeneratePanel() {
                   setCommonPrompts((xs) => [...xs, { id: Date.now(), title: newPromptTitle, content: newPromptContent }])
                   setNewPromptTitle('')
                   setNewPromptContent('')
-                  showToast('已保存')
+                  showToast(t('imageTools.toasts.saved'))
                 }}
                 className="h-[32px] rounded-md bg-accent px-4 text-[13px] text-accent-foreground hover:bg-accent-hover"
               >

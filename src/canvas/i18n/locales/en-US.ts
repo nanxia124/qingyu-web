@@ -104,6 +104,7 @@ export default {
         tipUnfavorite: "Unfavorite",
         search: "Search",
         toasts: {
+          queuedInfo: "Added {{n}} to queue, {{total}} pending",
           queued: "Added to queue",
           currentQueue: "Queue now",
           copiedPrompt: "Prompt copied",

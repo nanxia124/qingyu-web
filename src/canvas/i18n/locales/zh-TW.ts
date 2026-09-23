@@ -104,6 +104,7 @@ export default {
         tipUnfavorite: "取消收藏",
         search: "搜尋",
         toasts: {
+          queuedInfo: "已加入佇列 {{n}} 張，當前排隊 {{total}} 張",
           queued: "已加入佇列",
           currentQueue: "当前排队",
           copiedPrompt: "已复制提示詞",

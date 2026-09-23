@@ -36,14 +36,20 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { requestGeneration, requestEdit } from '@canvas/services/api/image'
 import type { ReferenceImage } from '@canvas/types/image'
 import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
+import { api } from '@/lib/api'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
 
-const tabs: { id: TabId; label: string }[] = [
-  { id: 'generate', label: 'imageTools.generate' },
-  { id: 'blend', label: 'imageTools.blend' },
-  { id: 'translate', label: 'imageTools.translate' },
+const tabs: { id?: TabId; label: string; translation?: boolean }[] = [
+  { id: 'generate', label: 'imageTools.generate', translation: true },
+  { id: 'blend', label: 'imageTools.blend', translation: true },
+  { id: 'translate', label: 'imageTools.translate', translation: true },
+  { label: '局部重绘' },
+  { label: '扩图' },
+  { label: '抠图' },
+  { label: '超分辨率' },
+  { label: '修复' },
 ]
 
 /* ── 生图 Tab ── */
@@ -72,7 +78,7 @@ function GeneratePanel() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
-  const [results, setResults] = useState<Array<{ id: number; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean; imageUrl?: string }>>([])
+  const [results, setResults] = useState<Array<{ id: number; assetId?: string; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean; imageUrl?: string }>>([])
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [thumbScale, setThumbScale] = useState(100)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
@@ -116,7 +122,17 @@ function GeneratePanel() {
     showToast(t('imageTools.toasts.deleted'))
   }
 
-  const toggleFavorite = (id: number) => {
+  const toggleFavorite = async (id: number) => {
+    const item = results.find((x) => x.id === id)
+    if (item?.assetId) {
+      try {
+        if (item.favorited) await api.delete(`/favorites/${item.assetId}`)
+        else await api.put(`/favorites/${item.assetId}`)
+      } catch {
+        showToast('收藏同步失败，请稍后重试', 'error')
+        return
+      }
+    }
     setResults((r) => r.map((x) => (x.id === id ? { ...x, favorited: !x.favorited } : x)))
   }
 
@@ -216,8 +232,19 @@ function GeneratePanel() {
       const now = new Date()
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const modelLabel = selectedModel.split('::').pop() || selectedModel
+      const persisted = await Promise.all(generated.map(async (image, index) => {
+        try {
+          const response = await fetch(image.dataUrl)
+          const blob = await response.blob()
+          const file = new File([blob], `生成结果-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
+          return await api.uploadAsset<{ id: string }>(file)
+        } catch {
+          return null
+        }
+      }))
       const newResults = generated.map((image, index) => ({
         id: Date.now() + index,
+        assetId: persisted[index]?.id,
         model: modelLabel,
         size: ratio === '__ORIG__' ? 'auto' : ratio,
         fileSize: '—',
@@ -1141,19 +1168,22 @@ export default function ImageToolsPage() {
 
   return (
     <div className="flex h-full flex-col bg-bg p-3">
-      <div className="flex shrink-0 items-center gap-1 px-3 pb-2">
+      <div className="flex shrink-0 items-end gap-0.5 px-3 pt-1 pb-0">
         {tabs.map((tab) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            key={tab.id ?? tab.label}
+            type="button"
+            disabled={!tab.id}
+            onClick={() => tab.id && setActiveTab(tab.id)}
+            aria-selected={tab.id ? activeTab === tab.id : undefined}
             className={cn(
-              'flex h-[30px] min-w-[58px] items-center rounded-lg px-3 text-[12px] font-medium transition-colors',
+              'flex h-[34px] min-w-[58px] items-center justify-center whitespace-nowrap px-3 text-[12px] font-medium transition-colors',
               activeTab === tab.id
-                ? 'bg-accent text-accent-foreground'
-                : 'text-text-secondary hover:bg-secondary hover:text-text',
+                ? 'relative z-10 -ml-3 rounded-t-xl bg-card pl-6 text-text'
+                : tab.id ? 'text-text-secondary hover:bg-secondary hover:text-text' : 'text-text-muted/50',
             )}
           >
-            {t(tab.label)}
+            {tab.translation ? t(tab.label) : tab.label}
           </button>
         ))}
       </div>

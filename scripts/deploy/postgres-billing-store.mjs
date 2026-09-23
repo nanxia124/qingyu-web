@@ -49,6 +49,12 @@ function apiOrder(row) {
   };
 }
 
+function maskApiKey(value) {
+  const key = String(value || '');
+  if (key.length <= 8) return key ? '••••••••' : '';
+  return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
 export async function createPostgresBillingStore() {
   const pool = new Pool({
     host: process.env.PGHOST || "172.19.0.2",
@@ -397,6 +403,56 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  function platformApiKeyView(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      provider: row.provider,
+      base_url: row.base_url,
+      api_key: row.api_key,
+      api_key_masked: maskApiKey(row.api_key),
+      model: row.model || '',
+      max_concurrency: row.max_concurrency === null ? null : Number(row.max_concurrency),
+      is_active: row.is_active === true ? 1 : 0,
+      created_at: new Date(row.created_at).getTime(),
+      updated_at: new Date(row.updated_at).getTime(),
+    };
+  }
+
+  async function listPlatformApiKeys() {
+    const r = await pool.query(`select id,name,provider,base_url,api_key,model,max_concurrency,is_active,created_at,updated_at from app.platform_api_keys order by updated_at desc`);
+    return r.rows.map(platformApiKeyView);
+  }
+
+  async function createPlatformApiKey(body = {}) {
+    const name = String(body.name || '').trim();
+    const baseUrl = String(body.base_url || '').trim();
+    const apiKey = String(body.api_key || '').trim();
+    if (!name || !baseUrl || !apiKey) throw new Error('名称、API 地址、API Key 为必填项');
+    const r = await pool.query(`insert into app.platform_api_keys(name,provider,base_url,api_key,model,max_concurrency,is_active) values($1,$2,$3,$4,$5,$6,$7) returning *`, [name, String(body.provider || 'openai'), baseUrl, apiKey, String(body.model || ''), body.max_concurrency ? Number(body.max_concurrency) : null, body.is_active === undefined ? true : Boolean(Number(body.is_active))]);
+    return platformApiKeyView(r.rows[0]);
+  }
+
+  async function updatePlatformApiKey(id, body = {}) {
+    const current = await pool.query(`select * from app.platform_api_keys where id=$1`, [id]);
+    if (!current.rowCount) throw new Error('密钥不存在');
+    const old = current.rows[0];
+    const r = await pool.query(`update app.platform_api_keys set name=$2,provider=$3,base_url=$4,api_key=$5,model=$6,max_concurrency=$7,is_active=$8,updated_at=now() where id=$1 returning *`, [id, body.name === undefined ? old.name : String(body.name), body.provider === undefined ? old.provider : String(body.provider), body.base_url === undefined ? old.base_url : String(body.base_url), body.api_key ? String(body.api_key) : old.api_key, body.model === undefined ? old.model : String(body.model), body.max_concurrency === undefined ? old.max_concurrency : (body.max_concurrency ? Number(body.max_concurrency) : null), body.is_active === undefined ? old.is_active : Boolean(Number(body.is_active))]);
+    return platformApiKeyView(r.rows[0]);
+  }
+
+  async function deletePlatformApiKey(id) {
+    const r = await pool.query(`delete from app.platform_api_keys where id=$1 returning id`, [id]);
+    if (!r.rowCount) throw new Error('密钥不存在');
+    return { success: true };
+  }
+
+  async function getPlatformApiKeySecret(id) {
+    const r = await pool.query(`select api_key from app.platform_api_keys where id=$1`, [id]);
+    if (!r.rowCount) throw new Error('密钥不存在');
+    return { api_key: r.rows[0].api_key };
+  }
+
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
@@ -629,5 +685,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

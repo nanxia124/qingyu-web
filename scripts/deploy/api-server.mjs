@@ -67,6 +67,12 @@ let billingSettings = loadJSON(SETTINGS_FILE, null); // 设置
 if (process.env.BILLING_STORE === "postgres") {
   const { createPostgresBillingStore } = await import("./postgres-billing-store.mjs");
   postgresBilling = await createPostgresBillingStore();
+  // PostgreSQL 是正式来源；首次切换时把旧 keys.json 迁入数据库，避免已有渠道丢失。
+  const storedApiKeys = await postgresBilling.listPlatformApiKeys();
+  if (storedApiKeys.length === 0 && keys.length > 0) {
+    for (const legacyKey of keys) await postgresBilling.createPlatformApiKey(legacyKey);
+  }
+  keys = await postgresBilling.listPlatformApiKeys();
   console.log("[billing] PostgreSQL 计费存储已启用");
 }
 
@@ -213,6 +219,11 @@ function hashPassword(pw) {
 function maskKey(key) {
   if (!key || key.length <= 8) return "****";
   return key.slice(0, 4) + "..." + key.slice(-4);
+}
+
+function publicApiKey(key) {
+  const { api_key, ...safe } = key;
+  return { ...safe, api_key_masked: key.api_key_masked || maskKey(api_key) };
 }
 
 function verifyToken(req) {
@@ -970,6 +981,33 @@ const server = http.createServer(async (req, res) => {
       if (payload.role && payload.role !== "admin") {
         return sendJSON(res, 403, { error: "无管理员权限" });
       }
+    }
+
+    // PostgreSQL 模式下，管理后台密钥也必须走业务库，不能退回服务器 JSON 文件。
+    if (postgresBilling && pathname === "/api/admin/api-keys" && req.method === "GET") {
+      return sendJSON(res, 200, (await postgresBilling.listPlatformApiKeys()).map(publicApiKey));
+    }
+    if (postgresBilling && pathname === "/api/admin/api-keys" && req.method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 200, publicApiKey(await postgresBilling.createPlatformApiKey(body)));
+    }
+    const pgPutKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
+    if (postgresBilling && pgPutKey && req.method === "PUT") {
+      const body = await parseBody(req);
+      keys = await postgresBilling.listPlatformApiKeys();
+      const updated = await postgresBilling.updatePlatformApiKey(pgPutKey[1], body);
+      keys = await postgresBilling.listPlatformApiKeys();
+      return sendJSON(res, 200, publicApiKey(updated));
+    }
+    const pgDeleteKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
+    if (postgresBilling && pgDeleteKey && req.method === "DELETE") {
+      const result = await postgresBilling.deletePlatformApiKey(pgDeleteKey[1]);
+      keys = await postgresBilling.listPlatformApiKeys();
+      return sendJSON(res, 200, result);
+    }
+    const pgFullKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)\/full$/);
+    if (postgresBilling && pgFullKey && req.method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.getPlatformApiKeySecret(pgFullKey[1]));
     }
 
     // GET /api/admin/api-keys — 密钥列表（脱敏）

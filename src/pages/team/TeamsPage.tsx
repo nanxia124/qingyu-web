@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api, ApiError } from "@/lib/api";
@@ -15,6 +15,31 @@ export default function TeamsPage() {
   useEffect(() => {
     fetchTeams();
   }, []);
+
+  // 其他设备创建团队后，按工作空间游标拉取事件并刷新列表。
+  const syncCursors = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const workspaces = teams.map((team) => team.workspaceId).filter(Boolean) as string[];
+    if (!workspaces.length) return;
+    let cancelled = false;
+    const poll = async () => {
+      let changed = false;
+      for (const workspaceId of workspaces) {
+        try {
+          const events = await api.get<Array<{ sequence: number; type: string }>>('/sync/events', { workspaceId, after: String(syncCursors.current[workspaceId] || 0), limit: '50' });
+          if (events.length) {
+            syncCursors.current[workspaceId] = events[events.length - 1].sequence;
+            changed = true;
+          }
+        } catch {
+          // 临时网络失败下次轮询继续。
+        }
+      }
+      if (changed && !cancelled) await fetchTeams();
+    };
+    const timer = window.setInterval(() => void poll(), 10000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [teams, fetchTeams]);
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault();

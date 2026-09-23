@@ -17,6 +17,16 @@ export function clearBillingToken() {
   localStorage.removeItem(BILLING_TOKEN_KEY);
 }
 
+export function getInstallationId() {
+  const key = "qingyu-installation-id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
 async function request<T = any>(path: string, options: { method?: string; body?: any; token?: string } = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const tok = options.token || getBillingToken();
@@ -41,6 +51,7 @@ export interface BillingUser {
   memberActive: boolean;
   inviteCode: string;
   totalSpent: number;
+  workspaceId?: string;
   createdAt: number;
 }
 export interface Plan {
@@ -80,7 +91,7 @@ export interface Txn {
 export const billingApi = {
   // 用 Appwrite 用户 ID 换计费 JWT
   login: (body: { userId: string; email?: string; inviteCode?: string; installationId?: string; displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }) =>
-    request("/api/billing/login", { method: "POST", body }),
+    request("/api/billing/login", { method: "POST", body: { ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web", displayName: body.displayName || navigator.userAgent.slice(0, 100), osFamily: body.osFamily || navigator.platform || "unknown", browserFamily: body.browserFamily || navigator.userAgent.slice(0, 64) } }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
   plans: () => request<Plan[]>("/api/billing/plans"),
   createOrder: (planId: string, idempotencyKey: string) =>

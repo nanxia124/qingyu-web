@@ -19,6 +19,7 @@ export interface User {
 export interface Team {
   id: string;
   name: string;
+  workspaceId?: string;
   plan: string;
   role: "owner" | "admin" | "member";
   createdAt: string;

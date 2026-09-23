@@ -1,8 +1,9 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { FolderOpen, Search, Upload, MoreVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
+import { useBillingStore } from '@/stores/useBillingStore'
 
 type AssetType = 'image' | 'video' | 'doc' | 'all'
 
@@ -24,6 +25,8 @@ export default function AssetsPage() {
   const [uploading, setUploading] = useState(false)
   const [reloadSeq, setReloadSeq] = useState(0)
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
+  const workspaceId = useBillingStore((state) => state.user?.workspaceId)
+  const syncCursor = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -35,6 +38,24 @@ export default function AssetsPage() {
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [tab, keyword, reloadSeq])
+
+  useEffect(() => {
+    if (!workspaceId) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const events = await api.get<Array<{ sequence: number; type: string }>>('/sync/events', { workspaceId, after: String(syncCursor.current), limit: '50' })
+        if (events.length) {
+          syncCursor.current = events[events.length - 1].sequence
+          if (!cancelled && events.some((event) => event.type.startsWith('asset.'))) setReloadSeq((value) => value + 1)
+        }
+      } catch {
+        // 临时网络失败下次轮询继续。
+      }
+    }
+    const timer = window.setInterval(() => void poll(), 10000)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [workspaceId])
 
   // 列表中的图片从服务器重新读取，保证换设备后仍能看到同一份资产。
   useEffect(() => {

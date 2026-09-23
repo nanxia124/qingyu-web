@@ -16,6 +16,7 @@ function publicUser(row) {
     memberExpireAt: row.member_expire_at ? new Date(row.member_expire_at).getTime() : 0,
     inviteCode: row.invite_code,
     totalSpent: Number(row.total_spent || 0),
+    workspaceId: row.workspace_id || undefined,
   };
 }
 
@@ -373,13 +374,14 @@ export async function createPostgresBillingStore() {
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
+      w.id workspace_id,
       coalesce((select p.code from app.subscriptions s join app.plans p on p.id=s.plan_id join app.workspaces tw on tw.id=s.workspace_id where tw.team_id=t.id and s.status in ('trialing','active','past_due') limit 1),'free') plan
       from app.team_memberships tm join app.teams t on t.id=tm.team_id
       left join app.workspaces w on w.team_id=t.id and w.type='team'
       left join lateral (select r.code role_code from app.role_bindings b join app.roles r on r.id=b.role_id where b.workspace_id=w.id and b.user_id=(select id from app.user_accounts where appwrite_user_id=$1) limit 1) rb on true
       where tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active' and t.status='active'
       order by t.created_at`, [appwriteUserId]);
-    return r.rows.map(x => ({ id: x.id, name: x.name, plan: x.plan, role: x.role, createdAt: new Date(x.created_at).toISOString() }));
+    return r.rows.map(x => ({ id: x.id, name: x.name, workspaceId: x.workspace_id, plan: x.plan, role: x.role, createdAt: new Date(x.created_at).toISOString() }));
   }
 
   async function createTeam(appwriteUserId, name) {

@@ -913,7 +913,7 @@ const server = http.createServer(async (req, res) => {
     const requestIdentity = getBillingIdentity(req);
     if (postgresBilling && requestIdentity?.role === "customer" && requestIdentity.sid) {
       if (!(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
-        return sendJSON(res, 401, { error: "登录会话已撤销，请重新登录" });
+        return sendJSON(res, 401, { error: "当前账号已在其他设备在线，请重新登录以接管本设备" });
       }
     }
 

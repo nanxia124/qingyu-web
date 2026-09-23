@@ -19,5 +19,6 @@
   "0018_asset_share_target_integrity.sql": "83a73f58a23adfbdecc39520a6b6f340b0bdb5b73bd03e05bd9936ee8aff37c2",
   "0019_payment_idempotency.sql": "1a51c56b14623d97c023c2ca6ff45a38d819e3ad434c12a61b4d25b0bd3d1831",
   "0020_referrals_redeem_codes.sql": "a7fc1938ca2c79664d1f370710c595b39ed3e402f3296e757aff514f1671c46e",
-  "0021_session_limit_three.sql": "5e8a853102aa796723c4570080c0f1e23db34270547049368027b2959dd1ac1e"
+  "0021_session_limit_three.sql": "5e8a853102aa796723c4570080c0f1e23db34270547049368027b2959dd1ac1e",
+  "0022_single_online_session.sql": "e3690703b05bbc62fe7229562e79b6467018a4e4adc683866abe3edc2ffb9ea0"
 }

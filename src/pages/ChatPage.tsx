@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Plus, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 
 interface ChatMessage {
   id: number
@@ -9,6 +10,7 @@ interface ChatMessage {
 }
 
 export default function ChatPage() {
+  const { t } = useTranslation()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -36,7 +38,7 @@ export default function ChatPage() {
         {
           id: Date.now() + 1,
           role: 'assistant',
-          content: '（网页端对话服务待接入，敬请期待）',
+          content: t('chat.servicePending'),
         },
       ])
       setSending(false)
@@ -49,7 +51,7 @@ export default function ChatPage() {
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 1200)
     } catch {
-      alert('复制失败，请手动复制')
+      alert(t('chat.copyFailed'))
     }
   }
 
@@ -61,7 +63,7 @@ export default function ChatPage() {
       <div className="flex justify-end px-4 pt-3">
         <button className="flex h-[30px] items-center gap-2 rounded-full bg-card px-3 text-[12px] font-medium text-text-secondary transition-colors hover:bg-card-hover">
           <span className="size-1.5 rounded-full bg-success" />
-          选择模型
+          {t('chat.selectModel')}
         </button>
       </div>
 
@@ -72,10 +74,10 @@ export default function ChatPage() {
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <h2 className="text-[18px] font-bold leading-[26px] text-text-active">
-                有什么可以帮你？
+                {t('chat.greeting')}
               </h2>
               <p className="mt-3 text-[14px] leading-[22px] text-text-muted">
-                选择模型，输入问题开始对话
+                {t('chat.subtitle')}
               </p>
             </div>
           </div>
@@ -100,14 +102,14 @@ export default function ChatPage() {
                     <p className="text-[14px] leading-[24px] text-text">{m.content}</p>
                     {/* meta + 复制 */}
                     <div className="mt-3 flex items-center gap-3">
-                      <span className="text-[12px] leading-[18px] text-text-muted">刚刚</span>
+                      <span className="text-[12px] leading-[18px] text-text-muted">{t('chat.justNow')}</span>
                       <button
                         onClick={() => copyMessage(m.id, m.content)}
                         className="flex size-7 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-active"
-                        title="复制"
+                        title={t('chat.copy')}
                       >
                         {copiedId === m.id ? (
-                          <span className="text-[10px] text-success">已复制</span>
+                          <span className="text-[10px] text-success">{t('chat.copied')}</span>
                         ) : (
                           <Copy className="size-[14px]" />
                         )}
@@ -120,7 +122,7 @@ export default function ChatPage() {
             {sending && (
               <div className="flex items-center gap-2 text-[12px] text-text-muted">
                 <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-                正在思考…
+                {t('chat.thinking')}
               </div>
             )}
           </div>
@@ -133,9 +135,9 @@ export default function ChatPage() {
           <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-card px-2 py-2 transition-colors focus-within:ring-1 focus-within:ring-accent hover:bg-surface-hover">
             {/* 附件按钮 */}
             <button
-              onClick={() => alert('附件上传功能即将上线')}
+              onClick={() => alert(t('chat.attachSoon'))}
               className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-active"
-              title="添加附件"
+              title={t('chat.addAttachment')}
             >
               <Plus className="size-[18px]" />
             </button>
@@ -151,7 +153,7 @@ export default function ChatPage() {
                 }
               }}
               rows={1}
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+              placeholder={t('chat.placeholder')}
               className="max-h-40 flex-1 resize-none bg-transparent text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
             />
             {/* 发送按钮 */}
@@ -164,7 +166,7 @@ export default function ChatPage() {
                   ? 'bg-accent text-accent-foreground hover:bg-accent-hover'
                   : 'bg-secondary text-text-muted',
               )}
-              title="发送"
+              title={t('chat.send')}
             >
               <Send className="size-[16px]" />
             </button>

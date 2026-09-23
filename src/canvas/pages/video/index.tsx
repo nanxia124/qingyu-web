@@ -415,7 +415,7 @@ export default function VideoPage() {
                 <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
                     {/* 模型选择 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">模型</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.model")}</label>
                         <ModelPicker
                             config={effectiveConfig}
                             value={model}
@@ -429,7 +429,7 @@ export default function VideoPage() {
 
                     {/* 提示词 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">提示词</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.prompt")}</label>
                         <div className="relative rounded-xl bg-muted">
                             <textarea
                                 value={prompt}
@@ -442,14 +442,14 @@ export default function VideoPage() {
                                 <button
                                     onClick={() => setPromptDialogOpen(true)}
                                     className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
-                                    title="提示词模板"
+                                    title={t("videoWorkbench.promptTemplate")}
                                 >
                                     <BookOpen className="size-[13px]" />
                                 </button>
                                 <button
                                     onClick={() => setAssetPickerOpen(true)}
                                     className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
-                                    title="从资产库选"
+                                    title={t("videoWorkbench.fromAssets")}
                                 >
                                     <FolderPlus className="size-[13px]" />
                                 </button>
@@ -459,7 +459,7 @@ export default function VideoPage() {
 
                     {/* 比例 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">比例</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.ratio")}</label>
                         <div className="grid grid-cols-7 gap-1.5">
                             {videoRatioOptions.map((item) => {
                                 const selected = selectedRatio === item.value;
@@ -476,7 +476,7 @@ export default function VideoPage() {
                                         className={`flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors ${selected ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                                     >
                                         {icon && <span className="inline-block rounded-[2px] bg-current opacity-60" style={{ width: icon[0], height: icon[1] }} />}
-                                        {isAuto ? "自动" : item.value}
+                                        {isAuto ? t("videoWorkbench.auto") : item.value}
                                     </button>
                                 );
                             })}
@@ -485,7 +485,7 @@ export default function VideoPage() {
 
                     {/* 清晰度 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">清晰度</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.clarity")}</label>
                         <div className="grid grid-cols-4 gap-1.5">
                             {["480", "720", "1080"].map((q) => (
                                 <button
@@ -514,7 +514,7 @@ export default function VideoPage() {
 
                     {/* 尺寸（自定义宽高） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">尺寸</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.size")}</label>
                         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                             <div className={`flex h-[30px] items-center rounded-md bg-muted px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
                                 <span className="mr-1 text-[12px] text-muted-foreground">W</span>
@@ -544,7 +544,7 @@ export default function VideoPage() {
 
                     {/* 时长（滑动条） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">时长</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.duration")}</label>
                         <div className="flex items-center gap-3">
                             <input
                                 type="range"
@@ -572,19 +572,19 @@ export default function VideoPage() {
 
                     {/* 生成模式 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">生成模式</label>
+                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.mode")}</label>
                         <div className="grid grid-cols-2 gap-1.5">
                             <button
                                 onClick={() => updateConfig("videoMode", "frames")}
                                 className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                             >
-                                首尾帧模式
+                                {t("videoWorkbench.firstLastFrame")}
                             </button>
                             <button
                                 onClick={() => updateConfig("videoMode", "reference")}
                                 className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                             >
-                                全能参考模式
+                                {t("videoWorkbench.fullRef")}
                             </button>
                         </div>
                     </div>
@@ -592,9 +592,9 @@ export default function VideoPage() {
                     {/* 参考图 */}
                     <div className="mb-6">
                         <div className="mb-2 flex items-center">
-                            <label className="block text-[14px] text-foreground">参考图 <span className="ml-1 text-[12px] font-normal text-muted-foreground">最多7张</span></label>
+                            <label className="block text-[14px] text-foreground">{t("videoWorkbench.refImage")} <span className="ml-1 text-[12px] font-normal text-muted-foreground">{t("videoWorkbench.refMax7")}</span></label>
                             {references.length > 0 && (
-                                <button onClick={() => setReferences([])} className="ml-auto text-[12px] text-muted-foreground hover:text-red-400">清空</button>
+                                <button onClick={() => setReferences([])} className="ml-auto text-[12px] text-muted-foreground hover:text-red-400">{t("videoWorkbench.clear")}</button>
                             )}
                         </div>
                         <div className="grid grid-cols-4 gap-2">
@@ -606,7 +606,7 @@ export default function VideoPage() {
                                             onClick={() => setReferences((value) => moveListItem(value, index, -1))}
                                             disabled={index <= 0}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-white"
-                                            title="上移"
+                                            title={t("videoWorkbench.moveUp")}
                                         >
                                             <ArrowLeft className="size-4" />
                                         </button>
@@ -614,7 +614,7 @@ export default function VideoPage() {
                                             onClick={() => setReferences((value) => moveListItem(value, index, 1))}
                                             disabled={index >= references.length - 1}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-white"
-                                            title="下移"
+                                            title={t("videoWorkbench.moveDown")}
                                         >
                                             <ArrowRight className="size-4" />
                                         </button>
@@ -622,7 +622,7 @@ export default function VideoPage() {
                                         <button
                                             onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-red-400"
-                                            title="删除"
+                                            title={t("videoWorkbench.delete")}
                                         >
                                             <Trash2 className="size-4" />
                                         </button>
@@ -639,20 +639,20 @@ export default function VideoPage() {
                                 >
                                     <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground transition-opacity group-hover:opacity-0">
                                         <Plus className="mb-1 size-5" />
-                                        <span className="text-[11px]">上传</span>
+                                        <span className="text-[11px]">{t("videoWorkbench.upload")}</span>
                                     </div>
                                     <div className="absolute inset-0 grid grid-rows-2 opacity-0 transition-opacity group-hover:opacity-100">
                                         <button
                                             onClick={() => fileInputRef.current?.click()}
                                             className="flex flex-col items-center justify-end pb-2 text-muted-foreground hover:text-accent"
-                                            title="上传图片"
+                                            title={t("videoWorkbench.uploadImage")}
                                         >
                                             <Upload className="size-4" />
                                         </button>
                                         <button
                                             onClick={() => void addReferencesFromClipboard()}
                                             className="flex flex-col items-center justify-start pt-2 text-muted-foreground hover:text-accent"
-                                            title="粘贴图片"
+                                            title={t("videoWorkbench.pasteImage")}
                                         >
                                             <ClipboardPaste className="size-4" />
                                         </button>
@@ -673,12 +673,12 @@ export default function VideoPage() {
                         {running ? (
                             <>
                                 <LoaderCircle className="mr-2 size-5 animate-spin" />
-                                生成中…
+                                {t("videoWorkbench.generating")}
                             </>
                         ) : (
                             <>
                                 <Sparkles className="mr-2 size-5" />
-                                {prompt.trim() ? "开始生成" : "输入提示词后生成"}
+                                {prompt.trim() ? t("videoWorkbench.startGen") : t("videoWorkbench.inputPrompt")}
                             </>
                         )}
                     </button>
@@ -689,7 +689,7 @@ export default function VideoPage() {
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-popover">
                 {/* 顶部工具栏 */}
                 <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
-                    <span className="text-[14px] text-foreground">生成结果</span>
+                    <span className="text-[14px] text-foreground">{t("videoWorkbench.results")}</span>
                     {running ? (
                         <span className="flex h-[30px] items-center rounded-lg bg-muted px-3 text-[12px] text-muted-foreground">
                             {t("workbench.waiting", { time: formatDuration(elapsedMs) })}
@@ -715,7 +715,7 @@ export default function VideoPage() {
                         <div className="flex h-full items-center justify-center">
                             <div className="flex flex-col items-center text-muted-foreground">
                                 <VideoIcon className="mb-3 size-12" />
-                                <span className="text-[14px]">生成的视频将显示在这里</span>
+                                <span className="text-[14px]">{t("videoWorkbench.resultsEmpty")}</span>
                             </div>
                         </div>
                     )}
@@ -765,7 +765,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
         <>
             {/* 比例 */}
             <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">比例</label>
+                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">{t("videoWorkbench.ratio")}</label>
                 <div className="flex flex-wrap gap-1.5">
                     {ratios.map((ratio) => (
                         <button
@@ -773,7 +773,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
                             onClick={() => selectRatio(ratio)}
                             className={`h-[32px] rounded-lg px-3 text-[12px] transition-colors ${selectedRatio === ratio ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
                         >
-                            {ratio === "auto" ? "原图" : ratio}
+                            {ratio === "auto" ? t("videoWorkbench.original") : ratio}
                         </button>
                     ))}
                 </div>
@@ -781,7 +781,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
 
             {/* 画质 */}
             <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">画质</label>
+                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">{t("videoWorkbench.quality")}</label>
                 <div className="flex flex-wrap gap-1.5">
                     {qualities.map((q) => (
                         <button
@@ -797,7 +797,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
 
             {/* 时长 */}
             <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">时长</label>
+                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">{t("videoWorkbench.duration")}</label>
                 <div className="flex flex-wrap gap-1.5">
                     {durations.map((d) => (
                         <button
@@ -813,19 +813,19 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
 
             {/* 生成模式 */}
             <div className="mb-4">
-                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">生成模式</label>
+                <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">{t("videoWorkbench.mode")}</label>
                 <div className="flex flex-wrap gap-1.5">
                     <button
                         onClick={() => updateConfig("videoMode", "frames")}
                         className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
                     >
-                        帧模式
+                        {t("videoWorkbench.frameMode")}
                     </button>
                     <button
                         onClick={() => updateConfig("videoMode", "reference")}
                         className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
                     >
-                        参考图模式
+                        {t("videoWorkbench.refMode")}
                     </button>
                 </div>
             </div>
@@ -852,14 +852,14 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
                         className="flex h-[28px] items-center gap-1 rounded-md bg-muted px-3 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                         <FolderPlus className="size-3.5" />
-                        存资产
+                        {t("videoWorkbench.saveAsset")}
                     </button>
                     <button
                         onClick={() => onDownload(video)}
                         className="flex h-[28px] items-center gap-1 rounded-md bg-muted px-3 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                         <Download className="size-3.5" />
-                        下载
+                        {t("videoWorkbench.download")}
                     </button>
                 </div>
             </div>

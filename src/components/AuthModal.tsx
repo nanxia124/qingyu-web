@@ -21,19 +21,19 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
     const { login, register, isLoading, forgotPassword } = useAuthStore();
 
     const validateEmail = () => {
-        if (!email.trim()) { setError("请输入邮箱"); return false; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("邮箱格式不正确"); return false; }
+        if (!email.trim()) { setError(t('auth.emailRequired')); return false; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError(t('auth.emailInvalid')); return false; }
         return true;
     };
 
     const validatePassword = () => {
-        if (!password.trim()) { setError("请输入密码"); return false; }
-        if (password.length < 6) { setError("密码至少 6 位"); return false; }
+        if (!password.trim()) { setError(t('auth.passwordRequired')); return false; }
+        if (password.length < 6) { setError(t('auth.passwordMin')); return false; }
         return true;
     };
 
     const validateName = () => {
-        if (!name.trim()) { setError("请输入昵称"); return false; }
+        if (!name.trim()) { setError(t('auth.nicknameRequired')); return false; }
         return true;
     };
 
@@ -49,16 +49,16 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
     const handleForgotSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
-        if (!forgotEmail.trim()) { setError("请输入邮箱"); return; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail)) { setError("邮箱格式不正确"); return; }
+        if (!forgotEmail.trim()) { setError(t('auth.emailRequired')); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail)) { setError(t('auth.emailInvalid')); return; }
         try {
             await forgotPassword(forgotEmail);
             setForgotSent(true);
         } catch (err: any) {
             if (err instanceof AppwriteException) {
-                setError(err.message || "发送失败");
+                setError(err.message || t('auth.sendFailed'));
             } else {
-                setError("发送失败，请稍后重试");
+                setError(t('auth.sendFailedRetry'));
             }
         }
     };
@@ -92,9 +92,9 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
             onClose();
         } catch (err: any) {
             if (err instanceof AppwriteException) {
-                setError(err.message || "操作失败");
+                setError(err.message || t('auth.opFailed'));
             } else {
-                setError("操作失败，请稍后重试");
+                setError(t('auth.opFailedRetry'));
             }
         }
     };
@@ -110,7 +110,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     <QingyuLogoIcon className="w-16 h-16 text-white" />
                     <h3 className="mt-6 text-2xl font-bold">{t('brand.name')}</h3>
                     <p className="mt-2 text-center text-white/80 text-sm leading-relaxed">
-                        在这里放置品牌介绍图
+                        {t('auth.brandPlaceholder')}
                     </p>
                 </div>
 
@@ -127,14 +127,14 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                         {t('brand.welcome')}
                     </h2>
                     <p className="text-center text-gray-500 mt-2">
-                        {mode === 'login' ? '登录或注册以继续' : '创建新账号'}
+                        {mode === 'login' ? t('auth.subtitleLogin') : t('auth.subtitleRegister')}
                     </p>
                 </div>
 
                 {/* 第三方登录按钮 */}
                 <div className="flex flex-col gap-3 mb-6">
                     <button
-                        onClick={() => setError("第三方登录暂未开通，请使用邮箱登录")}
+                        onClick={() => setError(t('auth.oauthNotAvail'))}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -143,17 +143,17 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
                             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                         </svg>
-                        <span className="text-text font-medium">使用 Google</span>
+                        <span className="text-text font-medium">{t("auth.useGoogle")}</span>
                     </button>
 
                     <button
-                        onClick={() => setError("第三方登录暂未开通，请使用邮箱登录")}
+                        onClick={() => setError(t('auth.oauthNotAvail'))}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8.98-.2 1.92-.88 3.23-.81 1.56.13 2.73.74 3.51 1.86-3.12 1.87-2.48 5.97.19 7.12-.57 1.5-1.31 2.99-3.01 4.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
                         </svg>
-                        <span className="text-text font-medium">使用 Apple</span>
+                        <span className="text-text font-medium">{t("auth.useApple")}</span>
                     </button>
                 </div>
 
@@ -163,32 +163,32 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                         <div className="w-full border-t border-border"></div>
                     </div>
                     <div className="relative flex justify-center text-sm">
-                        <span className="px-4 bg-card text-gray-500">或</span>
+                        <span className="px-4 bg-card text-gray-500">{t("auth.or")}</span>
                     </div>
                 </div>
 
                 {/* 找回密码表单 */}
                 {showForgot ? (
                     <form onSubmit={handleForgotSubmit} className="flex flex-col gap-4">
-                        <h3 className="text-lg font-semibold text-text text-center">找回密码</h3>
+                        <h3 className="text-lg font-semibold text-text text-center">{t("auth.forgotTitle")}</h3>
                         {forgotSent ? (
                             <div className="text-center py-4">
-                                <p className="text-green-400 mb-2">重置邮件已发送</p>
-                                <p className="text-gray-500 text-sm">请查收邮箱并点击链接重置密码</p>
+                                <p className="text-green-400 mb-2">{t("auth.resetSent")}</p>
+                                <p className="text-gray-500 text-sm">{t("auth.resetSentHint")}</p>
                                 <button
                                     type="button"
                                     onClick={() => { setShowForgot(false); setForgotSent(false); setError(""); }}
                                     className="mt-4 text-accent text-sm hover:underline"
                                 >
-                                    返回登录
+                                    {t("auth.backLogin")}
                                 </button>
                             </div>
                         ) : (
                             <>
-                                <p className="text-gray-500 text-sm text-center">输入注册邮箱，我们将发送重置链接</p>
+                                <p className="text-gray-500 text-sm text-center">{t("auth.forgotHint")}</p>
                                 <input
                                     type="email"
-                                    placeholder="电子邮箱"
+                                    placeholder={t("auth.email")}
                                     value={forgotEmail}
                                     onChange={(e) => setForgotEmail(e.target.value)}
                                     autoFocus
@@ -200,14 +200,14 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                                     disabled={isLoading}
                                     className="w-full py-3 rounded-[12px] bg-accent text-accent-foreground font-medium hover:bg-accent-hover disabled:cursor-not-allowed"
                                 >
-                                    {isLoading ? "发送中..." : "发送重置邮件"}
+                                    {isLoading ? t("auth.sending") : t("auth.sendReset")}
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setShowForgot(false); setError(""); }}
                                     className="w-full py-2 text-gray-500 text-sm hover:text-text"
                                 >
-                                    ← 返回登录
+                                    ← {t("auth.backLogin")}
                                 </button>
                             </>
                         )}
@@ -218,7 +218,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     {mode === 'register' && step === 'email' && (
                         <input
                             type="text"
-                            placeholder="昵称"
+                            placeholder={t("auth.nickname")}
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             className="w-full px-4 py-3 rounded-[12px] bg-card border border-border text-text placeholder:text-gray-500 focus:border-accent outline-none"
@@ -226,7 +226,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     )}
                     <input
                         type="email"
-                        placeholder="电子邮箱"
+                        placeholder={t("auth.email")}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         disabled={step === "password"}
@@ -236,7 +236,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                         <div>
                             <input
                                 type="password"
-                                placeholder="密码（至少6位）"
+                                placeholder={t("auth.password")}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 autoFocus
@@ -248,7 +248,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                                     onClick={() => { setShowForgot(true); setError(""); setForgotSent(false); }}
                                     className="mt-2 text-xs text-accent hover:underline"
                                 >
-                                    忘记密码？
+                                    {t("auth.forgot")}
                                 </button>
                             )}
                         </div>
@@ -259,7 +259,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                         disabled={isLoading || !email}
                         className="w-full py-3 rounded-[12px] bg-accent text-accent-foreground font-medium hover:bg-accent-hover disabled:cursor-not-allowed"
                     >
-                        {isLoading ? "处理中..." : step === "email" ? "继续" : (mode === 'login' ? "登录" : "注册")}
+                        {isLoading ? t("auth.processing") : step === "email" ? t("auth.continue") : (mode === 'login' ? t("auth.login") : t("auth.register"))}
                     </button>
                     {step === "password" && (
                         <button
@@ -267,7 +267,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                             onClick={() => { setStep("email"); setError(""); }}
                             className="w-full py-2 text-gray-500 text-sm hover:text-text"
                         >
-                            ← 返回上一步
+                            {t("auth.backStep")}
                         </button>
                     )}
                 </form>
@@ -277,16 +277,16 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 <div className="mt-6 flex flex-col gap-4">
                     <p className="text-center text-xs text-gray-500">
                         {mode === 'login' ? (
-                            <>还没有账号？<span className="text-accent cursor-pointer" onClick={() => switchMode('register')}>立即注册</span></>
+                            <>{t("auth.noAccount")}<span className="text-accent cursor-pointer" onClick={() => switchMode('register')}>{t("auth.signUpNow")}</span></>
                         ) : (
-                            <>已有账号？<span className="text-accent cursor-pointer" onClick={() => switchMode('login')}>直接登录</span></>
+                            <>{t("auth.hasAccount")}<span className="text-accent cursor-pointer" onClick={() => switchMode('login')}>{t("auth.loginNow")}</span></>
                         )}
                     </p>
                     <p className="text-center text-xs text-gray-500">
-                        继续即表示您同意{" "}
-                        <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("terms")}>使用条款</span>{" "}
-                        和{" "}
-                        <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("privacy")}>隐私政策</span>
+                        {t("auth.agree")}{" "}
+                        <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("terms")}>{t("auth.terms")}</span>{" "}
+                        {t("chat.or")}{" "}
+                        <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("privacy")}>{t("auth.privacy")}</span>
                     </p>
                 </div>
                 </div>

@@ -1,6 +1,6 @@
-# 轻域数据库完整 ER 图
+# 轻域数据库核心业务 ER 图
 
-> 根据 database/migrations 自动生成，共 60 张表，99 组关系。
+> 这是核心业务 ER 图，共 60 张表、99 组关系。线上 `app` schema 目前共 85 张表，另有运行、备份和管理支撑表；最新迁移为 `0026_canvas_external_keys`。
 
 ```mermaid
 erDiagram
@@ -723,6 +723,7 @@ erDiagram
         varchar_32_ identity_provider
         varchar_128_ provider_session_id
         app.session_status admission_status
+        boolean is_online
         timestamptz created_at
         timestamptz expires_at
         timestamptz last_seen_at

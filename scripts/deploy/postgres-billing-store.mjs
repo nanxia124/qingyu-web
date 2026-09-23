@@ -102,6 +102,49 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
   }
 
+  async function registerSession(appwriteUserId, info = {}) {
+    const installationId = /^[0-9a-f-]{36}$/i.test(String(info.installationId || '')) ? String(info.installationId) : crypto.randomUUID();
+    const providerSessionId = String(info.providerSessionId || `qingyu-${crypto.randomUUID()}`).slice(0, 128);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id,max_active_sessions from app.user_accounts where appwrite_user_id=$1 and status='active' for update`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const device = await client.query(`insert into app.user_devices(user_id,installation_id,display_name,client_type,os_family,browser_family,last_seen_at)
+        values($1,$2,$3,$4,$5,$6,now()) on conflict(user_id,installation_id) do update set display_name=excluded.display_name,client_type=excluded.client_type,os_family=excluded.os_family,browser_family=excluded.browser_family,last_seen_at=now(),archived_at=null returning id`, [user.rows[0].id, installationId, String(info.displayName || '网页设备').slice(0,120), String(info.clientType || 'web').slice(0,32), String(info.osFamily || 'unknown').slice(0,64), String(info.browserFamily || 'unknown').slice(0,64)]);
+      const active = await client.query(`select id from app.user_sessions where user_id=$1 and admission_status in ('pending','active') and expires_at > now() order by created_at desc`, [user.rows[0].id]);
+      const keep = Math.max(1, Number(user.rows[0].max_active_sessions || 5) - 1);
+      for (const old of active.rows.slice(keep)) {
+        await client.query(`update app.user_sessions set admission_status='revoked',revoked_at=now(),revoked_reason='session_limit',provider_revocation_status='pending',revoke_retry_at=now() where id=$1`, [old.id]);
+      }
+      const session = await client.query(`insert into app.user_sessions(user_id,device_id,identity_provider,provider_session_id,admission_status,expires_at,last_seen_at,admitted_auth_version)
+        values($1,$2,'qingyu',$3,'active',now()+interval '30 days',now(),(select auth_version from app.user_accounts where id=$1)) returning id,device_id,created_at,expires_at`, [user.rows[0].id, device.rows[0].id, providerSessionId]);
+      await client.query('commit');
+      return { id: session.rows[0].id, deviceId: session.rows[0].device_id, installationId, expiresAt: new Date(session.rows[0].expires_at).toISOString(), maxActiveSessions: Number(user.rows[0].max_active_sessions || 5) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listSessions(appwriteUserId) {
+    const r = await pool.query(`select s.id,s.created_at,s.last_seen_at,s.expires_at,s.admission_status,s.revoked_at,s.revoked_reason,d.id device_id,d.display_name,d.client_type,d.os_family,d.browser_family
+      from app.user_sessions s join app.user_accounts u on u.id=s.user_id join app.user_devices d on d.id=s.device_id
+      where u.appwrite_user_id=$1 order by s.created_at desc limit 50`, [appwriteUserId]);
+    return r.rows.map(x => ({ id: x.id, deviceId: x.device_id, displayName: x.display_name, clientType: x.client_type, osFamily: x.os_family, browserFamily: x.browser_family, status: x.admission_status, createdAt: new Date(x.created_at).toISOString(), lastSeenAt: x.last_seen_at ? new Date(x.last_seen_at).toISOString() : null, expiresAt: new Date(x.expires_at).toISOString(), revokedAt: x.revoked_at ? new Date(x.revoked_at).toISOString() : null, revokedReason: x.revoked_reason || null }));
+  }
+
+  async function revokeSession(appwriteUserId, sessionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const changed = await client.query(`update app.user_sessions set admission_status='revoked',revoked_at=now(),revoked_reason='user_request',provider_revocation_status='pending',revoke_retry_at=now() where id=$1 and user_id=$2 and admission_status in ('pending','active') returning id`, [sessionId, user.rows[0].id]);
+      if (!changed.rowCount) throw new Error('会话不存在或已经失效');
+      await client.query(`insert into app.session_actions(actor_user_id,target_user_id,target_session_id,action_type,reason) values($1,$1,$2,'revoke_one','user_request')`, [user.rows[0].id, sessionId]);
+      await client.query('commit');
+      return { success: true, sessionId };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
   async function getUser(appwriteUserId) {
     const result = await pool.query(`select u.appwrite_user_id,u.email,w.id workspace_id,
       coalesce(q.available,0) balance,coalesce(s.status,'trialing') subscription_status,
@@ -525,5 +568,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, revokeSession, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

@@ -79,7 +79,7 @@ export interface Txn {
 // ---------------- 客户接口 ----------------
 export const billingApi = {
   // 用 Appwrite 用户 ID 换计费 JWT
-  login: (body: { userId: string; email?: string; inviteCode?: string }) =>
+  login: (body: { userId: string; email?: string; inviteCode?: string; installationId?: string; displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }) =>
     request("/api/billing/login", { method: "POST", body }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
   plans: () => request<Plan[]>("/api/billing/plans"),

@@ -33,7 +33,13 @@ export const useBillingStore = create<BillingState>((set) => ({
         const m = window.location.search.match(/[?&]invite=([^&]+)/);
         if (m) code = decodeURIComponent(m[1]);
       }
-      const res = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode: code });
+      const key = 'qingyu-installation-id';
+      let installationId = localStorage.getItem(key);
+      if (!installationId) {
+        installationId = crypto.randomUUID();
+        localStorage.setItem(key, installationId);
+      }
+      const res = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode: code, installationId, displayName: navigator.userAgent.slice(0, 100), clientType: 'web', osFamily: navigator.platform || 'unknown', browserFamily: navigator.userAgent.slice(0, 64) });
       setBillingToken(res.token);
       set({ user: res.user });
     } catch (e) {

@@ -21,5 +21,6 @@
   "0020_referrals_redeem_codes.sql": "a7fc1938ca2c79664d1f370710c595b39ed3e402f3296e757aff514f1671c46e",
   "0021_session_limit_three.sql": "5e8a853102aa796723c4570080c0f1e23db34270547049368027b2959dd1ac1e",
   "0022_single_online_session.sql": "e3690703b05bbc62fe7229562e79b6467018a4e4adc683866abe3edc2ffb9ea0",
-  "0023_platform_api_keys.sql": "0f6c12021c9f533200b87353d66d86484748fad4b036b7af0710564be853e180"
+  "0023_platform_api_keys.sql": "0f6c12021c9f533200b87353d66d86484748fad4b036b7af0710564be853e180",
+  "0024_platform_api_model_length.sql": "877dd1e57bbbdc326e4fd8b3f9ee9457f89b57f25fad148ecec49f74f3e5ac98"
 }

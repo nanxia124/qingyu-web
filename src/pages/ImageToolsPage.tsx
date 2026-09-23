@@ -796,6 +796,7 @@ function BlendPanel() {
   const config = useConfigStore((s) => s.config)
   const [model, setModel] = useState('')
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const openAuthModal = useAuthStore((s) => s.openAuthModal)
   const [sourceImage, setSourceImage] = useState<string | null>(null)
   const [imageName, setImageName] = useState('')
   const [prompt, setPrompt] = useState('')

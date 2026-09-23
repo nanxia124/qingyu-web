@@ -712,6 +712,7 @@ async function handleBilling(req, res, pathname, method, url) {
 
 // ===================== 团队路由（业务数据统一走 PostgreSQL） =====================
 async function handleTeams(req, res, pathname, method) {
+  if (pathname.startsWith('/api/')) pathname = pathname.slice(4);
   if (!postgresBilling || !(pathname === "/teams" || pathname.startsWith("/teams/") || pathname === "/team-invitations/accept")) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
@@ -767,6 +768,7 @@ async function handleTeams(req, res, pathname, method) {
 }
 
 async function handleAssets(req, res, pathname, method, url) {
+  if (pathname.startsWith('/api/')) pathname = pathname.slice(4);
   if (!postgresBilling || !(pathname === "/assets" || pathname === "/assets/upload" || pathname.startsWith("/assets/") || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }

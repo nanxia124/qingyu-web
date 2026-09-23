@@ -65,13 +65,13 @@ export default function ProfilePage() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* 头像 */}
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-[#e5e5ea] flex items-center justify-center text-2xl font-bold text-text">
+          <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center text-2xl font-bold text-text">
             {user.name?.charAt(0).toUpperCase() || "U"}
           </div>
           <div>
             <button
               type="button"
-              className="px-4 py-2 text-sm rounded-lg bg-[#e5e5ea] text-text hover:bg-[#e8e8ec] transition-colors"
+              className="px-4 py-2 text-sm rounded-lg bg-secondary text-text hover:bg-surface-hover transition-colors"
             >
               上传头像
             </button>
@@ -86,7 +86,7 @@ export default function ProfilePage() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
             placeholder="请输入昵称"
           />
         </div>
@@ -98,7 +98,7 @@ export default function ProfilePage() {
             type="email"
             value={email}
             disabled
-            className="w-full px-4 py-3 rounded-lg bg-[#ffffff] border border-[#e2e2e8] text-text-muted cursor-not-allowed"
+            className="w-full px-4 py-3 rounded-lg bg-card border border-border text-text-muted cursor-not-allowed"
           />
           <p className="text-xs text-text-muted mt-1">邮箱用于登录，暂不支持修改</p>
         </div>
@@ -108,7 +108,7 @@ export default function ProfilePage() {
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-[#3f40e6] disabled:opacity-50 transition-colors"
+            className="px-6 py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {saving ? "保存中..." : "保存"}
           </button>
@@ -116,9 +116,9 @@ export default function ProfilePage() {
       </form>
 
       {/* 账号安全 */}
-      <div className="mt-8 pt-6 border-t border-[#e2e2e8]">
+      <div className="mt-8 pt-6 border-t border-border">
         <h2 className="text-lg font-semibold text-text mb-4">账号安全</h2>
-        <div className="flex items-center justify-between p-4 rounded-lg bg-[#e5e5ea]">
+        <div className="flex items-center justify-between p-4 rounded-lg bg-secondary">
           <div>
             <p className="text-text font-medium">修改密码</p>
             <p className="text-xs text-text-muted mt-1">定期更换密码以保障账号安全</p>
@@ -126,7 +126,7 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={() => navigate("/account/security")}
-            className="px-4 py-2 text-sm rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+            className="px-4 py-2 text-sm rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
           >
             去修改
           </button>

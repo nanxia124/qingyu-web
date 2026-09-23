@@ -47,3 +47,7 @@ build-canvas.log
 
 # runtime data & secrets (admin hash, API keys, billing data)
 api-data/
+# build archives / screenshots
+*.zip
+*.tar.gz
+/Codex*.png

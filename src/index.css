@@ -112,6 +112,86 @@
   --ring: #5051f8;
 }
 
+/*
+ * 深色模式：侧边栏切换按钮给 <html> 加 .dark 类时启用。
+ * 覆盖 @theme / :root 的浅色变量；.app-brand 锚点在深色下也翻回深色，
+ * 使画布 chunk 注入的 shadcn 工具类在主站深色页面仍解析为深色色板。
+ */
+.dark {
+  color-scheme: dark;
+  --color-bg: #151515;
+  --color-surface: #181818;
+  --color-surface-hover: #282828;
+  --color-card: #202020;
+  --color-card-hover: #292929;
+  --color-border: #383838;
+  --color-border-light: #454545;
+
+  --color-text: #bebebe;
+  --color-text-active: #ececec;
+  --color-text-secondary: #8e8e8e;
+  --color-text-muted: #8a8a8a;
+
+  --color-accent: #5051f8;
+  --color-accent-hover: #6366ff;
+  --color-accent-soft: #20204a;
+  --color-accent-soft-text: #d4d3ff;
+  --color-accent-foreground: #f0f0f0;
+
+  --color-success: #34d399;
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+
+  --color-nav-bg: #151515;
+  --color-nav-text: #afafaf;
+  --color-nav-text-muted: #8a8a8a;
+  --color-nav-hover: #262626;
+  --color-nav-active: #333333;
+  --color-nav-text-active: #ededed;
+
+  --color-input: #232323;
+  --color-input-focus: #292942;
+
+  --color-popover: #202020;
+  --color-popover-foreground: #bebebe;
+  --color-muted: #252525;
+  --color-muted-foreground: #8e8e8e;
+  --color-ring: #5051f8;
+  --color-secondary: #252525;
+  --color-secondary-foreground: #ececec;
+  --color-primary: #5051f8;
+  --color-primary-foreground: #f0f0f0;
+  --color-destructive: #f87171;
+
+  --background: #151515;
+  --foreground: #bebebe;
+  --card: #202020;
+  --card-foreground: #bebebe;
+  --popover: #202020;
+  --popover-foreground: #bebebe;
+  --secondary: #252525;
+  --secondary-foreground: #ececec;
+  --muted: #252525;
+  --muted-foreground: #8e8e8e;
+  --border: #383838;
+  --input: #232323;
+}
+
+.dark .app-brand {
+  --background: #151515;
+  --foreground: #bebebe;
+  --card: #202020;
+  --card-foreground: #bebebe;
+  --popover: #202020;
+  --popover-foreground: #bebebe;
+  --secondary: #252525;
+  --secondary-foreground: #ececec;
+  --muted: #252525;
+  --muted-foreground: #8e8e8e;
+  --border: #383838;
+  --input: #232323;
+}
+
 html,
 body,
 #root {
@@ -191,4 +271,20 @@ body {
 }
 .node-flow {
   animation: flowDash 20s linear infinite;
+}
+
+/* 深色模式下的滚动条与 Tooltip */
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a;
+}
+.dark [data-tip]:hover::after {
+  background: #2a2a2a;
+  color: #bebebe;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.dark [data-tip]:hover::before {
+  border-top-color: #2a2a2a;
 }

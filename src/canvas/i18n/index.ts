@@ -39,6 +39,18 @@ export type AppLocale =
     | "id-ID";
 
 const LOCALE_STORAGE_KEY = "infinite-canvas:locale";
+
+// 语言建议回调：检测到与当前不同的语言时，通知 UI 询问用户（不自动切换）
+type LanguageSuggestionListener = (detected: { locale: AppLocale; country?: string }) => void;
+let languageSuggestionListener: LanguageSuggestionListener | null = null;
+export function onLanguageSuggestion(cb: LanguageSuggestionListener) {
+    languageSuggestionListener = cb;
+    return () => {
+        if (languageSuggestionListener === cb) {
+            languageSuggestionListener = null;
+        }
+    };
+}
 const MANUAL_SELECT_KEY = "infinite-canvas:locale-manual";
 
 export const SUPPORTED_LOCALES: AppLocale[] = [
@@ -105,7 +117,7 @@ function detectBrowserLanguage(): AppLocale {
  * 根据 IP 地理位置自动检测语言
  * 使用免费公开 API，失败时静默降级
  */
-async function detectLanguageByIP(): Promise<AppLocale | null> {
+async function detectLanguageByIP(): Promise<{ locale: AppLocale; country?: string } | null> {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -119,6 +131,7 @@ async function detectLanguageByIP(): Promise<AppLocale | null> {
 
         const data = await res.json();
         const countryCode: string = (data.country_code || "").toUpperCase();
+        const countryName: string = data.country_name || data.country || "";
 
         // 国家代码到语言的映射
         const countryToLocale: Record<string, AppLocale> = {
@@ -160,7 +173,8 @@ async function detectLanguageByIP(): Promise<AppLocale | null> {
             ID: "id-ID",
         };
 
-        return countryToLocale[countryCode] || null;
+        const locale = countryToLocale[countryCode] || null;
+        return locale ? { locale, country: countryName || undefined } : null;
     } catch {
         return null;
     }
@@ -181,13 +195,15 @@ function getInitialLanguage(): AppLocale {
  * 异步根据 IP 检测语言，仅在用户未手动选择时生效
  */
 export async function autoDetectLanguageByIP() {
+    // 已手动选择过语言：始终保持，不做任何自动切换
     if (localStorage.getItem(MANUAL_SELECT_KEY) === "true") {
         return;
     }
 
     const detected = await detectLanguageByIP();
-    if (detected && detected !== i18n.resolvedLanguage) {
-        await i18n.changeLanguage(detected);
+    if (detected && detected.locale !== i18n.resolvedLanguage) {
+        // 不自动切换，通知 UI 弹 toast 询问用户是否切换
+        languageSuggestionListener?.(detected);
     }
 }
 

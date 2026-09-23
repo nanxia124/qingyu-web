@@ -29,7 +29,7 @@ export function ResultCard({
   if (r.generating) {
     return (
       <div className={cn('group relative overflow-hidden rounded-lg bg-card', viewMode === 'large' ? 'aspect-square' : '')}>
-        <div className="relative flex h-full items-center justify-center overflow-hidden bg-[#ececef]">
+        <div className="relative flex h-full items-center justify-center overflow-hidden bg-surface-hover">
           {/* AI生成动画背景 */}
           <div className="absolute inset-0 opacity-30" style={{
             backgroundImage: 'radial-gradient(circle at 25% 25%, #5051F8 0%, transparent 40%), radial-gradient(circle at 75% 75%, #7c3aed 0%, transparent 40%), radial-gradient(circle at 75% 25%, #06b6d4 0%, transparent 30%)',

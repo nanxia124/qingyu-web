@@ -47,20 +47,20 @@ export default function AdminAuditsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索操作或用户..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#ffffff] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
           />
         </div>
       </div>
 
       {/* 日志列表 */}
-      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] overflow-hidden">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted">加载中...</div>
         ) : (
-          <div className="divide-y divide-[#e5e5ea]">
+          <div className="divide-y divide-border">
             {logs.map((log) => (
               <div key={log.id} className="px-6 py-4 flex items-start gap-4">
-                <div className="w-8 h-8 rounded-lg bg-[#e5e5ea] flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
                   <Shield size={16} className="text-text-muted" />
                 </div>
                 <div className="flex-1 min-w-0">

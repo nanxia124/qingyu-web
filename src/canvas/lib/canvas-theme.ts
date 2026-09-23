@@ -13,7 +13,7 @@ export const canvasThemes = {
         node: {
             label: "#57534e",
             fill: "#e7e5df",
-            panel: "#1c1c1c",
+            panel: "#ffffff",
             stroke: "#d6d3ca",
             activeStroke: "#1c1917",
             placeholder: "#8a8479",
@@ -22,7 +22,7 @@ export const canvasThemes = {
             faint: "#a8a29e",
         },
         toolbar: {
-            panel: "rgba(28,28,28,.98)",
+            panel: "rgba(255,255,255,.95)",
             border: "#d6d3ca",
             item: "#57534e",
             itemHover: "#e7e5df",

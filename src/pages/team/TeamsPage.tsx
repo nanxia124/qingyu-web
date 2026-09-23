@@ -44,7 +44,7 @@ export default function TeamsPage() {
         <h1 className="text-2xl font-bold text-text">我的团队</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
         >
           <Plus size={16} />
           创建团队
@@ -67,7 +67,7 @@ export default function TeamsPage() {
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setShowCreate(false)}>
           <div
-            className="w-full max-w-md rounded-2xl bg-[#ffffff] p-6"
+            className="w-full max-w-md rounded-2xl bg-card p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-text mb-4">创建新团队</h2>
@@ -78,7 +78,7 @@ export default function TeamsPage() {
                 onChange={(e) => setNewTeamName(e.target.value)}
                 placeholder="团队名称"
                 autoFocus
-                className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none mb-4"
+                className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none mb-4"
               />
               <div className="flex justify-end gap-3">
                 <button
@@ -91,7 +91,7 @@ export default function TeamsPage() {
                 <button
                   type="submit"
                   disabled={creating}
-                  className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
                   {creating ? "创建中..." : "创建"}
                 </button>
@@ -108,14 +108,14 @@ export default function TeamsPage() {
             key={team.id}
             className={`p-5 rounded-xl border transition-all cursor-pointer ${
               currentTeam?.id === team.id
-                ? "border-[#5051F8] bg-[#5051F8]/5"
-                : "border-[#e2e2e8] bg-[#ffffff] hover:border-[#5051F8]/50"
+                ? "border-accent bg-[#5051F8]/5"
+                : "border-border bg-card hover:border-accent/50"
             }`}
             onClick={() => switchTeam(team.id)}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-[#e5e5ea] flex items-center justify-center">
+                <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center">
                   <Users size={24} className="text-text-muted" />
                 </div>
                 <div>
@@ -138,7 +138,7 @@ export default function TeamsPage() {
                   </span>
                 )}
                 <button
-                  className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-[#e5e5ea] transition-colors"
+                  className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     // 跳转设置

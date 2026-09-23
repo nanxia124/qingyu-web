@@ -53,13 +53,13 @@ export default function SubscriptionPage() {
     <div className="p-8 max-w-5xl mx-auto">
       <div className="flex items-end justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">订阅套餐</h1>
-          <p className="text-sm text-gray-400 mt-1">选择适合你的套餐，解锁全部能力</p>
+          <h1 className="text-2xl font-bold text-text">订阅套餐</h1>
+          <p className="text-sm text-gray-500 mt-1">选择适合你的套餐，解锁全部能力</p>
         </div>
         {billingUser && (
           <div className="text-right">
-            <div className="text-xs text-gray-400">当前额度</div>
-            <div className="text-2xl font-bold text-[#5051F8]">{billingUser.balance.toLocaleString()}</div>
+            <div className="text-xs text-gray-500">当前额度</div>
+            <div className="text-2xl font-bold text-accent">{billingUser.balance.toLocaleString()}</div>
             <div className="text-xs text-gray-500">
               {memberActive ? `会员有效期至 ${memberExpireText}` : "免费版"}
             </div>
@@ -68,7 +68,7 @@ export default function SubscriptionPage() {
       </div>
 
       {msg && (
-        <div className="mb-6 rounded-lg bg-[#5051F8]/10 border border-[#5051F8]/30 px-4 py-3 text-sm text-white">
+        <div className="mb-6 rounded-lg bg-[#5051F8]/10 border border-accent/30 px-4 py-3 text-sm text-text">
           {msg}
         </div>
       )}
@@ -82,36 +82,36 @@ export default function SubscriptionPage() {
               key={plan.id}
               className={`p-6 rounded-2xl border transition-colors ${
                 isCurrent
-                  ? "border-[#5051F8] bg-[#1d1d2b]"
-                  : "border-[#2a2a2a] bg-[#1a1a1a] hover:border-[#3a3a3a]"
+                  ? "border-accent bg-[#eeeeff]"
+                  : "border-border bg-card hover:border-border-light"
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
-                <Icon size={18} className="text-[#5051F8]" />
-                <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
+                <Icon size={18} className="text-accent" />
+                <h3 className="text-lg font-semibold text-text">{plan.name}</h3>
               </div>
-              <p className="text-3xl font-bold text-white mt-2">
+              <p className="text-3xl font-bold text-text mt-2">
                 ¥{(plan.priceCents / 100).toFixed(0)}
                 {plan.durationDays > 0 && <span className="text-sm text-gray-500 font-normal">/月</span>}
               </p>
               <p className="text-xs text-gray-500 mt-1">{plan.description}</p>
               <ul className="mt-4 space-y-2">
                 {plan.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm text-gray-300">
-                    <Check size={15} className="text-[#5051F8] shrink-0" />
+                  <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
+                    <Check size={15} className="text-accent shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
               {isCurrent ? (
-                <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-[#2a2a2a] text-gray-400">
+                <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-secondary text-gray-500">
                   当前套餐
                 </button>
               ) : (
                 <button
                   onClick={() => buy(plan)}
                   disabled={!!loading || plan.priceCents === 0}
-                  className="mt-6 w-full py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] disabled:opacity-50 transition-colors"
+                  className="mt-6 w-full py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
                   {loading === plan.id ? "开通中..." : plan.priceCents === 0 ? "当前免费" : "立即开通"}
                 </button>

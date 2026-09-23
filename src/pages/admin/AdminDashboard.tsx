@@ -431,15 +431,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     };
 
     return (
-        <div className="min-h-screen bg-[#f4f4f6] p-8">
+        <div className="min-h-screen bg-bg p-8">
             <div className="mx-auto max-w-5xl">
                 <div className="mb-8 flex items-center justify-between">
                     <h1 className="text-2xl font-bold text-white">API 配置管理</h1>
                     <div className="flex gap-2">
-                        <button onClick={() => setShowChangePw(true)} className="rounded-lg bg-[#e5e5ea] px-4 py-2 text-sm text-gray-600 hover:bg-[#c7c7cd]">
+                        <button onClick={() => setShowChangePw(true)} className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border">
                             修改密码
                         </button>
-                        <button onClick={onLogout} className="rounded-lg bg-[#e5e5ea] px-4 py-2 text-sm text-gray-600 hover:bg-[#c7c7cd]">
+                        <button onClick={onLogout} className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border">
                             退出登录
                         </button>
                     </div>
@@ -447,58 +447,58 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
                 {showChangePw && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-                        <form onSubmit={handleChangePw} className="relative w-full max-w-md rounded-2xl bg-[#ffffff] p-6">
+                        <form onSubmit={handleChangePw} className="relative w-full max-w-md rounded-2xl bg-card p-6">
                         <h2 className="mb-4 text-lg font-semibold text-white">修改密码</h2>
-                        <button type="button" onClick={() => setShowChangePw(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[#e5e5ea] text-lg text-gray-500 hover:bg-[#c7c7cd] hover:text-white">×</button>
+                        <button type="button" onClick={() => setShowChangePw(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
                         {pwError && <p className="mb-4 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">{pwError}</p>}
                         {pwSuccess && <p className="mb-4 rounded bg-green-500/10 px-3 py-2 text-sm text-green-400">密码修改成功</p>}
                         <div className="grid gap-4">
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">旧密码</label>
                                 <input type="password" value={pwForm.oldPassword} onChange={e => setPwForm({...pwForm, oldPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">新密码（至少 8 位）</label>
                                 <input type="password" value={pwForm.newPassword} onChange={e => setPwForm({...pwForm, newPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">确认新密码</label>
                                 <input type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({...pwForm, confirmPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                         </div>
                         <div className="mt-4 flex gap-2">
-                            <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-[#3f40e6]">确认修改</button>
-                            <button type="button" onClick={() => setShowChangePw(false)} className="rounded-lg bg-[#e5e5ea] px-4 py-2 text-gray-600">取消</button>
+                            <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">确认修改</button>
+                            <button type="button" onClick={() => setShowChangePw(false)} className="rounded-lg bg-secondary px-4 py-2 text-gray-600">取消</button>
                         </div>
                         </form>
                     </div>
                 )}
 
                 <div className="mb-6 flex justify-end">
-                    <button onClick={() => setShowAdd(!showAdd)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-[#3f40e6]">
+                    <button onClick={() => setShowAdd(!showAdd)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">
                         + 添加 API 配置
                     </button>
                 </div>
 
                 {showAdd && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-                        <form onSubmit={handleAdd} className="relative w-full max-w-2xl rounded-2xl bg-[#ffffff] p-6 max-h-[85vh] overflow-y-auto thin-scrollbar">
+                        <form onSubmit={handleAdd} className="relative w-full max-w-2xl rounded-2xl bg-card p-6 max-h-[85vh] overflow-y-auto thin-scrollbar">
                         <h2 className="mb-4 text-lg font-semibold text-white">{editId ? "编辑配置" : "新增配置"}</h2>
-                        <button type="button" onClick={() => setShowAdd(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[#e5e5ea] text-lg text-gray-500 hover:bg-[#c7c7cd] hover:text-white">×</button>
+                        <button type="button" onClick={() => setShowAdd(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">名称</label>
                                 <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" placeholder="比如：OpenAI 主 Key" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="比如：OpenAI 主 Key" />
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">提供商</label>
                                 <div className="relative" ref={providerRef}>
                                     <button type="button" onClick={() => setProviderOpen(v => !v)}
-                                        className="flex w-full items-center justify-between rounded-lg bg-[#e5e5ea] px-3 py-2 text-sm text-white outline-none">
+                                        className="flex w-full items-center justify-between rounded-lg bg-secondary px-3 py-2 text-sm text-white outline-none">
                                         <span>{PROVIDERS.find(p => p.value === form.provider)?.label || form.provider}</span>
                                         <svg className="text-gray-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
                                     </button>
@@ -507,17 +507,17 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">API 地址</label>
                                 <input value={form.base_url} onChange={e => setForm({...form, base_url: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" placeholder="https://api.openai.com/v1" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="https://api.openai.com/v1" />
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">API Key{editId && "（留空则不修改）"}</label>
                                 <input type="password" value={form.api_key} onChange={e => setForm({...form, api_key: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" placeholder="sk-..." />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="sk-..." />
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">单 key 最大并发（留空用全局默认 {keyMaxConcurrency}）</label>
                                 <input type="number" min="1" value={form.max_concurrency} onChange={e => setForm({...form, max_concurrency: e.target.value})}
-                                    className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none" placeholder="如 5" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="如 5" />
                             </div>
                             <div className="col-span-2">
                                 <span className="text-sm text-gray-500">模型已选 {selectedModels.length} 个</span>
@@ -541,22 +541,22 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                     const allFilteredIn = filtered.length > 0 && filtered.every(m => selectedModels.includes(m));
                                     return (
                                     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70">
-                                        <div className="relative flex h-[80vh] w-full max-w-2xl flex-col rounded-2xl bg-[#ffffff] p-6">
+                                        <div className="relative flex h-[80vh] w-full max-w-2xl flex-col rounded-2xl bg-card p-6">
                                             <h3 className="mb-4 text-xl font-semibold text-white">选择模型</h3>
-                                            <button type="button" onClick={() => setShowModelsModal(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[#e5e5ea] text-lg text-gray-500 hover:bg-[#c7c7cd] hover:text-white">×</button>
-                                            <div className="mb-4 flex flex-wrap items-center gap-5 border-b border-[#e5e5ea] pb-3">
+                                            <button type="button" onClick={() => setShowModelsModal(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
+                                            <div className="mb-4 flex flex-wrap items-center gap-5 border-b border-border pb-3">
                                                 {tabs.map(t => (
                                                     <button key={t} type="button" onClick={() => setCapTab(t)}
                                                         className={`text-sm ${capTab === t ? "font-medium text-white" : "text-gray-500 hover:text-gray-600"}`}>
-                                                        {t} <span className={capTab === t ? "text-[#4446d8]" : "text-gray-600"}>{counts[t] || 0}</span>
+                                                        {t} <span className={capTab === t ? "text-accent-soft-text" : "text-gray-600"}>{counts[t] || 0}</span>
                                                     </button>
                                                 ))}
                                                 <button type="button" onClick={() => setAllExpanded(!allExpanded)}
-                                                    className="ml-auto rounded bg-[#e5e5ea] px-3 py-1 text-xs text-gray-600 hover:bg-[#c7c7cd]">
+                                                    className="ml-auto rounded bg-secondary px-3 py-1 text-xs text-gray-600 hover:bg-border">
                                                     {allExpanded ? "折叠全部" : "展开全部"}
                                                 </button>
                                                 <button type="button" onClick={() => toggleBrand(filtered)}
-                                                    className={`rounded px-3 py-1 text-xs ${allFilteredIn ? "bg-[#5051F8]/15 text-[#4446d8]" : "bg-[#e5e5ea] text-gray-600 hover:bg-[#c7c7cd]"}`}>
+                                                    className={`rounded px-3 py-1 text-xs ${allFilteredIn ? "bg-[#5051F8]/15 text-accent-soft-text" : "bg-secondary text-gray-600 hover:bg-border"}`}>
                                                     {allFilteredIn ? "取消全选" : "全选"}
                                                 </button>
                                             </div>
@@ -582,12 +582,12 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         </span>
                                                     );
                                                     return (
-                                                        <div key={b} className="group rounded-lg bg-[#ffffff]">
+                                                        <div key={b} className="group rounded-lg bg-card">
                                                             <div className="flex items-center gap-2 px-3 py-2.5">
                                                                 <button type="button" onClick={() => toggleExpand(b)} className="flex items-center text-gray-500"><ChevronRight size={14} className="transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }} /></button>
                                                                 {headLogo}
                                                                 <span className="text-base font-semibold text-gray-100">{b}</span>
-                                                                <span className="rounded-full bg-[#5051F8]/20 px-1.5 text-xs text-[#4446d8]">{list.length}</span>
+                                                                <span className="rounded-full bg-[#5051F8]/20 px-1.5 text-xs text-accent-soft-text">{list.length}</span>
                                                                 <button type="button" onClick={() => toggleBrand(list)} title={allIn ? "取消添加全部" : "添加全部"}
                                                                     className={`ml-auto flex h-4 w-4 items-center justify-center rounded-full transition-all ${allIn ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover:opacity-100"}`}>
                                                                     {allIn ? (
@@ -616,7 +616,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                 {run.items.map(m => {
                                                                                     const sel = selectedModels.includes(m);
                                                                                     return (
-                                                                                        <div key={m} className="group/row flex items-center gap-2 rounded-lg bg-[#e5e5ea] px-2.5 py-2 hover:bg-[#e4e4e9]">
+                                                                                        <div key={m} className="group/row flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 hover:bg-surface-hover">
                                                                                             {rowLogo}
                                                                                             <span className="truncate text-sm text-gray-600">{prettyModel(m)}</span>
                                                                                             <button type="button" onClick={() => toggleModel(m)} title={sel ? "移除" : "添加"}
@@ -640,8 +640,8 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                 })}
                                                 {brandKeys.length === 0 && <p className="py-8 text-center text-sm text-gray-500">该分类下没有模型</p>}
                                             </div>
-                                            <div className="mt-4 flex justify-end border-t border-[#e5e5ea] pt-4">
-                                                <button type="button" onClick={() => setShowModelsModal(false)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-[#3f40e6]">完成（已选 {selectedModels.length} 个）</button>
+                                            <div className="mt-4 flex justify-end border-t border-border pt-4">
+                                                <button type="button" onClick={() => setShowModelsModal(false)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">完成（已选 {selectedModels.length} 个）</button>
                                             </div>
                                         </div>
                                     </div>
@@ -655,12 +655,12 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                 setCapTab("全部");
                                 setShowModelsModal(true);
                             }} disabled={loadingModels}
-                                className="rounded-lg bg-[#e5e5ea] px-4 py-2 text-sm text-gray-600 hover:bg-[#c7c7cd] disabled:opacity-50">
+                                className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border disabled:opacity-50">
                                 {loadingModels ? "拉取中..." : "拉取模型"}
                             </button>
                             <div className="ml-auto flex gap-2">
-                                <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-[#3f40e6]">保存</button>
-                                <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg bg-[#e5e5ea] px-4 py-2 text-gray-600">取消</button>
+                                <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">保存</button>
+                                <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg bg-secondary px-4 py-2 text-gray-600">取消</button>
                             </div>
                         </div>
                         </form>
@@ -673,12 +673,12 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     return (
                         <>
                             <div className="fixed inset-0 z-[60]" onClick={() => setProviderOpen(false)} />
-                            <div className="fixed z-[61] max-h-72 overflow-y-auto rounded-lg bg-[#e5e5ea] py-1 shadow-lg shadow-black/50 thin-scrollbar"
+                            <div className="fixed z-[61] max-h-72 overflow-y-auto rounded-lg bg-secondary py-1 shadow-lg shadow-black/50 thin-scrollbar"
                                 style={{ left: r.left, top: r.bottom + 4, width: r.width }}>
                                 {PROVIDERS.map(p => (
                                     <button key={p.value} type="button"
                                         onClick={() => { setForm({ ...form, provider: p.value }); setProviderOpen(false); }}
-                                        className={`block w-full px-3 py-1.5 text-left text-sm ${p.value === form.provider ? "bg-[#5051F8]/15 text-[#4446d8]" : "text-gray-600 hover:bg-[#e8e8ec]"}`}>
+                                        className={`block w-full px-3 py-1.5 text-left text-sm ${p.value === form.provider ? "bg-[#5051F8]/15 text-accent-soft-text" : "text-gray-600 hover:bg-surface-hover"}`}>
                                         {p.label}
                                     </button>
                                 ))}
@@ -705,7 +705,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                         const modelList = k.model ? k.model.split(",").map(s => s.trim()).filter(Boolean) : [];
                                         const brandGroups = modelList.length ? groupByBrand(modelList) : null;
                                         return (
-                                        <div key={k.id} className="flex flex-col rounded-xl border-t-2 bg-[#ffffff] p-8" style={{ borderTopColor: CARD_ACCENTS[k.id % CARD_ACCENTS.length] }}>
+                                        <div key={k.id} className="flex flex-col rounded-xl border border-border bg-card p-8">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div className="flex-1 space-y-3">
                                                     <div className="flex items-center gap-2">
@@ -726,15 +726,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         const max = st.maxConcurrency || k.max_concurrency || keyMaxConcurrency;
                                                         return (
                                                             <div className="flex flex-wrap items-center gap-2 pt-1">
-                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${st.inFlight > 0 ? "bg-blue-500/20 text-blue-300" : "bg-[#e5e5ea] text-gray-500"}`}>
+                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${st.inFlight > 0 ? "bg-blue-500/20 text-blue-300" : "bg-secondary text-gray-500"}`}>
                                                                     并发 {st.inFlight || 0}/{max}
                                                                 </span>
                                                                 <span className="rounded-md bg-emerald-500/15 px-2.5 py-1 text-sm font-medium text-emerald-300">成功 {s}</span>
-                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${f > 0 ? "bg-red-500/15 text-red-300" : "bg-[#e5e5ea] text-gray-500"}`}>失败 {f}</span>
-                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${total === 0 ? "bg-[#e5e5ea] text-gray-500" : rate >= 90 ? "bg-emerald-500/15 text-emerald-300" : rate >= 60 ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"}`}>
+                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${f > 0 ? "bg-red-500/15 text-red-300" : "bg-secondary text-gray-500"}`}>失败 {f}</span>
+                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${total === 0 ? "bg-secondary text-gray-500" : rate >= 90 ? "bg-emerald-500/15 text-emerald-300" : rate >= 60 ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"}`}>
                                                                     {total === 0 ? "—" : rate + "%"}
                                                                 </span>
-                                                                {st.avgLatencyMs > 0 && <span className="rounded-md bg-[#e5e5ea] px-2.5 py-1 text-sm font-medium text-gray-600">{st.avgLatencyMs}ms</span>}
+                                                                {st.avgLatencyMs > 0 && <span className="rounded-md bg-secondary px-2.5 py-1 text-sm font-medium text-gray-600">{st.avgLatencyMs}ms</span>}
                                                                 {st.cooling && <span className="rounded-md bg-red-500/20 px-2.5 py-1 text-sm font-semibold text-red-300">熔断中</span>}
                                                             </div>
                                                         );
@@ -780,7 +780,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         const hasSummary = (today && today.calls > 0) || (week && week.calls > 0);
                                                         if (!hasSummary && !d7 && !d30) return null;
                                                         return (
-                                                            <div className="space-y-2 border-t border-[#f0f0f2] pt-2">
+                                                            <div className="space-y-2 border-t border-border pt-2">
                                                                 {hasSummary && (
                                                                     <div className="space-y-0.5">
                                                                         {today && today.calls > 0 && (
@@ -810,10 +810,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                     })()}
                                                 </div>
                                                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                                                    <button onClick={() => startEdit(k)} className="rounded bg-[#e5e5ea] px-3 py-1 text-sm text-gray-600 hover:bg-[#c7c7cd]">
+                                                    <button onClick={() => startEdit(k)} className="rounded bg-secondary px-3 py-1 text-sm text-gray-600 hover:bg-border">
                                                         编辑
                                                     </button>
-                                                    <button onClick={() => testConnection(k.id)} className="rounded bg-[#e5e5ea] px-3 py-1 text-sm text-gray-600 hover:bg-[#c7c7cd]">
+                                                    <button onClick={() => testConnection(k.id)} className="rounded bg-secondary px-3 py-1 text-sm text-gray-600 hover:bg-border">
                                                         {testingId === k.id ? "测试中..." : "测试连接"}
                                                     </button>
                                                     {testResult[k.id] && (
@@ -821,7 +821,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                             {testResult[k.id].ok ? "正常" : "失败"}
                                                         </span>
                                                     )}
-                                                    <button onClick={() => handleToggle(k.id, !!k.is_active)} className="rounded bg-[#e5e5ea] px-3 py-1 text-sm text-gray-600 hover:bg-[#c7c7cd]">
+                                                    <button onClick={() => handleToggle(k.id, !!k.is_active)} className="rounded bg-secondary px-3 py-1 text-sm text-gray-600 hover:bg-border">
                                                         {k.is_active ? "停用" : "启用"}
                                                     </button>
                                                     <button onClick={() => handleDelete(k.id)} className="rounded bg-red-500/10 px-3 py-1 text-sm text-red-400 hover:bg-red-500/20">
@@ -845,9 +845,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                     }
                                                 };
                                                 return (
-                                                    <div className="mt-5 space-y-4 border-t border-[#f0f0f2] pt-3">
+                                                    <div className="mt-5 space-y-4 border-t border-border pt-3">
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <button onClick={() => setAll(collapsed)} className="rounded bg-[#e5e5ea] px-3 py-1 text-xs text-gray-600 hover:bg-[#c7c7cd]">{collapsed ? "展开全部" : "折叠全部"}</button>
+                                                            <button onClick={() => setAll(collapsed)} className="rounded bg-secondary px-3 py-1 text-xs text-gray-600 hover:bg-border">{collapsed ? "展开全部" : "折叠全部"}</button>
                                                         </div>
                                                         {!collapsed && brands.map(brand => {
                                                             const caps = brandGroups[brand];
@@ -869,7 +869,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                             else runs.push({ key: s, items: [m] });
                                                                         });
                                                                         return (
-                                                                            <div key={cap} className="space-y-2 rounded-lg bg-[#ffffff] p-3">
+                                                                            <div key={cap} className="space-y-2 rounded-lg bg-card p-3">
                                                                                 <div className={`rounded px-2.5 py-1 ${CAP_BG[cap] || CAP_BG["其他"]}`}>
                                                                                     <span className={`text-xs ${CAP_TEXT[cap] || "text-gray-600"}`}>{cap}</span>
                                                                                 </div>
@@ -889,12 +889,12 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                                     return (
                                                                                                         <div key={m} className="flex flex-col gap-1">
                                                                                                             <button onClick={() => setExpandedModelRows(p => ({ ...p, [rowKey]: !open }))}
-                                                                                                                className="flex items-center justify-between rounded bg-[#e5e5ea] px-2.5 py-1 text-left text-xs leading-4 text-gray-500 hover:bg-[#c7c7cd]">
+                                                                                                                className="flex items-center justify-between rounded bg-secondary px-2.5 py-1 text-left text-xs leading-4 text-gray-500 hover:bg-border">
                                                                                                                 <span className="truncate">{prettyModel(m)}</span>
                                                                                                                 <ChevronRight size={12} className="shrink-0 text-gray-600 transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }} />
                                                                                                             </button>
                                                                                                             {open && (
-                                                                                                                <div className="rounded bg-[#f0f0f2] px-2 py-1.5 text-[11px] leading-5 text-gray-500">
+                                                                                                                <div className="rounded bg-secondary px-2 py-1.5 text-[11px] leading-5 text-gray-500">
                                                                                                                     {!has && <div className="text-gray-600">暂无数据</div>}
                                                                                                                     {has && (
                                                                                                                         <>

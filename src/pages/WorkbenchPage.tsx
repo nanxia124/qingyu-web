@@ -67,7 +67,7 @@ export default function WorkbenchPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#f4f4f6]">
+    <div className="flex h-full flex-col overflow-y-auto bg-bg">
       {/* ── 顶栏 ── */}
       <div className="shrink-0 px-6 pt-5">
         <div className="flex items-center gap-3">
@@ -77,10 +77,10 @@ export default function WorkbenchPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索灵感、作品、教程…"
-              className="h-9 w-full rounded-lg bg-[#ffffff] pl-9 pr-3 text-sm text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
+              className="h-9 w-full rounded-lg bg-card pl-9 pr-3 text-sm text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
             />
           </div>
-          <button className="flex size-9 items-center justify-center rounded-lg bg-[#ffffff] text-text-muted hover:text-text">
+          <button className="flex size-9 items-center justify-center rounded-lg bg-card text-text-muted hover:text-text">
             <Bell className="size-[18px]" />
           </button>
           {/* 三个快捷入口 */}
@@ -117,7 +117,7 @@ export default function WorkbenchPage() {
             <button
               key={item.title}
               onClick={() => navigate(item.path)}
-              className="flex flex-col items-start gap-2 rounded-xl bg-[#ffffff] p-4 text-left transition-colors hover:bg-[#f0f0f2]"
+              className="flex flex-col items-start gap-2 rounded-xl bg-card p-4 text-left transition-colors hover:bg-secondary"
             >
               <item.icon className="size-5 text-accent" />
               <div>
@@ -130,7 +130,7 @@ export default function WorkbenchPage() {
       </div>
 
       {/* ── 分类 Tab ── */}
-      <div className="shrink-0 px-6 pt-6">
+      <div className="shrink-0 px-6 pt-6 pb-4">
         <div className="flex items-center gap-2">
           {categories.map((cat) => (
             <button
@@ -140,7 +140,7 @@ export default function WorkbenchPage() {
                 'rounded-full px-4 py-1.5 text-[13px] transition-colors',
                 activeCat === cat.id
                   ? 'bg-accent text-accent-foreground'
-                  : 'bg-[#ffffff] text-text-muted hover:text-text',
+                  : 'text-text-muted hover:bg-secondary hover:text-text',
               )}
             >
               {cat.label}
@@ -170,7 +170,7 @@ export default function WorkbenchPage() {
       </div>
 
       {/* ── 灵感瀑布流 ── */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="flex-1 overflow-y-auto px-6 py-5 pb-28">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {filteredItems.map((item) => (
             <div
@@ -180,7 +180,7 @@ export default function WorkbenchPage() {
                 item.gradient,
               )}
             >
-              <div className="absolute inset-0 flex items-center justify-center text-sm text-white/60">
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-text/70">
                 {item.title}
               </div>
               <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent p-3">
@@ -203,12 +203,12 @@ export default function WorkbenchPage() {
         )}
       </div>
 
-      {/* ── 底部：快捷输入 + 开源工具 ── */}
-      <div className="shrink-0 border-t border-[#e2e2e8] bg-[#ffffff] px-6 py-3">
-        <div className="flex items-center gap-3">
+      {/* ── 底部：悬浮快捷输入 ── */}
+      <div className="pointer-events-none fixed bottom-5 inset-x-0 z-20 px-6">
+        <div className="pointer-events-auto mx-auto flex max-w-2xl items-center gap-3 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
           <button
             onClick={() => showToast('附件上传功能即将上线')}
-            className="flex size-9 items-center justify-center rounded-full bg-[#f0f0f2] text-text-muted hover:text-text"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-text-muted hover:text-text"
           >
             <Plus className="size-[18px]" />
           </button>
@@ -217,26 +217,14 @@ export default function WorkbenchPage() {
             onChange={(e) => setQuickPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleQuickGenerate() }}
             placeholder="描述你想创作的内容，AI 帮你生成…"
-            className="h-9 flex-1 rounded-full bg-[#f0f0f2] px-4 text-sm text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
+            className="h-9 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
           />
           <button
             onClick={handleQuickGenerate}
-            className="flex size-9 items-center justify-center rounded-full bg-accent text-accent-foreground hover:bg-accent-hover"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground hover:bg-accent-hover"
           >
             <Sparkles className="size-[18px]" />
           </button>
-        </div>
-        <div className="mt-2 flex items-center gap-4">
-          {quickTools.map((tool) => (
-            <button
-              key={tool.label}
-              onClick={() => showToast(`${tool.label} 即将上线`)}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-text"
-            >
-              <tool.icon className="size-3" />
-              {tool.label}
-            </button>
-          ))}
         </div>
       </div>
     </div>

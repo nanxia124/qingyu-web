@@ -32,7 +32,7 @@ export default function AssetsPage() {
     <div className="mx-auto max-w-[1320px] p-6">
       {/* 工具栏 */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-lg bg-[#f0f0f2] p-1">
+        <div className="flex gap-1 rounded-lg bg-secondary p-1">
           {typeTabs.map((t) => (
             <button
               key={t.id}

@@ -61,38 +61,38 @@ export default function WalletPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-6">我的钱包</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">我的钱包</h1>
 
       {/* 余额卡片 */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] p-5">
-          <div className="flex items-center gap-2 text-gray-400 text-sm"><Coins size={16} /> 当前余额</div>
-          <div className="text-3xl font-bold text-[#5051F8] mt-2">{billingUser?.balance ?? 0}</div>
+        <div className="rounded-2xl bg-card border border-border p-5">
+          <div className="flex items-center gap-2 text-gray-500 text-sm"><Coins size={16} /> 当前余额</div>
+          <div className="text-3xl font-bold text-accent mt-2">{billingUser?.balance ?? 0}</div>
         </div>
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] p-5">
-          <div className="flex items-center gap-2 text-gray-400 text-sm"><Ticket size={16} /> 当前会员</div>
-          <div className="text-2xl font-bold text-white mt-2">
+        <div className="rounded-2xl bg-card border border-border p-5">
+          <div className="flex items-center gap-2 text-gray-500 text-sm"><Ticket size={16} /> 当前会员</div>
+          <div className="text-2xl font-bold text-text mt-2">
             {billingUser?.memberActive ? (billingUser?.memberLevel === "pro" ? "Pro" : "团队版") : "免费版"}
           </div>
           {billingUser?.memberExpireAt ? (
             <div className="text-xs text-gray-500 mt-1">至 {new Date(billingUser.memberExpireAt).toLocaleDateString()}</div>
           ) : null}
         </div>
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] p-5">
-          <div className="flex items-center gap-2 text-gray-400 text-sm"><Receipt size={16} /> 累计消费</div>
-          <div className="text-2xl font-bold text-white mt-2">¥{((billingUser?.totalSpent || 0) / 100).toFixed(2)}</div>
+        <div className="rounded-2xl bg-card border border-border p-5">
+          <div className="flex items-center gap-2 text-gray-500 text-sm"><Receipt size={16} /> 累计消费</div>
+          <div className="text-2xl font-bold text-text mt-2">¥{((billingUser?.totalSpent || 0) / 100).toFixed(2)}</div>
         </div>
       </div>
 
       {/* Tab */}
-      <div className="flex gap-1 mb-4 border-b border-[#2a2a2a]">
+      <div className="flex gap-1 mb-4 border-b border-border">
         {([["codes", "兑换码"], ["orders", "订单"], ["txns", "余额流水"], ["invite", "邀请好友"]] as const).map(
           ([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
               className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
-                tab === k ? "border-[#5051F8] text-white" : "border-transparent text-gray-500 hover:text-gray-300"
+                tab === k ? "border-accent text-text" : "border-transparent text-gray-500 hover:text-gray-600"
               }`}
             >
               {label}
@@ -101,22 +101,22 @@ export default function WalletPage() {
         )}
       </div>
 
-      {msg && <div className="mb-4 rounded-lg bg-[#5051F8]/10 border border-[#5051F8]/30 px-4 py-2 text-sm text-white">{msg}</div>}
+      {msg && <div className="mb-4 rounded-lg bg-[#5051F8]/10 border border-accent/30 px-4 py-2 text-sm text-text">{msg}</div>}
 
       {/* 兑换码 */}
       {tab === "codes" && (
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] p-6">
-          <h3 className="text-white font-medium mb-3">输入兑换码</h3>
+        <div className="rounded-2xl bg-card border border-border p-6">
+          <h3 className="text-text font-medium mb-3">输入兑换码</h3>
           <div className="flex gap-3">
             <input
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="QY-XXXX-XXXX-XXXX"
-              className="flex-1 rounded-lg bg-[#121212] border border-[#2a2a2a] px-4 py-2.5 text-white outline-none focus:border-[#5051F8] font-mono"
+              className="flex-1 rounded-lg bg-secondary border border-border px-4 py-2.5 text-text outline-none focus:border-accent font-mono"
             />
             <button
               onClick={redeem}
-              className="px-6 py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+              className="px-6 py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
             >
               兑换
             </button>
@@ -127,26 +127,26 @@ export default function WalletPage() {
 
       {/* 订单 */}
       {tab === "orders" && (
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] overflow-hidden">
+        <div className="rounded-2xl bg-card border border-border overflow-hidden">
           {orders.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">暂无订单</div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-[#121212]">
+              <thead className="bg-secondary">
                 <tr>
                   {["订单号", "套餐", "金额", "状态", "时间"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-gray-400 font-medium">{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
-                  <tr key={o.id} className="border-t border-[#222]">
-                    <td className="px-4 py-3 text-gray-300 font-mono text-xs">{o.id}</td>
-                    <td className="px-4 py-3 text-gray-300">{o.planId}</td>
-                    <td className="px-4 py-3 text-white">¥{(o.amountCents / 100).toFixed(2)}</td>
+                  <tr key={o.id} className="border-t border-border">
+                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{o.id}</td>
+                    <td className="px-4 py-3 text-gray-600">{o.planId}</td>
+                    <td className="px-4 py-3 text-text">¥{(o.amountCents / 100).toFixed(2)}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${o.status === "paid" ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                      <span className={`px-2 py-0.5 rounded text-xs ${o.status === "paid" ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-amber-600"}`}>
                         {o.status === "paid" ? "已支付" : "待支付"}
                       </span>
                     </td>
@@ -161,28 +161,28 @@ export default function WalletPage() {
 
       {/* 流水 */}
       {tab === "txns" && (
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] overflow-hidden">
+        <div className="rounded-2xl bg-card border border-border overflow-hidden">
           {txns.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">暂无流水</div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-[#121212]">
+              <thead className="bg-secondary">
                 <tr>
                   {["类型", "变动", "余额", "说明", "时间"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-gray-400 font-medium">{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {txns.map((t) => (
-                  <tr key={t.id} className="border-t border-[#222]">
-                    <td className="px-4 py-3 text-gray-300">{TX_TYPE_TEXT[t.type] || t.type}</td>
+                  <tr key={t.id} className="border-t border-border">
+                    <td className="px-4 py-3 text-gray-600">{TX_TYPE_TEXT[t.type] || t.type}</td>
                     <td className="px-4 py-3">
-                      <span className={t.change >= 0 ? "text-green-400" : "text-red-400"}>
+                      <span className={t.change >= 0 ? "text-green-600" : "text-red-500"}>
                         {t.change >= 0 ? "+" : ""}{t.change}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400">{t.balanceAfter}</td>
+                    <td className="px-4 py-3 text-gray-500">{t.balanceAfter}</td>
                     <td className="px-4 py-3 text-gray-500">{t.note}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(t.createdAt).toLocaleString()}</td>
                   </tr>
@@ -195,24 +195,24 @@ export default function WalletPage() {
 
       {/* 邀请 */}
       {tab === "invite" && (
-        <div className="rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] p-6">
-          <div className="flex items-center gap-2 mb-3 text-white font-medium">
-            <Users size={16} className="text-[#5051F8]" /> 邀请好友
+        <div className="rounded-2xl bg-card border border-border p-6">
+          <div className="flex items-center gap-2 mb-3 text-text font-medium">
+            <Users size={16} className="text-accent" /> 邀请好友
           </div>
-          <p className="text-sm text-gray-400 mb-4">
+          <p className="text-sm text-gray-500 mb-4">
             好友通过你的链接注册并充值，你可获得 {invite?.rewardQuota ?? 0} 积分奖励
           </p>
           <div className="flex gap-3">
-            <input readOnly value={inviteUrl} className="flex-1 rounded-lg bg-[#121212] border border-[#2a2a2a] px-4 py-2.5 text-gray-300 text-sm" />
+            <input readOnly value={inviteUrl} className="flex-1 rounded-lg bg-secondary border border-border px-4 py-2.5 text-gray-600 text-sm" />
             <button
               onClick={() => inviteUrl && navigator.clipboard.writeText(inviteUrl)}
-              className="px-5 py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors text-sm"
+              className="px-5 py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors text-sm"
             >
               复制链接
             </button>
           </div>
           {invite && (
-            <div className="mt-4 text-sm text-gray-400">已邀请 {invite.invitedCount} 人</div>
+            <div className="mt-4 text-sm text-gray-500">已邀请 {invite.invitedCount} 人</div>
           )}
         </div>
       )}

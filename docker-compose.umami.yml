@@ -1,0 +1,35 @@
+# Umami 网站访问统计 —— 复用 Appwrite 已有的 PostgreSQL 实例。
+#
+# 使用前必做两件事（详见 docs/analytics/README.md）：
+#   1. 在 Appwrite 的 PG 里建一个独立的 umami 数据库（一条 SQL）；
+#   2. 把下面 DATABASE_URL 里的 REPLACE_DB_USER / REPLACE_DB_PASS
+#      替换成 Appwrite .env 里的 _APP_DB_USER / _APP_DB_PASS。
+#
+# 启动：docker compose -f docker-compose.umami.yml up -d
+# 后台地址：http://你的域名/umami  （首次打开注册管理员账号）
+
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: umami
+    restart: unless-stopped
+    # 只监听本机回环，不直接暴露公网；公网入口走 nginx 的 /umami/ 反代
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # 复用 Appwrite 的 PG：同网络下用容器名 appwrite-postgresql 解析
+      # 注意：数据库名是 umami（新建的），不是 Appwrite 自己的 schema
+      DATABASE_URL: "postgresql://REPLACE_DB_USER:REPLACE_DB_PASS@appwrite-postgresql:5432/umami"
+      DATABASE_TYPE: "postgresql"
+      # 用于加密 cookie；已随机生成，不要外泄
+      APP_SECRET: "Gpo8bk2jyM3g45ehauDNqVsJYvri9XS6nTUCBtKx"
+      # 挂在 nginx 的 /umami/ 子路径下，必须设置 BASE_PATH
+      BASE_PATH: "/umami"
+    networks:
+      # 接入 Appwrite 的外部 docker 网络，才能解析到 appwrite-postgresql 容器
+      - appwrite
+
+networks:
+  appwrite:
+    external: true
+    name: appwrite

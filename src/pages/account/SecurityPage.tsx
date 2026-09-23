@@ -69,7 +69,7 @@ export default function SecurityPage() {
             type="password"
             value={oldPassword}
             onChange={(e) => setOldPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
             placeholder="请输入当前密码"
           />
         </div>
@@ -80,7 +80,7 @@ export default function SecurityPage() {
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
             placeholder="至少 6 位"
           />
         </div>
@@ -91,7 +91,7 @@ export default function SecurityPage() {
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
             placeholder="再次输入新密码"
           />
         </div>
@@ -100,7 +100,7 @@ export default function SecurityPage() {
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-[#3f40e6] disabled:opacity-50 transition-colors"
+            className="px-6 py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {saving ? "修改中..." : "修改密码"}
           </button>

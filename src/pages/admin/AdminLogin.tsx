@@ -30,8 +30,8 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#f4f4f6]">
-            <div className="w-full max-w-sm rounded-2xl bg-[#ffffff] p-8">
+        <div className="min-h-screen flex items-center justify-center bg-bg">
+            <div className="w-full max-w-sm rounded-2xl bg-card p-8">
                 <h1 className="text-xl font-bold text-white mb-6 text-center">管理后台登录</h1>
                 {error && <p className="mb-4 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
                 <form onSubmit={handleLogin} className="space-y-4">
@@ -41,7 +41,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                             type="text"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
-                            className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#5051F8]"
+                            className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none focus:ring-2 focus:ring-accent"
                         />
                     </div>
                     <div>
@@ -50,13 +50,13 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full rounded-lg bg-[#e5e5ea] px-3 py-2 text-white outline-none focus:ring-2 focus:ring-[#5051F8]"
+                            className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none focus:ring-2 focus:ring-accent"
                         />
                     </div>
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full rounded-lg bg-[#5051F8] py-2 font-medium text-white hover:bg-[#3f40e6] disabled:opacity-50"
+                        className="w-full rounded-lg bg-[#5051F8] py-2 font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                     >
                         {loading ? "登录中..." : "登录"}
                     </button>

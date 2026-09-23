@@ -91,7 +91,7 @@ export default function ChatPage() {
               >
                 {m.role === 'user' ? (
                   /* 用户消息：右对齐，背景 #f0f0f2，圆角 12，内边距 16/12 */
-                  <div className="w-[520px] max-w-full rounded-xl bg-[#f0f0f2] px-4 py-3">
+                  <div className="w-[520px] max-w-full rounded-xl bg-secondary px-4 py-3">
                     <p className="text-[14px] leading-[24px] text-text">{m.content}</p>
                   </div>
                 ) : (
@@ -103,7 +103,7 @@ export default function ChatPage() {
                       <span className="text-[12px] leading-[18px] text-text-muted">刚刚</span>
                       <button
                         onClick={() => copyMessage(m.id, m.content)}
-                        className="flex size-7 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-[#e4e4e9] hover:text-text-active"
+                        className="flex size-7 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-active"
                         title="复制"
                       >
                         {copiedId === m.id ? (
@@ -130,11 +130,11 @@ export default function ChatPage() {
       {/* 输入区：居中 600×60 */}
       <div className="shrink-0 px-4 pb-5">
         <div className="mx-auto w-[600px] max-w-full">
-          <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-[#ffffff] px-2 py-2 transition-colors focus-within:ring-1 focus-within:ring-accent hover:bg-surface-hover">
+          <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-card px-2 py-2 transition-colors focus-within:ring-1 focus-within:ring-accent hover:bg-surface-hover">
             {/* 附件按钮 */}
             <button
               onClick={() => alert('附件上传功能即将上线')}
-              className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#e4e4e9] hover:text-text-active"
+              className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-active"
               title="添加附件"
             >
               <Plus className="size-[18px]" />
@@ -162,7 +162,7 @@ export default function ChatPage() {
                 'flex size-[34px] shrink-0 items-center justify-center rounded-full transition-colors',
                 input.trim()
                   ? 'bg-accent text-accent-foreground hover:bg-accent-hover'
-                  : 'bg-[#f0f0f2] text-text-muted',
+                  : 'bg-secondary text-text-muted',
               )}
               title="发送"
             >

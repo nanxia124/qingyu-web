@@ -138,7 +138,7 @@ export default function TranslatePage() {
               className={
                 it.status === 'done'
                   ? 'rounded-full bg-success/15 px-2.5 py-1 text-[12px] text-success'
-                  : 'rounded-full bg-[#f0f0f2] px-2.5 py-1 text-[12px] text-text-muted'
+                  : 'rounded-full bg-secondary px-2.5 py-1 text-[12px] text-text-muted'
               }
             >
               {it.status === 'done' ? '已完成' : '待翻译'}

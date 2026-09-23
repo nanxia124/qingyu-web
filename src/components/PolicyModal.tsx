@@ -22,7 +22,7 @@ export default function PolicyModal({ type, onClose }: { type: "terms" | "privac
             }}
         >
             <div
-                className="relative w-full max-w-2xl max-h-[80vh] rounded-2xl bg-[#ffffff] shadow-2xl overflow-hidden"
+                className="relative w-full max-w-2xl max-h-[80vh] rounded-2xl bg-card shadow-2xl overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 <button

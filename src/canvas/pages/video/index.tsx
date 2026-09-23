@@ -408,14 +408,14 @@ export default function VideoPage() {
     return (
         <div
             className="video-page-root flex h-full gap-2 bg-background p-3"
-            style={{ "--accent": "#5051F8", "--accent-foreground": "#ffffff", colorScheme: "dark" } as CSSProperties}
+            style={{ "--accent": "#5051F8", "--accent-foreground": "#ffffff" } as CSSProperties}
         >
             {/* ── 左栏 配置区 520px ── */}
-            <div className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-xl bg-[#1c1c1c]">
+            <div className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-xl bg-popover">
                 <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
                     {/* 模型选择 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">模型</label>
+                        <label className="mb-2 block text-[14px] text-foreground">模型</label>
                         <ModelPicker
                             config={effectiveConfig}
                             value={model}
@@ -429,26 +429,26 @@ export default function VideoPage() {
 
                     {/* 提示词 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">提示词</label>
-                        <div className="relative rounded-xl bg-[#272727]">
+                        <label className="mb-2 block text-[14px] text-foreground">提示词</label>
+                        <div className="relative rounded-xl bg-muted">
                             <textarea
                                 value={prompt}
                                 onChange={(event) => setPrompt(event.target.value)}
                                 rows={5}
                                 placeholder=""
-                                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-[#bebebe] outline-none placeholder:text-[#929292]"
+                                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-foreground outline-none placeholder:text-muted-foreground"
                             />
                             <div className="absolute bottom-2 right-2 flex items-center gap-1">
                                 <button
                                     onClick={() => setPromptDialogOpen(true)}
-                                    className="flex size-6 items-center justify-center rounded text-[#8e8e8e] hover:bg-[#303030]"
+                                    className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
                                     title="提示词模板"
                                 >
                                     <BookOpen className="size-[13px]" />
                                 </button>
                                 <button
                                     onClick={() => setAssetPickerOpen(true)}
-                                    className="flex size-6 items-center justify-center rounded text-[#8e8e8e] hover:bg-[#303030]"
+                                    className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
                                     title="从资产库选"
                                 >
                                     <FolderPlus className="size-[13px]" />
@@ -459,7 +459,7 @@ export default function VideoPage() {
 
                     {/* 比例 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">比例</label>
+                        <label className="mb-2 block text-[14px] text-foreground">比例</label>
                         <div className="grid grid-cols-7 gap-1.5">
                             {videoRatioOptions.map((item) => {
                                 const selected = selectedRatio === item.value;
@@ -473,7 +473,7 @@ export default function VideoPage() {
                                     <button
                                         key={item.value}
                                         onClick={() => selectRatio(item.value)}
-                                        className={`flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors ${selected ? "bg-accent text-accent-foreground" : "bg-[#252525] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"}`}
+                                        className={`flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors ${selected ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                                     >
                                         {icon && <span className="inline-block rounded-[2px] bg-current opacity-60" style={{ width: icon[0], height: icon[1] }} />}
                                         {isAuto ? "自动" : item.value}
@@ -485,18 +485,18 @@ export default function VideoPage() {
 
                     {/* 清晰度 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">清晰度</label>
+                        <label className="mb-2 block text-[14px] text-foreground">清晰度</label>
                         <div className="grid grid-cols-4 gap-1.5">
                             {["480", "720", "1080"].map((q) => (
                                 <button
                                     key={q}
                                     onClick={() => selectResolution(q)}
-                                    className={`h-[30px] rounded-md text-[12px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "bg-[#252525] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"}`}
+                                    className={`h-[30px] rounded-md text-[12px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                                 >
                                     {q}P
                                 </button>
                             ))}
-                            <div className="flex h-[30px] items-center rounded-md bg-[#272727] px-2">
+                            <div className="flex h-[30px] items-center rounded-md bg-muted px-2">
                                 <input
                                     type="number"
                                     min={240}
@@ -505,38 +505,38 @@ export default function VideoPage() {
                                     key={resolution}
                                     onBlur={(e) => { const v = e.target.value.trim(); if (v) selectResolution(v); }}
                                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                                    className="w-full min-w-0 bg-transparent text-center text-[12px] text-[#bebebe] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    className="w-full min-w-0 bg-transparent text-center text-[12px] text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
-                                <span className="shrink-0 text-[12px] text-[#929292]">P</span>
+                                <span className="shrink-0 text-[12px] text-muted-foreground">P</span>
                             </div>
                         </div>
                     </div>
 
                     {/* 尺寸（自定义宽高） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">尺寸</label>
+                        <label className="mb-2 block text-[14px] text-foreground">尺寸</label>
                         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                            <div className={`flex h-[30px] items-center rounded-md bg-[#272727] px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
-                                <span className="mr-1 text-[12px] text-[#929292]">W</span>
+                            <div className={`flex h-[30px] items-center rounded-md bg-muted px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
+                                <span className="mr-1 text-[12px] text-muted-foreground">W</span>
                                 <input
                                     type="number"
                                     min={1}
                                     value={dimensions.width || ""}
                                     disabled={selectedRatio === "auto"}
                                     onChange={(e) => updateDimension("width", Number(e.target.value) || null)}
-                                    className="w-full min-w-0 bg-transparent text-[12px] text-[#bebebe] outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    className="w-full min-w-0 bg-transparent text-[12px] text-foreground outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
                             </div>
-                            <span className="text-[14px] text-[#6a6a6a]">×</span>
-                            <div className={`flex h-[30px] items-center rounded-md bg-[#272727] px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
-                                <span className="mr-1 text-[12px] text-[#929292]">H</span>
+                            <span className="text-[14px] text-muted-foreground">×</span>
+                            <div className={`flex h-[30px] items-center rounded-md bg-muted px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
+                                <span className="mr-1 text-[12px] text-muted-foreground">H</span>
                                 <input
                                     type="number"
                                     min={1}
                                     value={dimensions.height || ""}
                                     disabled={selectedRatio === "auto"}
                                     onChange={(e) => updateDimension("height", Number(e.target.value) || null)}
-                                    className="w-full min-w-0 bg-transparent text-[12px] text-[#bebebe] outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    className="w-full min-w-0 bg-transparent text-[12px] text-foreground outline-none disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
                             </div>
                         </div>
@@ -544,7 +544,7 @@ export default function VideoPage() {
 
                     {/* 时长（滑动条） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">时长</label>
+                        <label className="mb-2 block text-[14px] text-foreground">时长</label>
                         <div className="flex items-center gap-3">
                             <input
                                 type="range"
@@ -554,35 +554,35 @@ export default function VideoPage() {
                                 value={seconds}
                                 onChange={(e) => updateConfig("videoSeconds", e.target.value)}
                                 className="video-range min-w-0 flex-1"
-                                style={{ background: `linear-gradient(to right, #5051F8 ${((seconds - VIDEO_SECONDS_MIN) / (VIDEO_SECONDS_MAX - VIDEO_SECONDS_MIN)) * 100}%, #3a3a3a ${((seconds - VIDEO_SECONDS_MIN) / (VIDEO_SECONDS_MAX - VIDEO_SECONDS_MIN)) * 100}%)` }}
+                                style={{ background: `linear-gradient(to right, #5051F8 ${((seconds - VIDEO_SECONDS_MIN) / (VIDEO_SECONDS_MAX - VIDEO_SECONDS_MIN)) * 100}%, #d4d4da ${((seconds - VIDEO_SECONDS_MIN) / (VIDEO_SECONDS_MAX - VIDEO_SECONDS_MIN)) * 100}%)` }}
                             />
-                            <div className="flex h-[30px] w-[64px] shrink-0 items-center rounded-md bg-[#272727] px-2">
+                            <div className="flex h-[30px] w-[64px] shrink-0 items-center rounded-md bg-muted px-2">
                                 <input
                                     type="number"
                                     min={VIDEO_SECONDS_MIN}
                                     max={VIDEO_SECONDS_MAX}
                                     value={seconds}
                                     onChange={(e) => updateConfig("videoSeconds", clampVideoSeconds(e.target.value))}
-                                    className="w-full min-w-0 bg-transparent text-center text-[12px] text-[#bebebe] outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    className="w-full min-w-0 bg-transparent text-center text-[12px] text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
                             </div>
-                            <span className="shrink-0 text-[12px] text-[#929292]">s</span>
+                            <span className="shrink-0 text-[12px] text-muted-foreground">s</span>
                         </div>
                     </div>
 
                     {/* 生成模式 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-[#bebebe]">生成模式</label>
+                        <label className="mb-2 block text-[14px] text-foreground">生成模式</label>
                         <div className="grid grid-cols-2 gap-1.5">
                             <button
                                 onClick={() => updateConfig("videoMode", "frames")}
-                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-[#252525] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"}`}
+                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                             >
                                 首尾帧模式
                             </button>
                             <button
                                 onClick={() => updateConfig("videoMode", "reference")}
-                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-[#252525] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"}`}
+                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                             >
                                 全能参考模式
                             </button>
@@ -592,20 +592,20 @@ export default function VideoPage() {
                     {/* 参考图 */}
                     <div className="mb-6">
                         <div className="mb-2 flex items-center">
-                            <label className="block text-[14px] text-[#bebebe]">参考图 <span className="ml-1 text-[12px] font-normal text-[#6a6a6a]">最多7张</span></label>
+                            <label className="block text-[14px] text-foreground">参考图 <span className="ml-1 text-[12px] font-normal text-muted-foreground">最多7张</span></label>
                             {references.length > 0 && (
-                                <button onClick={() => setReferences([])} className="ml-auto text-[12px] text-[#9e9e99] hover:text-red-400">清空</button>
+                                <button onClick={() => setReferences([])} className="ml-auto text-[12px] text-muted-foreground hover:text-red-400">清空</button>
                             )}
                         </div>
                         <div className="grid grid-cols-4 gap-2">
                             {references.map((item, index) => (
-                                <div key={item.id} className="group relative size-[96px] shrink-0 rounded-lg bg-[#111]">
+                                <div key={item.id} className="group relative size-[96px] shrink-0 rounded-lg bg-muted">
                                     <img src={previewUrlFor(item.storageKey) || item.dataUrl} alt="" className="h-full w-full rounded-lg object-cover" />
                                     <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 rounded-lg opacity-0 transition-opacity group-hover:opacity-100">
                                         <button
                                             onClick={() => setReferences((value) => moveListItem(value, index, -1))}
                                             disabled={index <= 0}
-                                            className="flex items-center justify-center bg-black/40 text-[#bebebe] hover:text-white"
+                                            className="flex items-center justify-center bg-black/40 text-white hover:text-white"
                                             title="上移"
                                         >
                                             <ArrowLeft className="size-4" />
@@ -613,15 +613,15 @@ export default function VideoPage() {
                                         <button
                                             onClick={() => setReferences((value) => moveListItem(value, index, 1))}
                                             disabled={index >= references.length - 1}
-                                            className="flex items-center justify-center bg-black/40 text-[#bebebe] hover:text-white"
+                                            className="flex items-center justify-center bg-black/40 text-white hover:text-white"
                                             title="下移"
                                         >
                                             <ArrowRight className="size-4" />
                                         </button>
-                                        <div className="flex items-center justify-center bg-black/40 text-[#bebebe] text-[10px]">{index + 1}</div>
+                                        <div className="flex items-center justify-center bg-black/40 text-white text-[10px]">{index + 1}</div>
                                         <button
                                             onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
-                                            className="flex items-center justify-center bg-black/40 text-[#bebebe] hover:text-red-400"
+                                            className="flex items-center justify-center bg-black/40 text-white hover:text-red-400"
                                             title="删除"
                                         >
                                             <Trash2 className="size-4" />
@@ -631,27 +631,27 @@ export default function VideoPage() {
                             ))}
                             {references.length < 7 && (
                                 <div
-                                    className="group relative size-[96px] shrink-0 rounded-lg border-2 border-dashed border-[#383838] transition-colors hover:border-[#5051F8]"
+                                    className="group relative size-[96px] shrink-0 rounded-lg border-2 border-dashed border-border transition-colors hover:border-[#5051F8]"
                                     onDragEnter={handleReferenceDragEnter}
                                     onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
                                     onDragLeave={handleReferenceDragLeave}
                                     onDrop={handleReferenceDrop}
                                 >
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-[#8a8a8a] transition-opacity group-hover:opacity-0">
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground transition-opacity group-hover:opacity-0">
                                         <Plus className="mb-1 size-5" />
                                         <span className="text-[11px]">上传</span>
                                     </div>
                                     <div className="absolute inset-0 grid grid-rows-2 opacity-0 transition-opacity group-hover:opacity-100">
                                         <button
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="flex flex-col items-center justify-end pb-2 text-[#8a8a8a] hover:text-accent"
+                                            className="flex flex-col items-center justify-end pb-2 text-muted-foreground hover:text-accent"
                                             title="上传图片"
                                         >
                                             <Upload className="size-4" />
                                         </button>
                                         <button
                                             onClick={() => void addReferencesFromClipboard()}
-                                            className="flex flex-col items-center justify-start pt-2 text-[#8a8a8a] hover:text-accent"
+                                            className="flex flex-col items-center justify-start pt-2 text-muted-foreground hover:text-accent"
                                             title="粘贴图片"
                                         >
                                             <ClipboardPaste className="size-4" />
@@ -686,12 +686,12 @@ export default function VideoPage() {
             </div>
 
             {/* ── 中栏：生成结果 ── */}
-            <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-[#1c1c1c]">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-popover">
                 {/* 顶部工具栏 */}
                 <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
-                    <span className="text-[14px] text-[#bebebe]">生成结果</span>
+                    <span className="text-[14px] text-foreground">生成结果</span>
                     {running ? (
-                        <span className="flex h-[30px] items-center rounded-lg bg-[#252525] px-3 text-[12px] text-[#9e9e9e]">
+                        <span className="flex h-[30px] items-center rounded-lg bg-muted px-3 text-[12px] text-muted-foreground">
                             {t("workbench.waiting", { time: formatDuration(elapsedMs) })}
                         </span>
                     ) : null}
@@ -713,7 +713,7 @@ export default function VideoPage() {
                         </div>
                     ) : (
                         <div className="flex h-full items-center justify-center">
-                            <div className="flex flex-col items-center text-[#6a6a6a]">
+                            <div className="flex flex-col items-center text-muted-foreground">
                                 <VideoIcon className="mb-3 size-12" />
                                 <span className="text-[14px]">生成的视频将显示在这里</span>
                             </div>
@@ -836,10 +836,10 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
 function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
     const { t } = useTranslation();
     return (
-        <div className="overflow-hidden rounded-lg bg-[#202020]">
+        <div className="overflow-hidden rounded-lg bg-background">
             <video src={video.url} controls className="aspect-video w-full bg-black object-contain" />
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5">
-                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[12px] text-[#929292]">
+                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                     <span>
                         {video.width}x{video.height}
                     </span>
@@ -849,14 +849,14 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
                 <div className="flex shrink-0 gap-1.5">
                     <button
                         onClick={() => onSaveAsset(video)}
-                        className="flex h-[28px] items-center gap-1 rounded-md bg-[#252525] px-3 text-[12px] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"
+                        className="flex h-[28px] items-center gap-1 rounded-md bg-muted px-3 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                         <FolderPlus className="size-3.5" />
                         存资产
                     </button>
                     <button
                         onClick={() => onDownload(video)}
-                        className="flex h-[28px] items-center gap-1 rounded-md bg-[#252525] px-3 text-[12px] text-[#9e9e9e] hover:bg-[#303030] hover:text-[#bebebe]"
+                        className="flex h-[28px] items-center gap-1 rounded-md bg-muted px-3 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                         <Download className="size-3.5" />
                         下载
@@ -870,8 +870,8 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
 function PendingVideoCard() {
     const { t } = useTranslation();
     return (
-        <div className="relative aspect-video overflow-hidden rounded-lg bg-[#202020]">
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[14px] text-[#929292]">
+        <div className="relative aspect-video overflow-hidden rounded-lg bg-background">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[14px] text-muted-foreground">
                 <LoaderCircle className="size-6 animate-spin text-[#5051F8]" />
                 <span>{t("workbench.generating")}</span>
             </div>
@@ -955,7 +955,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
     const statusColor = log.status === "success" ? "text-[#4f8ff7]" : log.status === "pending" ? "text-[#f0a040]" : "text-red-400";
     return (
         <div
-            className={`w-full cursor-pointer rounded-lg p-3 transition-colors ${active ? "bg-accent/20" : "bg-[#202020] hover:bg-[#262626]"}`}
+            className={`w-full cursor-pointer rounded-lg p-3 transition-colors ${active ? "bg-accent/20" : "bg-background hover:bg-muted"}`}
             onClick={onClick}
         >
             <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
@@ -967,16 +967,16 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                     className="mt-0.5 size-4 accent-[#5051F8]"
                 />
                 <div className="min-w-0">
-                    <div className="truncate text-[14px] leading-5 text-[#bebebe]">{log.title}</div>
+                    <div className="truncate text-[14px] leading-5 text-foreground">{log.title}</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                        <span className="text-[12px] text-[#929292]">{log.size}</span>
-                        <span className="text-[12px] text-[#929292]">{log.resolution}p</span>
-                        <span className="text-[12px] text-[#929292]">{log.seconds}s</span>
+                        <span className="text-[12px] text-muted-foreground">{log.size}</span>
+                        <span className="text-[12px] text-muted-foreground">{log.resolution}p</span>
+                        <span className="text-[12px] text-muted-foreground">{log.seconds}s</span>
                     </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                     <span className={`text-[12px] ${statusColor}`}>{statusText}</span>
-                    <span className="text-[12px] text-[#929292]">{formatDuration(log.durationMs)}</span>
+                    <span className="text-[12px] text-muted-foreground">{formatDuration(log.durationMs)}</span>
                 </div>
             </div>
         </div>

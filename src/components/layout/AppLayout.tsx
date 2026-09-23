@@ -5,16 +5,20 @@ import {
   Settings,
   MessageSquareWarning,
   LogOut,
-  LogIn,
   PanelLeftClose,
   PanelLeftOpen,
   Users,
   User,
   CreditCard,
+  Sun,
+  Moon,
+  Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useThemeStore } from '@canvas/stores/use-theme-store'
+import i18n, { changeAppLocale, onLanguageSuggestion, SUPPORTED_LOCALES, type AppLocale } from '@canvas/i18n'
 import {
   SidebarHomeIcon,
   SidebarChatIcon,
@@ -23,39 +27,35 @@ import {
   SidebarCanvasIcon,
   SidebarTeamIcon,
   SidebarFavoriteIcon,
+  QingyuLogoIcon,
 } from './SidebarIcons'
 
 type IconComp = (props: { className?: string }) => React.ReactElement
 
 const navItems: { to: string; label: string; tooltip: string; icon: IconComp; exact?: boolean; preload?: () => void; requireAuth?: boolean }[] = [
-  { to: '/', label: '首页', tooltip: '首页', icon: SidebarHomeIcon, exact: true },
-  { to: '/chat', label: '聊天', tooltip: '聊天', icon: SidebarChatIcon },
-  { to: '/image-tools', label: '图像', tooltip: '图像生成', icon: SidebarImageIcon },
-  { to: '/video', label: '影像', tooltip: '影像', icon: SidebarVideoIcon },
-  { to: '/canvas?mode=recent', label: '画布', tooltip: '画布', icon: SidebarCanvasIcon, preload: () => { void import('@canvas/index') } },
-  // 以下页面未登录时点击直接弹登录窗
-  { to: '/assets', label: '团队', tooltip: '团队资产', icon: SidebarTeamIcon, requireAuth: true },
-  { to: '/favorites', label: '收藏', tooltip: '我的收藏', icon: SidebarFavoriteIcon, requireAuth: true },
+  { to: '/', label: 'nav.home', tooltip: 'nav.home', icon: SidebarHomeIcon, exact: true },
+  { to: '/chat', label: 'nav.chat', tooltip: 'nav.chat', icon: SidebarChatIcon },
+  { to: '/image-tools', label: 'nav.image', tooltip: 'nav.image', icon: SidebarImageIcon },
+  { to: '/video', label: 'nav.video', tooltip: 'nav.video', icon: SidebarVideoIcon },
+  { to: '/canvas?mode=recent', label: 'nav.canvas', tooltip: 'nav.canvas', icon: SidebarCanvasIcon, preload: () => { void import('@canvas/index') } },
+  { to: '/assets', label: 'nav.assets', tooltip: 'nav.assets', icon: SidebarTeamIcon, requireAuth: true },
+  { to: '/favorites', label: 'nav.favorites', tooltip: 'nav.favorites', icon: SidebarFavoriteIcon, requireAuth: true },
 ]
 
 const utilityItems: { to: string; label: string; tooltip: string; icon: typeof Settings; requireAuth?: boolean }[] = [
-  { to: '/teams', label: '团队', tooltip: '团队管理', icon: Users, requireAuth: true },
-  { to: '/account/profile', label: '个人', tooltip: '个人中心', icon: User, requireAuth: true },
-  { to: '/account/billing', label: '账单', tooltip: '账单与发票', icon: CreditCard },
-  { to: '/feedback', label: '反馈', tooltip: '反馈中心', icon: MessageSquareWarning },
-  { to: '/settings', label: '设置', tooltip: '系统设置', icon: Settings },
+  { to: '/teams', label: 'nav.teams', tooltip: 'nav.teams', icon: Users, requireAuth: true },
 ]
 
-const pageTitles: Record<string, string> = {
-  '/': '首页',
-  '/chat': '聊天',
-  '/image-tools': '图像',
-  '/video': '影像',
-  '/canvas': '画布',
-  '/assets': '团队',
-  '/favorites': '收藏',
-  '/feedback': '反馈',
-  '/settings': '设置',
+const pageTitleKeys: Record<string, string> = {
+  '/': 'nav.home',
+  '/chat': 'nav.chat',
+  '/image-tools': 'nav.image',
+  '/video': 'nav.video',
+  '/canvas': 'nav.canvas',
+  '/assets': 'nav.assets',
+  '/favorites': 'nav.favorites',
+  '/feedback': 'nav.teams',
+  '/settings': 'nav.teams',
 }
 
 export default function AppLayout() {
@@ -63,7 +63,8 @@ export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
-  const currentTitle = pageTitles[location.pathname] ?? t('brand.name')
+  const currentTitleKey = pageTitleKeys[location.pathname]
+  const currentTitle = currentTitleKey ? t(currentTitleKey) : t('brand.name')
 
   // 动态设置浏览器标签页标题
   useEffect(() => {
@@ -85,6 +86,47 @@ export default function AppLayout() {
       openAuthModal()
     }
   }, [location.pathname, isLoggedIn, openAuthModal])
+
+  // 主题：与画布共用同一个 useThemeStore，同步 <html> 上的 .dark 类
+  const theme = useThemeStore((s) => s.theme)
+  const setTheme = useThemeStore((s) => s.setTheme)
+  useEffect(() => {
+    const dark = theme === 'dark'
+    document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.style.colorScheme = theme
+  }, [theme])
+
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+
+  // ── 语言 ──
+  const [currentLocale, setCurrentLocale] = useState<AppLocale>(i18n.resolvedLanguage as AppLocale)
+  const [langMenuOpen, setLangMenuOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [suggested, setSuggested] = useState<{ locale: AppLocale; country?: string } | null>(null)
+
+  useEffect(() => {
+    const onChange = (lng: string) => setCurrentLocale(lng as AppLocale)
+    i18n.on('languageChanged', onChange)
+    // 首次访问、未手动选择时，检测到不同语言则 toast 询问（不自动切换）
+    const unsub = onLanguageSuggestion((detected) => setSuggested(detected))
+    return () => { i18n.off('languageChanged', onChange); unsub() }
+  }, [])
+
+  const pickLocale = (loc: AppLocale) => {
+    void changeAppLocale(loc)
+    setCurrentLocale(loc)
+    setLangMenuOpen(false)
+    setSuggested(null)
+  }
+
+  const LANG_LABELS: Record<string, string> = {
+    'zh-CN': '简体中文', 'zh-TW': '繁體中文', 'en-US': 'English', 'ja-JP': '日本語',
+    'ko-KR': '한국어', 'es-ES': 'Español', 'fr-FR': 'Français', 'de-DE': 'Deutsch',
+    'ru-RU': 'Русский', 'pt-BR': 'Português',
+  }
+  const SHORT: Record<string, string> = {
+    'zh-CN': '中', 'zh-TW': '繁', 'en-US': 'EN', 'ja-JP': '日', 'ko-KR': '한',
+  }
 
   const isCanvas = location.pathname.startsWith('/canvas')
   const isVideo = location.pathname.startsWith('/video')
@@ -117,7 +159,7 @@ export default function AppLayout() {
       key={to + label}
       to={to}
       end={exact}
-      title={tooltip}
+      title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
       className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
       style={{ transformOrigin: '50% 50%' }}
@@ -151,7 +193,7 @@ export default function AppLayout() {
               isActive ? 'text-text' : 'text-text-muted',
             )}
           >
-            {label}
+            {t(label)}
           </span>
         </>
       )}
@@ -168,7 +210,7 @@ export default function AppLayout() {
     <NavLink
       key={to}
       to={to}
-      title={tooltip}
+      title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
       className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
     >
@@ -200,7 +242,7 @@ export default function AppLayout() {
               isActive ? 'text-text' : 'text-text-muted',
             )}
           >
-            {label}
+            {t(label)}
           </span>
         </>
       )}
@@ -208,11 +250,11 @@ export default function AppLayout() {
   )
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#f4f4f6]">
+    <div className="flex h-screen w-full overflow-hidden bg-bg">
       {/* ── 左侧导航栏 ── */}
       <aside
         className={cn(
-          'relative z-40 flex h-full shrink-0 flex-col border-r border-[#e2e2e8] bg-[#f4f4f6] transition-all duration-300 ease-out',
+          'relative z-40 flex h-full shrink-0 flex-col bg-nav-bg transition-all duration-300 ease-out',
           sidebarWidth,
         )}
       >
@@ -224,10 +266,8 @@ export default function AppLayout() {
             title={expanded ? '收起侧栏' : '展开侧栏'}
           >
             {/* 默认：小怪兽 LOGO */}
-            <img
-              src="/icons/logo.svg"
-              alt={t('brand.name')}
-              className="absolute h-[28px] w-[28px] shrink-0 transition-all duration-200 group-hover:opacity-0 group-hover:scale-75"
+            <QingyuLogoIcon
+              className="absolute h-[28px] w-[28px] shrink-0 text-text transition-all duration-200 group-hover:opacity-0 group-hover:scale-75"
             />
             {/* 悬浮：折叠/展开箭头图标 */}
             {expanded ? (
@@ -253,54 +293,120 @@ export default function AppLayout() {
         </div>
 
         {/* 主导航 */}
-        <nav className="flex-1 overflow-y-auto px-0 py-2">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 py-2">
           {navItems.map((item) =>
             renderItem(item.to, item.label, item.tooltip, item.icon, item.exact, item.preload, item.requireAuth),
           )}
 
           {/* 工具区 */}
-          <div className="mt-2 border-t border-[#e2e2e8] pt-2">
+          <div className="mt-auto border-t border-border pt-2">
             {utilityItems.map((item) => renderUtilityItem(item.to, item.label, item.tooltip, item.icon, item.requireAuth))}
           </div>
         </nav>
 
-        {/* 底部：登录/退出登录 */}
-        <div className="shrink-0 border-t border-[#e2e2e8] px-2 py-2">
-          {isLoggedIn ? (
-            /* 已登录：显示退出登录 */
-            <button
-              onClick={handleLogout}
-              title="退出登录"
-              className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
-            >
-              <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
-              <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
-                <LogOut className="size-[20px] text-text-muted transition-colors group-hover:text-red-400" />
-              </span>
-              {expanded && (
-                <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-red-400">
-                  退出登录
-                </span>
+        {/* 底部：主题切换 + 登录/退出登录 */}
+        <div className="shrink-0 border-t border-border px-2 py-2">
+          {/* 浅色 / 深色 切换 */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
+            className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
+          >
+            <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
+            <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
+              {theme === 'dark' ? (
+                <Sun className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
+              ) : (
+                <Moon className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
               )}
-            </button>
-          ) : (
-            /* 未登录：显示登录按钮 */
+            </span>
+            {expanded && (
+              <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
+                {theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
+              </span>
+            )}
+          </button>
+
+          {/* 语言切换 */}
+          <div className="relative">
             <button
-              onClick={() => openAuthModal()}
-              title="登录 / 注册"
+              onClick={() => setLangMenuOpen((v) => !v)}
+              title={t("nav.language")}
               className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
             >
               <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
               <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
-                <LogIn className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
+                <Globe className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
               </span>
               {expanded && (
                 <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
-                  登录 / 注册
+                  {LANG_LABELS[currentLocale] ?? currentLocale}
                 </span>
               )}
             </button>
-          )}
+            {langMenuOpen && (
+              <div className="absolute left-0 bottom-full mb-2 z-50 w-[160px] rounded-xl border border-border bg-card p-1 shadow-xl">
+                {SUPPORTED_LOCALES.map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => pickLocale(loc)}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors',
+                      loc === currentLocale ? 'bg-accent/10 text-accent' : 'text-text hover:bg-secondary',
+                    )}
+                  >
+                    <span>{LANG_LABELS[loc] ?? loc}</span>
+                    {SHORT[loc] && <span className="text-[11px] text-text-muted">{SHORT[loc]}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
+          <div className="relative">
+            <button
+              onClick={() => (isLoggedIn ? setAccountMenuOpen((v) => !v) : openAuthModal())}
+              title={t("nav.my")}
+              className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
+            >
+              <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
+              <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
+                <User className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
+              </span>
+              {expanded && (
+                <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
+                  {t('nav.my')}
+                </span>
+              )}
+            </button>
+
+            {isLoggedIn && accountMenuOpen && (
+              <div className="absolute left-0 bottom-full mb-2 z-50 w-[160px] rounded-xl border border-border bg-card p-1 shadow-xl">
+                {[
+                  { label: '个人中心', to: '/account/profile' },
+                  { label: '账单', to: '/account/billing' },
+                  { label: '反馈', to: '/feedback' },
+                  { label: '设置', to: '/settings' },
+                ].map((item) => (
+                  <button
+                    key={item.to}
+                    onClick={() => { setAccountMenuOpen(false); navigate(item.to) }}
+                    className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-text transition-colors hover:bg-secondary"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-border" />
+                <button
+                  onClick={() => { setAccountMenuOpen(false); handleLogout() }}
+                  className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-red-400 transition-colors hover:bg-secondary"
+                >
+                  退出登录
+                </button>
+              </div>
+            )}
+          </div>
           {expanded && (
             <div className="mt-2 px-1 text-[11px] leading-[16px] text-text-muted/50">
               v1.0.0
@@ -335,6 +441,35 @@ export default function AppLayout() {
             closeAuthModal()
           }}
         />
+      )}
+
+      {/* 首次访问语言建议：居中弹窗 + 遮罩，仅询问不自动切换 */}
+      {suggested && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="mb-3 flex items-center gap-2">
+              <Globe className="size-[20px] text-accent" />
+              <span className="text-[15px] font-semibold text-text">语言检测</span>
+            </div>
+            <p className="mb-5 text-[14px] leading-[22px] text-text-secondary">
+              检测到您的 IP 可能来自 {suggested.country || '当前地区'}，是否切换到{LANG_LABELS[suggested.locale] ?? suggested.locale}？
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => pickLocale(suggested.locale)}
+                className="flex-1 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground hover:bg-accent-hover"
+              >
+                切换
+              </button>
+              <button
+                onClick={() => setSuggested(null)}
+                className="flex-1 rounded-lg bg-secondary px-4 py-2 text-[14px] text-text-secondary hover:bg-surface-hover"
+              >
+                保持当前
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { QingyuLogoIcon } from "@/components/layout/SidebarIcons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { AppwriteException } from "appwrite";
@@ -57,10 +58,10 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f4f4f6] p-4">
-      <div className="w-full max-w-md rounded-[24px] bg-[#ffffff] p-8 shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+      <div className="w-full max-w-md rounded-[24px] bg-card p-8 shadow-2xl">
         <div className="flex justify-center mb-6">
-          <img src="/icons/logo.svg" alt="logo" className="w-[56px] h-[56px]" />
+          <QingyuLogoIcon className="w-[56px] h-[56px] text-text" />
         </div>
         <h1 className="text-2xl font-bold text-center text-white mb-2">重置密码</h1>
         <p className="text-center text-gray-500 text-sm mb-8">请设置新密码</p>
@@ -85,19 +86,19 @@ export default function ResetPasswordPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoFocus
-              className="w-full px-4 py-3 rounded-[12px] bg-[#e5e5ea] border border-[#e2e2e8] text-gray-200 placeholder:text-gray-500 focus:border-[#5051F8] outline-none"
+              className="w-full px-4 py-3 rounded-[12px] bg-secondary border border-border text-gray-200 placeholder:text-gray-500 focus:border-accent outline-none"
             />
             <input
               type="password"
               placeholder="确认新密码"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              className="w-full px-4 py-3 rounded-[12px] bg-[#e5e5ea] border border-[#e2e2e8] text-gray-200 placeholder:text-gray-500 focus:border-[#5051F8] outline-none"
+              className="w-full px-4 py-3 rounded-[12px] bg-secondary border border-border text-gray-200 placeholder:text-gray-500 focus:border-accent outline-none"
             />
             <button
               type="submit"
               disabled={saving}
-              className="w-full py-3 rounded-[12px] bg-[#5051F8] text-white font-medium hover:bg-[#3f40e6] disabled:opacity-50"
+              className="w-full py-3 rounded-[12px] bg-[#5051F8] text-white font-medium hover:bg-accent-hover disabled:opacity-50"
             >
               {saving ? "提交中..." : "确认重置"}
             </button>
@@ -105,7 +106,7 @@ export default function ResetPasswordPage() {
         )}
 
         <p className="text-center text-xs text-gray-500 mt-6">
-          <span className="text-[#5051F8] cursor-pointer hover:underline" onClick={() => navigate("/")}>
+          <span className="text-accent cursor-pointer hover:underline" onClick={() => navigate("/")}>
             返回首页
           </span>
         </p>

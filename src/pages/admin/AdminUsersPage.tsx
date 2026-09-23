@@ -45,18 +45,18 @@ export default function AdminUsersPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索用户邮箱或昵称..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#ffffff] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
           />
         </div>
       </div>
 
       {/* 用户列表 */}
-      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] overflow-hidden">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted">加载中...</div>
         ) : (
           <table className="w-full">
-            <thead className="bg-[#ffffff]">
+            <thead className="bg-card">
               <tr>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">用户</th>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">状态</th>
@@ -67,10 +67,10 @@ export default function AdminUsersPage() {
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id} className="border-t border-[#e5e5ea]">
+                <tr key={user.id} className="border-t border-border">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#e5e5ea] flex items-center justify-center text-sm font-bold text-text">
+                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-bold text-text">
                         {user.name?.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -95,7 +95,7 @@ export default function AdminUsersPage() {
                     {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "-"}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-[#e5e5ea] transition-colors">
+                    <button className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors">
                       <MoreHorizontal size={18} />
                     </button>
                   </td>

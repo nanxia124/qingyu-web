@@ -68,11 +68,7 @@ function GeneratePanel() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
-  const [results, setResults] = useState([
-    { id: 1, model: 'GPT Image 2.5', size: '1672 x 941', fileSize: '2.2 MB', quality: '1K', time: '2026-09-18 08:07', prompt: '生成一个金毛军团。', favorited: false },
-    { id: 2, model: 'GPT Image 2.5', size: '1905 x 826', fileSize: '2.4 MB', quality: '1K', time: '2026-09-17 22:44', prompt: '生成一个猫咪军团。', favorited: false },
-    { id: 3, model: 'GPT Image 2.5', size: '2048 x 1152', fileSize: '2.6 MB', quality: '1K', time: '2026-09-14 18:26', prompt: '生成一只猫', favorited: true },
-  ])
+  const [results, setResults] = useState<Array<{ id: number; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean }>>([])
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [thumbScale, setThumbScale] = useState(100)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
@@ -225,7 +221,7 @@ function GeneratePanel() {
   return (
     <div className="flex h-full gap-2">
       {/* ── 左栏 ── */}
-      <div className="flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-xl bg-[#ffffff]">
+      <div className="flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
           {/* 模型选择器 */}
           <div className="mb-6">
@@ -241,8 +237,8 @@ function GeneratePanel() {
 
           {/* 提示词 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-[#3f3f46]">提示词</label>
-            <div className="relative rounded-xl bg-[#ffffff]">
+            <label className="mb-2 block text-[14px] text-text">提示词</label>
+            <div className="relative rounded-xl bg-card">
               <textarea
                 ref={promptRef}
                 value={prompt}
@@ -264,28 +260,28 @@ function GeneratePanel() {
                 }}
                 rows={5}
                 placeholder=""
-                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-[#3f3f46] outline-none placeholder:text-[#6b6b73]"
+                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-secondary"
               />
               <div className="absolute bottom-2 right-2 flex gap-1">
                 
-                <button data-tip="清空" onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast('已清空提示词', 'success', { label: '撤销', onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-[#e4e4e9]"><Trash2 className="size-[13px]" /></button>
-                <button data-tip="格式" className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-[#e4e4e9]"><AlignLeft className="size-[13px]" /></button>
+                <button data-tip="清空" onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast('已清空提示词', 'success', { label: '撤销', onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><Trash2 className="size-[13px]" /></button>
+                <button data-tip="格式" className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button>
               </div>
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md bg-[#f0f0f2] px-3 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">123</button>
-              <button data-tip="添加常用提示词" onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full bg-[#f0f0f2] text-[#8a8a91] hover:bg-[#e4e4e9]"><Plus className="size-[14px]" /></button>
+              <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
+              <button data-tip="添加常用提示词" onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
             </div>
           </div>
 
           {/* 比例 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-[#3f3f46]">比例</label>
+            <label className="mb-2 block text-[14px] text-text">比例</label>
             <div className="grid grid-cols-7 gap-1.5">
               {ratios.map((r) => (
                 <button key={r} onClick={() => setRatio(r)}
                   className={cn('flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors',
-                    ratio === r ? 'bg-accent text-accent-foreground' : 'bg-[#f0f0f2] text-[#6b6b73] hover:bg-[#e4e4e9] hover:text-[#3f3f46]')}>
+                    ratio === r ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {r !== '原图' && <span className="inline-block size-[8px] rounded-[2px] bg-current opacity-60" style={{ width: r === '1:1' ? 8 : r === '2:3' || r === '3:4' || r === '4:5' ? 6 : 10, height: 8 }} />}
                   {r}
                 </button>
@@ -295,12 +291,12 @@ function GeneratePanel() {
 
           {/* 画质 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-[#3f3f46]">画质</label>
+            <label className="mb-2 block text-[14px] text-text">画质</label>
             <div className="grid grid-cols-3 gap-1.5 max-w-[300px]">
               {qualities.map((q) => (
                 <button key={q} onClick={() => setQuality(q)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
-                    quality === q ? 'bg-accent text-accent-foreground' : 'bg-[#f0f0f2] text-[#6b6b73] hover:bg-[#e4e4e9] hover:text-[#3f3f46]')}>
+                    quality === q ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {q}
                 </button>
               ))}
@@ -309,12 +305,12 @@ function GeneratePanel() {
 
           {/* 数量 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-[#3f3f46]">数量</label>
+            <label className="mb-2 block text-[14px] text-text">数量</label>
             <div className="grid grid-cols-4 gap-1.5 max-w-[400px]">
               {counts.map((c) => (
                 <button key={c} onClick={() => setCount(c)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
-                    count === c ? 'bg-accent text-accent-foreground' : 'bg-[#f0f0f2] text-[#6b6b73] hover:bg-[#e4e4e9] hover:text-[#3f3f46]')}>
+                    count === c ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {c}
                 </button>
               ))}
@@ -324,36 +320,36 @@ function GeneratePanel() {
           {/* 参考图上传 */}
           <div className="mb-6">
             <div className="mb-2 flex items-center">
-              <label className="block text-[14px] text-[#3f3f46]">参考图 <span className="ml-1 text-[12px] font-normal text-[#8a8a91]">最多4张</span></label>
+              <label className="block text-[14px] text-text">参考图 <span className="ml-1 text-[12px] font-normal text-text-muted">最多4张</span></label>
               {refImages.length > 0 && (
-                <button onClick={() => setRefImages([])} className="ml-auto text-[12px] text-[#6b6b73] hover:text-red-400">清空</button>
+                <button onClick={() => setRefImages([])} className="ml-auto text-[12px] text-text-secondary hover:text-red-400">清空</button>
               )}
             </div>
             <div className="grid grid-cols-4 gap-2">
               {refImages.map((img, i) => (
-                <div key={i} className="group relative size-[96px] shrink-0 rounded-lg bg-[#ececef]">
+                <div key={i} className="group relative size-[96px] shrink-0 rounded-lg bg-surface-hover">
                   <img src={img} alt="" className="h-full w-full rounded-lg object-cover" />
                   {/* hover 4格操作 */}
                   <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 rounded-lg opacity-0 transition-opacity group-hover:opacity-100">
-                    <button data-tip="替换图片" onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-[#3f3f46] hover:text-white">
+                    <button data-tip="替换图片" onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <RefreshCw className="size-4" />
                     </button>
-                    <button data-tip="放大查看" onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-[#3f3f46] hover:text-white">
+                    <button data-tip="放大查看" onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ZoomIn className="size-4" />
                     </button>
-                    <button data-tip="粘贴替换" onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-[#3f3f46] hover:text-white">
+                    <button data-tip="粘贴替换" onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ClipboardPaste className="size-4" />
                     </button>
-                    <button data-tip="删除" onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-[#3f3f46] hover:text-red-400">
+                    <button data-tip="删除" onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-white hover:text-red-400">
                       <TrashIcon className="size-4" />
                     </button>
                   </div>
                 </div>
               ))}
               {/* 上传占位框 — 正常显示加号，hover 分两半 */}
-              <div className="group relative size-[96px] shrink-0 rounded-lg border-2 border-dashed border-[#e2e2e8] transition-colors hover:border-[#5051F8]">
+              <div className="group relative size-[96px] shrink-0 rounded-lg border-2 border-dashed border-border transition-colors hover:border-accent">
                 {/* 默认加号 */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-[#8a8a91] transition-opacity group-hover:opacity-0">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted transition-opacity group-hover:opacity-0">
                   <Plus className="mb-1 size-5" />
                   <span className="text-[11px]">上传</span>
                 </div>
@@ -361,14 +357,14 @@ function GeneratePanel() {
                 <div className="absolute inset-0 grid grid-rows-2 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
                     onClick={() => refInputRef.current?.click()}
-                    className="flex flex-col items-center justify-end pb-2 text-[#8a8a91] hover:text-accent"
+                    className="flex flex-col items-center justify-end pb-2 text-text-muted hover:text-accent"
                     data-tip="上传图片"
                   >
                     <Upload className="size-4" />
                   </button>
                   <button
                     onClick={() => pasteImage()}
-                    className="flex flex-col items-center justify-start pt-2 text-[#8a8a91] hover:text-accent"
+                    className="flex flex-col items-center justify-start pt-2 text-text-muted hover:text-accent"
                     data-tip="粘贴图片 (Ctrl+V)"
                   >
                     <ClipboardPaste className="size-4" />
@@ -418,9 +414,9 @@ function GeneratePanel() {
         {/* 存储位置 + 队列 — 固定在生成按钮上方 */}
         <div className="shrink-0 px-5 pb-2">
           <div className="mb-3 flex items-center gap-2">
-            <span className="text-[14px] text-[#3f3f46]">存储位置</span>
-            <span className="flex-1 truncate text-[12px] text-[#6b6b73]">{storagePath}</span>
-            <button onClick={() => showToast('已打开存储文件夹')} className="h-[28px] rounded-md bg-[#f0f0f2] px-3 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">打开</button>
+            <span className="text-[14px] text-text">存储位置</span>
+            <span className="flex-1 truncate text-[12px] text-text-secondary">{storagePath}</span>
+            <button onClick={() => showToast('已打开存储文件夹')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">打开</button>
             <button onClick={async () => {
               try {
                 // @ts-ignore
@@ -430,21 +426,21 @@ function GeneratePanel() {
               } catch {
                 showToast('已取消选择文件夹')
               }
-            }} className="h-[28px] rounded-md bg-[#f0f0f2] px-3 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">更改</button>
+            }} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">更改</button>
           </div>
           <div className="mb-2 flex items-center gap-1.5">
-            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-[#f0f0f2] px-2.5 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">排队1张</button>
-            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-[#f0f0f2] px-2.5 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">+5张</button>
-            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-[#f0f0f2] px-2.5 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">+10张</button>
-            <div className="flex h-[30px] w-[72px] items-center rounded-md bg-[#ffffff] px-2">
+            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">排队1张</button>
+            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+5张</button>
+            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+10张</button>
+            <div className="flex h-[30px] w-[72px] items-center rounded-md bg-card px-2">
               <input value={queueNum} onChange={(e) => setQueueNum(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                className="w-full bg-transparent text-center text-[12px] text-[#3f3f46] outline-none" />
+                className="w-full bg-transparent text-center text-[12px] text-text outline-none" />
             </div>
-            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md bg-[#f0f0f2] px-2.5 text-[12px] text-[#6b6b73] hover:bg-[#e4e4e9]">张入队</button>
-            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-[#e4e4e9]', showQueue ? 'bg-accent text-accent-foreground' : 'bg-[#f0f0f2] text-[#6b6b73]')}>查看队列{queueSize > 0 && `(${queueSize})`}</button>
+            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">张入队</button>
+            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-surface-hover', showQueue ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary')}>查看队列{queueSize > 0 && `(${queueSize})`}</button>
           </div>
           {showQueue && (
-            <div className="mb-2 rounded-lg bg-[#ffffff] p-3 text-[12px] text-[#6b6b73]">
+            <div className="mb-2 rounded-lg bg-card p-3 text-[12px] text-text-secondary">
               {queueSize === 0 ? '队列为空' : `队列中有 ${queueSize} 张待生成`}
             </div>
           )}
@@ -461,32 +457,32 @@ function GeneratePanel() {
 
       {/* ── 右栏：结果区（可折叠） ── */}
       {!resultsCollapsed && (
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-[#ffffff]">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
         {/* 顶部工具栏 */}
         <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
-          <select className="h-[30px] rounded-lg bg-[#f0f0f2] px-2 text-[12px] text-[#6b6b73] outline-none">
+          <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
             <option>全部时间</option>
             <option>今天</option>
             <option>近7天</option>
             <option>近30天</option>
           </select>
-          <select className="h-[30px] rounded-lg bg-[#f0f0f2] px-2 text-[12px] text-[#6b6b73] outline-none">
+          <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
             <option>全部星级</option>
             <option>已收藏</option>
             <option>未收藏</option>
           </select>
-          <button onClick={() => showToast('搜索')} className="flex size-[30px] items-center justify-center rounded-lg text-[#6b6b73] hover:bg-[#e4e4e9]">
+          <button onClick={() => showToast('搜索')} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
           </button>
           <div className="ml-auto flex items-center gap-2">
             <input type="range" min={60} max={160} value={thumbScale} onChange={(e) => setThumbScale(Number(e.target.value))} className="w-24 accent-accent" />
-            <button onClick={() => setViewMode('list')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='list' ? 'bg-accent text-accent-foreground' : 'text-[#6b6b73] hover:bg-[#e4e4e9]')}>
+            <button onClick={() => setViewMode('list')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='list' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <List className="size-[14px]" />
             </button>
-            <button onClick={() => setViewMode('grid')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='grid' ? 'bg-accent text-accent-foreground' : 'text-[#6b6b73] hover:bg-[#e4e4e9]')}>
+            <button onClick={() => setViewMode('grid')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='grid' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <LayoutGrid className="size-[14px]" />
             </button>
-            <button onClick={() => setViewMode('large')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='large' ? 'bg-accent text-accent-foreground' : 'text-[#6b6b73] hover:bg-[#e4e4e9]')}>
+            <button onClick={() => setViewMode('large')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='large' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <ZoomIn className="size-[14px]" />
             </button>
           </div>
@@ -494,23 +490,29 @@ function GeneratePanel() {
 
         {/* 结果列表 — 根据 viewMode 切换布局 */}
         <div className="flex-1 overflow-y-auto p-4 pt-2">
-          {viewMode === 'list' && (
+          {results.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center text-text-muted">
+              <p className="text-sm">还没有生成结果</p>
+              <p className="mt-1 text-xs text-text-secondary">输入提示词后点击生成</p>
+            </div>
+          )}
+          {results.length > 0 && viewMode === 'list' && (
             <div className="space-y-4">
               {results.map((r) => (
-                <div key={r.id} className="group flex gap-4 rounded-lg bg-[#ffffff] p-3">
-                  <div className="shrink-0 overflow-hidden rounded-lg bg-[#ececef]" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
-                    <div className="flex h-full items-center justify-center text-[12px] text-[#6b6b73]">图 {r.id}</div>
+                <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
+                  <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
+                    <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">图 {r.id}</div>
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-1 flex items-baseline gap-2">
-                      <span className="text-[14px] text-[#3f3f46]">{r.model}</span>
-                      <span className="text-[12px] text-[#6b6b73]">尺寸 {r.size}</span>
-                      <span className="text-[12px] text-[#6b6b73]">大小 {r.fileSize}</span>
-                      <span className="text-[12px] text-[#6b6b73]">画质 {r.quality}</span>
-                      <span className="ml-auto text-[12px] text-[#6b6b73]">{r.time}</span>
+                      <span className="text-[14px] text-text">{r.model}</span>
+                      <span className="text-[12px] text-text-secondary">尺寸 {r.size}</span>
+                      <span className="text-[12px] text-text-secondary">大小 {r.fileSize}</span>
+                      <span className="text-[12px] text-text-secondary">画质 {r.quality}</span>
+                      <span className="ml-auto text-[12px] text-text-secondary">{r.time}</span>
                     </div>
                                         <div className="mb-2">
-                      <p className={cn('text-[14px] text-[#3f3f46]', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
+                      <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
                       {r.prompt.length > 40 && (
                         <button onClick={() => togglePrompt(r.id)} className="mt-0.5 text-[12px] text-accent hover:underline">
                           {expandedIds.has(r.id) ? '收起' : '展开'}
@@ -518,15 +520,15 @@ function GeneratePanel() {
                       )}
                     </div>
                     <div className="mt-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制图片" onClick={() => showToast('已复制图片')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Copy className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="引用" onClick={() => showToast('已引用')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Quote className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="团队分享" onClick={() => showToast('已发起团队分享')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Share2 className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="所在文件夹" onClick={() => showToast('已打开所在文件夹')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-[#e4e4e9]"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="复制图片" onClick={() => showToast('已复制图片')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="引用" onClick={() => showToast('已引用')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="团队分享" onClick={() => showToast('已发起团队分享')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="所在文件夹" onClick={() => showToast('已打开所在文件夹')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
                     </div>
                   </div>
                 </div>
@@ -536,14 +538,14 @@ function GeneratePanel() {
           {viewMode === 'grid' && (
             <div className="grid grid-cols-3 gap-3">
               {results.map((r) => (
-                <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-[#ececef]">
-                  <div className="flex h-full items-center justify-center text-[12px] text-[#6b6b73]">图 {r.id}</div>
+                <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
+                  <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">图 {r.id}</div>
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
-                    <p className="mb-2 truncate text-[12px] text-[#3f3f46]">{r.prompt}</p>
+                    <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
-                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded bg-[#f0f0f2] px-2 text-[11px] text-[#3f3f46] hover:bg-[#e4e4e9]">复制</button>
-                      <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded bg-[#f0f0f2] px-2 text-[11px] text-[#3f3f46] hover:bg-[#e4e4e9]">{r.favorited ? '★' : '☆'}</button>
-                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded bg-[#f0f0f2] px-2 text-[11px] text-red-400 hover:bg-[#e4e4e9]">删</button>
+                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">复制</button>
+                      <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
+                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">删</button>
                     </div>
                   </div>
                 </div>
@@ -553,16 +555,16 @@ function GeneratePanel() {
           {viewMode === 'large' && (
             <div className="space-y-4">
               {results.map((r) => (
-                <div key={r.id} className="group overflow-hidden rounded-lg bg-[#ffffff]">
-                  <div className="flex h-[400px] items-center justify-center bg-[#ececef] text-[14px] text-[#6b6b73]">图 {r.id}（大图预览）</div>
+                <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
+                  <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">图 {r.id}（大图预览）</div>
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
-                      <span className="text-[14px] text-[#3f3f46]">{r.model}</span>
-                      <span className="text-[12px] text-[#6b6b73]">尺寸 {r.size}</span>
-                      <span className="text-[12px] text-[#6b6b73]">{r.time}</span>
+                      <span className="text-[14px] text-text">{r.model}</span>
+                      <span className="text-[12px] text-text-secondary">尺寸 {r.size}</span>
+                      <span className="text-[12px] text-text-secondary">{r.time}</span>
                     </div>
                                         <div className="mb-2">
-                      <p className={cn('text-[14px] text-[#3f3f46]', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
+                      <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
                       {r.prompt.length > 40 && (
                         <button onClick={() => togglePrompt(r.id)} className="mt-0.5 text-[12px] text-accent hover:underline">
                           {expandedIds.has(r.id) ? '收起' : '展开'}
@@ -570,11 +572,11 @@ function GeneratePanel() {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-[#8a8a91] hover:bg-[#e4e4e9] hover:text-[#6b6b73]"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-[#e4e4e9]"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="复用参数" onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="复制提示词" onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button title={r.favorited ? '取消收藏' : '收藏'} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="下载" onClick={() => showToast('已下载')} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
+                      <button data-tip="删除" onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
                     </div>
                   </div>
                 </div>
@@ -589,7 +591,7 @@ function GeneratePanel() {
       <button
         data-tip={resultsCollapsed ? '展开结果区' : '折叠结果区'}
         onClick={() => setResultsCollapsed((v) => !v)}
-        className="fixed right-3 top-1/2 z-30 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-[#f0f0f2] text-[#8a8a91] shadow-lg ring-1 ring-[#e2e2e8] hover:bg-[#e4e4e9] hover:text-[#3f3f46]"
+        className="fixed right-3 top-1/2 z-30 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-secondary text-text-muted shadow-lg ring-1 ring-border hover:bg-surface-hover hover:text-text"
       >
         {resultsCollapsed ? <PanelRightOpen className="size-[14px]" strokeWidth={1.8} /> : <PanelRightClose className="size-[14px]" strokeWidth={1.8} />}
       </button>
@@ -602,23 +604,23 @@ function GeneratePanel() {
           onClick={() => setShowCommonPromptModal(false)}
         >
           <div
-            className="w-[480px] rounded-xl bg-[#ffffff] p-5 shadow-2xl"
+            className="w-[480px] rounded-xl bg-card p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-4 text-[16px] text-[#1d1d1f]">添加常用提示词</h3>
+            <h3 className="mb-4 text-[16px] text-text">添加常用提示词</h3>
             <input
               type="text"
               value={newPromptTitle}
               onChange={(e) => setNewPromptTitle(e.target.value)}
               placeholder="标题（如：日系动漫风）"
-              className="mb-3 w-full rounded-lg bg-[#ffffff] px-3 py-2 text-[14px] text-[#1d1d1f] outline-none placeholder:text-[#8a8a91]"
+              className="mb-3 w-full rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
             />
             <textarea
               value={newPromptContent}
               onChange={(e) => setNewPromptContent(e.target.value)}
               placeholder="提示词内容"
               rows={4}
-              className="mb-4 w-full resize-none rounded-lg bg-[#ffffff] px-3 py-2 text-[14px] text-[#1d1d1f] outline-none placeholder:text-[#8a8a91]"
+              className="mb-4 w-full resize-none rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
             />
             {commonPrompts.length > 0 && (
               <div className="mb-4 max-h-[120px] overflow-y-auto">
@@ -626,7 +628,7 @@ function GeneratePanel() {
                   <button
                     key={p.id}
                     onClick={() => { setPrompt(p.content); setShowCommonPromptModal(false); showToast('已填入提示词') }}
-                    className="mb-1 block w-full rounded-lg bg-[#f0f0f2] px-3 py-2 text-left text-[13px] text-[#3f3f46] hover:bg-[#e4e4e9]"
+                    className="mb-1 block w-full rounded-lg bg-secondary px-3 py-2 text-left text-[13px] text-text hover:bg-surface-hover"
                   >
                     {p.title}
                   </button>
@@ -636,7 +638,7 @@ function GeneratePanel() {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowCommonPromptModal(false)}
-                className="h-[32px] rounded-md bg-[#f0f0f2] px-4 text-[13px] text-[#6b6b73] hover:bg-[#e4e4e9]"
+                className="h-[32px] rounded-md bg-secondary px-4 text-[13px] text-text-secondary hover:bg-surface-hover"
               >
                 取消
               </button>
@@ -774,7 +776,7 @@ function BlendPanel() {
 
   return (
     <div className="flex h-full gap-2">
-      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-[#ffffff]">
+      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
           <div
             className={cn('relative flex h-[360px] cursor-pointer items-center justify-center overflow-hidden rounded-lg',
@@ -784,25 +786,25 @@ function BlendPanel() {
             onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]) }}>
             {!sourceImage ? (
               <div className="flex flex-col items-center">
-                <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-[#f0f0f2]">
+                <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-secondary">
                   <Upload className="size-[20px] text-accent" />
                 </div>
-                <div className="text-[14px] font-medium text-[#3f3f46]">点击或拖放图片</div>
-                <div className="mt-1 text-[12px] text-[#6b6b73]">PNG / JPG / WEBP / BMP</div>
+                <div className="text-[14px] font-medium text-text">点击或拖放图片</div>
+                <div className="mt-1 text-[12px] text-text-secondary">PNG / JPG / WEBP / BMP</div>
               </div>
             ) : (
               <>
                 <img src={sourceImage} alt="src" className="max-h-full max-w-full object-contain p-3" />
-                <div className="absolute inset-x-0 bottom-0 flex h-10 items-center bg-[#ffffff] px-3">
-                  <span className="truncate text-[12px] text-[#6b6b73]">{imageName}</span>
+                <div className="absolute inset-x-0 bottom-0 flex h-10 items-center bg-card px-3">
+                  <span className="truncate text-[12px] text-text-secondary">{imageName}</span>
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 hover:opacity-100">
                   <button onClick={(e) => { e.stopPropagation(); clearImage() }}
-                    className="flex size-9 items-center justify-center rounded-full bg-[#ffffff] text-[#6b6b73] hover:text-[#3f3f46]" data-tip="clear">
+                    className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text" data-tip="clear">
                     <X className="size-[16px]" />
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); fileRef.current?.click() }}
-                    className="flex size-9 items-center justify-center rounded-full bg-[#ffffff] text-[#6b6b73] hover:text-[#3f3f46]" data-tip="replace">
+                    className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text" data-tip="replace">
                     <RefreshCw className="size-[16px]" />
                   </button>
                 </div>
@@ -811,14 +813,14 @@ function BlendPanel() {
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
           <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-[#6b6b73]">提示词</label>
+            <label className="mb-2 block text-[12px] font-medium text-text-secondary">提示词</label>
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4}
               placeholder="描述你想要的效果…"
-              className="min-h-[120px] w-full resize-none rounded-xl bg-[#ffffff] px-3 py-2 text-[14px] leading-[22px] text-[#3f3f46] outline-none placeholder:text-[#6b6b73] focus:ring-1 focus:ring-accent" />
+              className="min-h-[120px] w-full resize-none rounded-xl bg-card px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-secondary focus:ring-1 focus:ring-accent" />
           </div>
           <div className="mt-4">
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-[12px] font-medium text-[#6b6b73]">融合强度</label>
+              <label className="text-[12px] font-medium text-text-secondary">融合强度</label>
               <span className="text-[12px] text-accent">{Math.round(strength * 100)}%</span>
             </div>
             <input type="range" min={0} max={100} value={strength * 100}
@@ -833,30 +835,30 @@ function BlendPanel() {
           </button>
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-[#ffffff]">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex h-[44px] shrink-0 items-center px-4 pt-3">
-          <span className="text-[12px] font-medium text-[#6b6b73]">结果预览</span>
+          <span className="text-[12px] font-medium text-text-secondary">结果预览</span>
         </div>
         <div className="flex-1 overflow-hidden p-4 pt-0">
           {!result && !generating ? (
             <div className="flex h-full items-center justify-center rounded-lg bg-[repeating-radial-gradient(circle_at_8px_8px,#242424_1.15px,transparent_1.15px)] bg-[length:16px_16px]">
               <div className="flex flex-col items-center">
-                <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-[#f0f0f2]">
+                <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-secondary">
                   <Wand2 className="size-[18px] text-accent" />
                 </div>
-                <span className="text-[14px] font-medium text-[#3f3f46]">等待图片</span>
-                <span className="mt-1.5 text-[12px] text-[#6b6b73]">上传后可查看原图、结果和滑动对比</span>
+                <span className="text-[14px] font-medium text-text">等待图片</span>
+                <span className="mt-1.5 text-[12px] text-text-secondary">上传后可查看原图、结果和滑动对比</span>
               </div>
             </div>
           ) : generating ? (
-            <div className="flex h-full items-center justify-center rounded-lg bg-[#ffffff]">
+            <div className="flex h-full items-center justify-center rounded-lg bg-card">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="size-8 animate-spin text-accent" />
-                <span className="text-[14px] text-[#6b6b73]">AI 正在处理…</span>
+                <span className="text-[14px] text-text-secondary">AI 正在处理…</span>
               </div>
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-lg bg-[#ffffff] p-4">
+            <div className="flex h-full items-center justify-center rounded-lg bg-card p-4">
               <img src={result!} alt="result" className="max-h-full max-w-full object-contain" />
             </div>
           )}
@@ -882,32 +884,32 @@ function TranslatePanel() {
 
   return (
     <div className="flex h-full gap-2">
-      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-[#ffffff]">
+      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
         <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
           <div
             className="flex h-[360px] cursor-pointer flex-col items-center justify-center rounded-lg bg-[repeating-radial-gradient(circle_at_8px_8px,#242424_1.15px,transparent_1.15px)] bg-[length:16px_16px]"
             onClick={() => fileRef.current?.click()}>
-            <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-[#f0f0f2]">
+            <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-secondary">
               <Languages className="size-[20px] text-accent" />
             </div>
-            <div className="text-[14px] font-medium text-[#3f3f46]">点击或拖放图片</div>
-            <div className="mt-1 text-[12px] text-[#6b6b73]">PNG / JPG / WEBP / BMP</div>
+            <div className="text-[14px] font-medium text-text">点击或拖放图片</div>
+            <div className="mt-1 text-[12px] text-text-secondary">PNG / JPG / WEBP / BMP</div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => onUpload(e.target.files)} />
           <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-[#6b6b73]">目标语言</label>
+            <label className="mb-2 block text-[12px] font-medium text-text-secondary">目标语言</label>
             <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
-              className="w-full rounded-xl bg-[#ffffff] px-3 py-2 text-[14px] text-[#3f3f46] outline-none focus:ring-1 focus:ring-accent">
+              className="w-full rounded-xl bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent">
               {['中文', '英文', '日文', '韩文', '法文', '德文'].map((l) => <option key={l}>{l}</option>)}
             </select>
           </div>
           {images.length > 0 && (
             <div className="mt-4 space-y-1.5">
               {images.map((img, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg bg-[#f0f0f2] px-3 py-2">
-                  <span className="truncate text-[12px] text-[#3f3f46]">{img.name}</span>
-                  <span className="text-[12px] text-[#6b6b73]">{img.status}</span>
+                <div key={i} className="flex items-center justify-between rounded-lg bg-secondary px-3 py-2">
+                  <span className="truncate text-[12px] text-text">{img.name}</span>
+                  <span className="text-[12px] text-text-secondary">{img.status}</span>
                 </div>
               ))}
             </div>
@@ -920,8 +922,8 @@ function TranslatePanel() {
           </button>
         </div>
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-center rounded-xl bg-[#ffffff]">
-        <div className="flex flex-col items-center text-[#6b6b73]">
+      <div className="flex min-w-0 flex-1 items-center justify-center rounded-xl bg-card">
+        <div className="flex flex-col items-center text-text-secondary">
           <Languages className="mb-3 size-12" />
           <span className="text-[14px]">上传图片后，翻译结果将显示在这里</span>
         </div>
@@ -934,7 +936,7 @@ export default function ImageToolsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('generate')
 
   return (
-    <div className="flex h-full flex-col bg-[#f4f4f6] p-3">
+    <div className="flex h-full flex-col bg-bg p-3">
       <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-2">
         {tabs.map((t) => (
           <button
@@ -944,7 +946,7 @@ export default function ImageToolsPage() {
               'flex h-[30px] min-w-[58px] items-center rounded-lg px-3 text-[12px] font-medium transition-colors',
               activeTab === t.id
                 ? 'bg-accent text-accent-foreground'
-                : 'text-[#6b6b73] hover:bg-[#f0f0f2] hover:text-[#3f3f46]',
+                : 'text-text-secondary hover:bg-secondary hover:text-text',
             )}
           >
             {t.label}

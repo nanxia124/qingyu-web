@@ -86,7 +86,7 @@ export default function BillingPage() {
       <h1 className="text-2xl font-bold text-text mb-6">账单与发票</h1>
 
       {/* 当前订阅 */}
-      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] p-6 mb-6">
+      <div className="bg-card rounded-xl border border-border p-6 mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-medium text-text">当前订阅</h2>
@@ -96,7 +96,7 @@ export default function BillingPage() {
           </div>
           <button
             onClick={handleClickUpgrade}
-            className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+            className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
           >
             升级计划
           </button>
@@ -104,8 +104,8 @@ export default function BillingPage() {
       </div>
 
       {/* 发票列表 */}
-      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] overflow-hidden">
-        <div className="px-6 py-4 border-b border-[#e5e5ea]">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
           <h2 className="text-lg font-medium text-text">历史发票</h2>
         </div>
 
@@ -115,7 +115,7 @@ export default function BillingPage() {
           <div className="p-8 text-center text-text-muted">暂无发票记录</div>
         ) : (
           <table className="w-full">
-            <thead className="bg-[#ffffff]">
+            <thead className="bg-card">
               <tr>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">发票号</th>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">金额</th>
@@ -126,7 +126,7 @@ export default function BillingPage() {
             </thead>
             <tbody>
               {invoices.map((invoice) => (
-                <tr key={invoice.id} className="border-t border-[#e5e5ea]">
+                <tr key={invoice.id} className="border-t border-border">
                   <td className="px-6 py-4 font-mono text-sm text-text">{invoice.id}</td>
                   <td className="px-6 py-4 text-text">
                     {(invoice.amount / 100).toFixed(2)} {invoice.currency.toUpperCase()}
@@ -145,7 +145,7 @@ export default function BillingPage() {
                         href={invoice.pdfUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg text-text-muted hover:text-text hover:bg-[#e5e5ea] transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors"
                       >
                         <Download size={14} />
                         下载

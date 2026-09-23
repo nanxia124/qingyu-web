@@ -48,8 +48,8 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-[#ffffff]">
-            <div className="w-full max-w-sm p-8 rounded-2xl bg-[#ffffff] border border-[#e2e2e8]">
+        <div className="min-h-screen flex items-center justify-center bg-card">
+            <div className="w-full max-w-sm p-8 rounded-2xl bg-card border border-border">
                 <h1 className="text-2xl font-bold text-white mb-6 text-center">
                     {isLogin ? "登录" : "注册"}
                 </h1>
@@ -60,7 +60,7 @@ export default function LoginPage() {
                             placeholder="昵称"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] text-white border border-[#e2e2e8] focus:border-[#5051F8] outline-none"
+                            className="w-full px-4 py-3 rounded-lg bg-secondary text-white border border-border focus:border-accent outline-none"
                         />
                     )}
                     <input
@@ -68,20 +68,20 @@ export default function LoginPage() {
                         placeholder="邮箱"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] text-white border border-[#e2e2e8] focus:border-[#5051F8] outline-none"
+                        className="w-full px-4 py-3 rounded-lg bg-secondary text-white border border-border focus:border-accent outline-none"
                     />
                     <input
                         type="password"
                         placeholder="密码（至少6位）"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] text-white border border-[#e2e2e8] focus:border-[#5051F8] outline-none"
+                        className="w-full px-4 py-3 rounded-lg bg-secondary text-white border border-border focus:border-accent outline-none"
                     />
                     {error && <p className="text-red-400 text-sm">{error}</p>}
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-[#3f40e6] disabled:opacity-50"
+                        className="w-full py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-accent-hover disabled:opacity-50"
                     >
                         {isLoading ? "加载中..." : isLogin ? "登录" : "注册"}
                     </button>
@@ -90,7 +90,7 @@ export default function LoginPage() {
                     {isLogin ? "还没有账号？" : "已有账号？"}
                     <button
                         onClick={() => setIsLogin(!isLogin)}
-                        className="text-[#5051F8] ml-1"
+                        className="text-accent ml-1"
                     >
                         {isLogin ? "注册" : "登录"}
                     </button>

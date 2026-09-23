@@ -100,7 +100,7 @@ export default function TeamMembersPage() {
         </div>
         <button
           onClick={() => setShowInvite(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
         >
           <Mail size={16} />
           邀请成员
@@ -123,7 +123,7 @@ export default function TeamMembersPage() {
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setShowInvite(false)}>
           <div
-            className="w-full max-w-md rounded-2xl bg-[#ffffff] p-6"
+            className="w-full max-w-md rounded-2xl bg-card p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-text mb-4">邀请成员</h2>
@@ -134,7 +134,7 @@ export default function TeamMembersPage() {
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="输入对方邮箱"
                 autoFocus
-                className="w-full px-4 py-3 rounded-lg bg-[#e5e5ea] border border-[#e2e2e8] text-text placeholder:text-text-muted focus:border-[#5051F8] outline-none mb-4"
+                className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none mb-4"
               />
               <p className="text-xs text-text-muted mb-4">
                 对方将收到邀请邮件，接受后加入团队
@@ -150,7 +150,7 @@ export default function TeamMembersPage() {
                 <button
                   type="submit"
                   disabled={inviting}
-                  className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-[#3f40e6] disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
                   {inviting ? "发送中..." : "发送邀请"}
                 </button>
@@ -161,12 +161,12 @@ export default function TeamMembersPage() {
       )}
 
       {/* 成员列表 */}
-      <div className="bg-[#ffffff] rounded-xl border border-[#e2e2e8] overflow-hidden">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted">加载中...</div>
         ) : (
           <table className="w-full">
-            <thead className="bg-[#ffffff]">
+            <thead className="bg-card">
               <tr>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">成员</th>
                 <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">角色</th>
@@ -176,10 +176,10 @@ export default function TeamMembersPage() {
             </thead>
             <tbody>
               {members.map((member) => (
-                <tr key={member.id} className="border-t border-[#e5e5ea]">
+                <tr key={member.id} className="border-t border-border">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#e5e5ea] flex items-center justify-center text-sm font-bold text-text">
+                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-bold text-text">
                         {member.name?.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -189,7 +189,7 @@ export default function TeamMembersPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-[#e5e5ea] text-text-muted">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-secondary text-text-muted">
                       {getRoleIcon(member.role)}
                       {getRoleText(member.role)}
                     </span>
@@ -198,7 +198,7 @@ export default function TeamMembersPage() {
                     {new Date(member.joinedAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-[#e5e5ea] transition-colors">
+                    <button className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors">
                       <MoreHorizontal size={18} />
                     </button>
                   </td>

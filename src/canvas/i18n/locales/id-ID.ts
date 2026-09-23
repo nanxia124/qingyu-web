@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "Riwayat",
+      settings: "Pengaturan",
+      prompt: "Prompt",
+      viewPrompts: "Lihat prompt",
+      clipboard: "Clipboard",
+      upload: "Unggah",
+      generate: "Buat",
+      results: "Hasil",
+      generating: "Sedang membuat…",
+      success: "Berhasil",
+      failed: "Gagal",
+      retry: "Coba lagi",
+      new: "Baru",
+      selectAll: "Pilih semua",
+      noLogs: "Tidak ada riwayat",
+    },
+    imageWorkbench: {
+      title: "Studio gambar",
+      promptPlaceholder: "Jelaskan subjek, gaya…",
+      references: "Gambar referensi",
+      dropReferences: "Tarik untuk menambah",
+      noReferences: "Tidak ada gambar referensi",
+      promptRequired: "Masukkan prompt",
+    },
+    assets: {
+      title: "Aset saya",
+      fields: {
+        title: "Judul",
+        tags: "Tag",
+        source: "Sumber",
+        note: "Catatan",
+      },
+      preview: "Pratinjau",
+      details: "Detail aset",
+      deleteTitle: "Hapus aset",
+      copyText: "Salin teks",
+      downloadImage: "Unduh gambar",
+    },
     settingsPanels: {
       common: {
         auto: "Otomatis",

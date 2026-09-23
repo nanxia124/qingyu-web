@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "इतिहास",
+      settings: "सेटिंग",
+      prompt: "प्रॉम्प्ट",
+      viewPrompts: "प्रॉम्प्ट देखें",
+      clipboard: "क्लिपबोर्ड",
+      upload: "अपलोड",
+      generate: "जनरेट",
+      results: "परिणाम",
+      generating: "जनरेट हो रहा…",
+      success: "सफल",
+      failed: "विफल",
+      retry: "फिर से",
+      new: "नया",
+      selectAll: "सभी चुनें",
+      noLogs: "कोई इतिहास नहीं",
+    },
+    imageWorkbench: {
+      title: "इमेज स्टूडियो",
+      promptPlaceholder: "विषय, स्टाइल बताएं…",
+      references: "संदर्भ इमेज",
+      dropReferences: "जोड़ने के लिए डालें",
+      noReferences: "कोई संदर्भ इमेज नहीं",
+      promptRequired: "प्रॉम्प्ट डालें",
+    },
+    assets: {
+      title: "मेरे एसेट",
+      fields: {
+        title: "शीर्षक",
+        tags: "टैग",
+        source: "स्रोत",
+        note: "नोट",
+      },
+      preview: "प्रीव्यू",
+      details: "एसेट विवरण",
+      deleteTitle: "एसेट हटाएं",
+      copyText: "टेक्स्ट कॉपी",
+      downloadImage: "इमेज डाउनलोड",
+    },
     settingsPanels: {
       common: {
         auto: "ऑटो",

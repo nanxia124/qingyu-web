@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "سجل التوليد",
+      settings: "الإعدادات",
+      prompt: "النص",
+      viewPrompts: "تصفح النصوص",
+      clipboard: "الحافظة",
+      upload: "رفع",
+      generate: "إنشاء",
+      results: "النتائج",
+      generating: "جارٍ الإنشاء…",
+      success: "نجح",
+      failed: "فشل",
+      retry: "إعادة المحاولة",
+      new: "جديد",
+      selectAll: "تحديد الكل",
+      noLogs: "لا يوجد سجل",
+    },
+    imageWorkbench: {
+      title: "استوديو الصور",
+      promptPlaceholder: "صف الموضوع والأسلوب…",
+      references: "صور مرجعية",
+      dropReferences: "أفلت للإضافة",
+      noReferences: "لا توجد صور مرجعية",
+      promptRequired: "أدخل النص",
+    },
+    assets: {
+      title: "أصولي",
+      fields: {
+        title: "العنوان",
+        tags: "العلامات",
+        source: "المصدر",
+        note: "ملاحظة",
+      },
+      preview: "معاينة",
+      details: "تفاصيل الأصل",
+      deleteTitle: "حذف الأصل",
+      copyText: "نسخ النص",
+      downloadImage: "تنزيل الصورة",
+    },
     settingsPanels: {
       common: {
         auto: "تلقائي",

@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "История генераций",
+      settings: "Настройки",
+      prompt: "Промпт",
+      viewPrompts: "Смотреть промпты",
+      clipboard: "Буфер обмена",
+      upload: "Загрузить",
+      generate: "Создать",
+      results: "Результаты",
+      generating: "Создание…",
+      success: "Успешно",
+      failed: "Ошибка",
+      retry: "Повторить",
+      new: "Новый",
+      selectAll: "Выбрать все",
+      noLogs: "Нет истории",
+    },
+    imageWorkbench: {
+      title: "Студия изображений",
+      promptPlaceholder: "Опишите тему, стиль, свет…",
+      references: "Референсные изображения",
+      dropReferences: "Перетащите для добавления",
+      noReferences: "Нет референсных изображений",
+      promptRequired: "Введите промпт",
+    },
+    assets: {
+      title: "Мои ассеты",
+      fields: {
+        title: "Заголовок",
+        tags: "Теги",
+        source: "Источник",
+        note: "Заметка",
+      },
+      preview: "Просмотр",
+      details: "Подробнее sobre ассет",
+      deleteTitle: "Удалить ассет",
+      copyText: "Копировать текст",
+      downloadImage: "Скачать изображение",
+    },
     settingsPanels: {
       common: {
         auto: "Авто",

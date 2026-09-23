@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "Geçmiş",
+      settings: "Ayarlar",
+      prompt: "İstem",
+      viewPrompts: "İstemlere göz at",
+      clipboard: "Pano",
+      upload: "Yükle",
+      generate: "Üret",
+      results: "Sonuçlar",
+      generating: "Üretiliyor…",
+      success: "Başarılı",
+      failed: "Başarısız",
+      retry: "Tekrar dene",
+      new: "Yeni",
+      selectAll: "Tümünü seç",
+      noLogs: "Geçmiş yok",
+    },
+    imageWorkbench: {
+      title: "Görsel stüdyo",
+      promptPlaceholder: "Konu, stil, ışık anlat…",
+      references: "Referans görseller",
+      dropReferences: "Eklemek için bırakın",
+      noReferences: "Referans görsel yok",
+      promptRequired: "İstem girin",
+    },
+    assets: {
+      title: "Varlıklarım",
+      fields: {
+        title: "Başlık",
+        tags: "Etiketler",
+        source: "Kaynak",
+        note: "Not",
+      },
+      preview: "Ön izleme",
+      details: "Varlık detayları",
+      deleteTitle: "Varlığı sil",
+      copyText: "Metni kopyala",
+      downloadImage: "Görseli indir",
+    },
     settingsPanels: {
       common: {
         auto: "Otomatik",

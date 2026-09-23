@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "Lịch sử",
+      settings: "Cài đặt",
+      prompt: "Gợi ý",
+      viewPrompts: "Xem gợi ý",
+      clipboard: "Bảng nhớ",
+      upload: "Tải lên",
+      generate: "Tạo",
+      results: "Kết quả",
+      generating: "Đang tạo…",
+      success: "Thành công",
+      failed: "Thất bại",
+      retry: "Thử lại",
+      new: "Mới",
+      selectAll: "Chọn tất cả",
+      noLogs: "Không có lịch sử",
+    },
+    imageWorkbench: {
+      title: "Studio ảnh",
+      promptPlaceholder: "Mô tả chủ đề, phong cách…",
+      references: "Ảnh tham khảo",
+      dropReferences: "Thả để thêm",
+      noReferences: "Không có ảnh tham khảo",
+      promptRequired: "Nhập gợi ý",
+    },
+    assets: {
+      title: "Tài sản của tôi",
+      fields: {
+        title: "Tiêu đề",
+        tags: "Thẻ",
+        source: "Nguồn",
+        note: "Ghi chú",
+      },
+      preview: "Xem trước",
+      details: "Chi tiết tài sản",
+      deleteTitle: "Xóa tài sản",
+      copyText: "Sao chép văn bản",
+      downloadImage: "Tải ảnh xuống",
+    },
     settingsPanels: {
       common: {
         auto: "Tự động",

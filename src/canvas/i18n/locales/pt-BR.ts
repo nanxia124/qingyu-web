@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "Histórico",
+      settings: "Configurações",
+      prompt: "Prompt",
+      viewPrompts: "Ver prompts",
+      clipboard: "Área de transferência",
+      upload: "Enviar",
+      generate: "Gerar",
+      results: "Resultados",
+      generating: "Gerando…",
+      success: "Concluído",
+      failed: "Falhou",
+      retry: "Tentar novamente",
+      new: "Novo",
+      selectAll: "Selecionar tudo",
+      noLogs: "Sem histórico",
+    },
+    imageWorkbench: {
+      title: "Estúdio de imagens",
+      promptPlaceholder: "Descreva tema, estilo, luz…",
+      references: "Imagens de referência",
+      dropReferences: "Solte para adicionar",
+      noReferences: "Sem imagens de referência",
+      promptRequired: "Digite um prompt",
+    },
+    assets: {
+      title: "Meus recursos",
+      fields: {
+        title: "Título",
+        tags: "Tags",
+        source: "Origem",
+        note: "Nota",
+      },
+      preview: "Pré-visualizar",
+      details: "Detalhes",
+      deleteTitle: "Excluir recurso",
+      copyText: "Copiar texto",
+      downloadImage: "Baixar imagem",
+    },
     settingsPanels: {
       common: {
         auto: "Auto",

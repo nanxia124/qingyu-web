@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "ประวัติการสร้าง",
+      settings: "ตั้งค่า",
+      prompt: "พร้อมป์",
+      viewPrompts: "ดูพร้อมป์",
+      clipboard: "คลิปบอร์ด",
+      upload: "อัปโหลด",
+      generate: "สร้าง",
+      results: "ผลลัพธ์",
+      generating: "กำลังสร้าง…",
+      success: "สำเร็จ",
+      failed: "ล้มเหลว",
+      retry: "ลองใหม่",
+      new: "ใหม่",
+      selectAll: "เลือกทั้งหมด",
+      noLogs: "ไม่มีประวัติ",
+    },
+    imageWorkbench: {
+      title: "สตูดิโอภาพ",
+      promptPlaceholder: "อธิบายหัวข้อ สไตล์…",
+      references: "ภาพอ้างอิง",
+      dropReferences: "วางเพื่อเพิ่ม",
+      noReferences: "ไม่มีภาพอ้างอิง",
+      promptRequired: "ใส่พร้อมป์",
+    },
+    assets: {
+      title: "เนื้อหาของฉัน",
+      fields: {
+        title: "ชื่อ",
+        tags: "แท็ก",
+        source: "แหล่งที่มา",
+        note: "บันทึก",
+      },
+      preview: "ตัวอย่าง",
+      details: "รายละเอียด",
+      deleteTitle: "ลบเนื้อหา",
+      copyText: "คัดลอกข้อความ",
+      downloadImage: "ดาวน์โหลดภาพ",
+    },
     settingsPanels: {
       common: {
         auto: "อัตโนมัต",

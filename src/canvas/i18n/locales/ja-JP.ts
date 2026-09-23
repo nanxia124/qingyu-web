@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "生成履歴",
+      settings: "設定",
+      prompt: "プロンプト",
+      viewPrompts: "プロンプトを見る",
+      clipboard: "クリップボード",
+      upload: "アップロード",
+      generate: "生成",
+      results: "結果",
+      generating: "生成中…",
+      success: "成功",
+      failed: "失敗",
+      retry: "再試行",
+      new: "新規",
+      selectAll: "すべて選択",
+      noLogs: "生成履歴なし",
+    },
+    imageWorkbench: {
+      title: "イメージスタジオ",
+      promptPlaceholder: "主題・スタイル・構図・光を説明…",
+      references: "参照画像",
+      dropReferences: "ドロップして参照画像を追加",
+      noReferences: "参照画像はありません。ドラッグして追加",
+      promptRequired: "プロンプトを入力",
+    },
+    assets: {
+      title: "マイアセット",
+      fields: {
+        title: "タイトル",
+        tags: "タグ",
+        source: "ソース",
+        note: "メモ",
+      },
+      preview: "プレビュー",
+      details: "アセット詳細",
+      deleteTitle: "アセットを削除",
+      copyText: "テキストをコピー",
+      downloadImage: "画像をダウンロード",
+    },
     settingsPanels: {
       common: {
         auto: "自動",

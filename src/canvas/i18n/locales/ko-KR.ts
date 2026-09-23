@@ -2,6 +2,45 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    workbench: {
+      logs: "기록",
+      settings: "설정",
+      prompt: "프롬프트",
+      viewPrompts: "프롬프트 보기",
+      clipboard: "클립보드",
+      upload: "업로드",
+      generate: "생성",
+      results: "결과",
+      generating: "생성 중…",
+      success: "성공",
+      failed: "실패",
+      retry: "재시도",
+      new: "새로 만들기",
+      selectAll: "전체 선택",
+      noLogs: "기록 없음",
+    },
+    imageWorkbench: {
+      title: "이미지 스튜디오",
+      promptPlaceholder: "주제, 스타일, 구도, 조명 설명…",
+      references: "참고 이미지",
+      dropReferences: "드롭하여 추가",
+      noReferences: "참고 이미지 없음",
+      promptRequired: "프롬프트를 입력",
+    },
+    assets: {
+      title: "내 에셋",
+      fields: {
+        title: "제목",
+        tags: "태그",
+        source: "출처",
+        note: "메모",
+      },
+      preview: "미리보기",
+      details: "에셋 상세",
+      deleteTitle: "에셋 삭제",
+      copyText: "텍스트 복사",
+      downloadImage: "이미지 다운로드",
+    },
     settingsPanels: {
       common: {
         auto: "자동",

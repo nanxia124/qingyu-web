@@ -14,5 +14,6 @@
   "0013_sessions_realtime.sql": "176a6d6e8f3f8c873ee9a25b0ac35fc0b3304fc7640bff784d843ab6e2fcee9b",
   "0014_organization_lifecycle.sql": "2129ffd84e7329325828a0002a1348ee867d1058091f9f6b5a82ea82c1fdcbfb",
   "0015_workspace_link_integrity.sql": "4cbec7d65fc07ae82dc932710caf154576f646e9d7cf1f981b383db1f2ca7645",
-  "0016_prompt_link_trigger_fix.sql": "0dd47d3e8bf0875b79cc229c19a525ae930cfc8ac21f898310007e4051d8cf98"
+  "0016_prompt_link_trigger_fix.sql": "0dd47d3e8bf0875b79cc229c19a525ae930cfc8ac21f898310007e4051d8cf98",
+  "0017_plan_version_consistency.sql": "1d87bd0995721cb50d860f37a3ba610d53e5850aa85b324a2a65bdbc0593b88c"
 }

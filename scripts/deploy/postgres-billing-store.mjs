@@ -124,6 +124,29 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  async function listSyncEvents(appwriteUserId, workspaceId, afterSequence = 0, limit = 100) {
+    const after = Math.max(0, Number(afterSequence || 0));
+    const take = Math.min(200, Math.max(1, Number(limit || 100)));
+    const r = await pool.query(`select e.sequence_no,e.event_type,e.schema_version,e.aggregate_type,e.aggregate_id,e.payload,e.created_at
+      from app.outbox_events e join app.user_accounts u on u.appwrite_user_id=$1
+      where e.workspace_id=$2 and e.sequence_no>$3 and e.status in ('pending','processing','published')
+        and exists(select 1 from app.workspaces w where w.id=e.workspace_id and (w.owner_user_id=u.id or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=u.id and tm.status='active')))
+      order by e.sequence_no asc limit $4`, [appwriteUserId, workspaceId, after, take]);
+    return r.rows.map(x => ({ sequence: Number(x.sequence_no), type: x.event_type, schemaVersion: x.schema_version, aggregateType: x.aggregate_type, aggregateId: x.aggregate_id, payload: x.payload || {}, createdAt: new Date(x.created_at).toISOString() }));
+  }
+
+  async function ackSyncCursor(appwriteUserId, deviceId, workspaceId, sequence) {
+    const next = Math.max(0, Number(sequence || 0));
+    const r = await pool.query(`insert into app.sync_cursors(device_id,user_id,workspace_id,last_sequence)
+      select d.id,u.id,w.id,$4 from app.user_devices d join app.user_accounts u on u.id=d.user_id and u.appwrite_user_id=$1
+      join app.workspaces w on w.id=$3 and (w.owner_user_id=u.id or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=u.id and tm.status='active'))
+      where d.id=$2
+      on conflict(device_id,workspace_id) do update set last_sequence=greatest(app.sync_cursors.last_sequence,excluded.last_sequence),version=app.sync_cursors.version+1,updated_at=now()
+      returning last_sequence`, [appwriteUserId, deviceId, workspaceId, next]);
+    if (!r.rowCount) throw new Error('设备或工作空间不存在，无法保存同步游标');
+    return { deviceId, workspaceId, lastSequence: Number(r.rows[0].last_sequence) };
+  }
+
   async function listSessions(appwriteUserId) {
     const r = await pool.query(`select s.id,s.created_at,s.last_seen_at,s.expires_at,s.admission_status,s.revoked_at,s.revoked_reason,d.id device_id,d.display_name,d.client_type,d.os_family,d.browser_family
       from app.user_sessions s join app.user_accounts u on u.id=s.user_id join app.user_devices d on d.id=s.device_id
@@ -376,6 +399,7 @@ export async function createPostgresBillingStore() {
       if (membership.rowCount !== 1) throw new Error('团队所有者关系创建失败');
       const ownerBinding = await client.query(`insert into app.role_bindings(workspace_id,user_id,role_id,created_by) select $1,$2,id,$2 from app.roles where code='owner' returning id`, [ws.rows[0].id, ownerId]);
       if (ownerBinding.rowCount !== 1) throw new Error('所有者权限模板不存在，团队创建已回滚');
+      await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('team.created','team',$1,$2,$3::jsonb)`, [teamId, ws.rows[0].id, JSON.stringify({ name: cleanName })]);
       await client.query('commit');
       return { id: teamId, name: team.rows[0].name, plan: 'free', role: 'owner', createdAt: new Date(team.rows[0].created_at).toISOString() };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -552,6 +576,7 @@ export async function createPostgresBillingStore() {
       const versionMetadata = { ...(file.metadata && typeof file.metadata === 'object' ? file.metadata : {}), mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum };
       const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`, [asset.rows[0].id, workspaceId, owner.rows[0].id, JSON.stringify(versionMetadata)]);
       await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`, [version.rows[0].id, object.rows[0].id, workspaceId]);
+      await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('asset.created','asset',$1,$2,$3::jsonb)`, [asset.rows[0].id, workspaceId, JSON.stringify({ title, assetType })]);
       await client.query('commit');
       return { id: asset.rows[0].id, name: asset.rows[0].title, type: asset.rows[0].asset_type, visibility: asset.rows[0].visibility, favorited: false, createdAt: new Date(asset.rows[0].created_at).toISOString(), updatedAt: new Date(asset.rows[0].updated_at).toISOString(), objectKey: file.objectKey };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -568,5 +593,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, revokeSession, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

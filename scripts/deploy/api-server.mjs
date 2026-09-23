@@ -928,6 +928,23 @@ const server = http.createServer(async (req, res) => {
       } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
     }
 
+    if (postgresBilling && (pathname === "/api/sync/events" || pathname === "/api/sync/cursor")) {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try {
+        if (pathname === "/api/sync/events" && req.method === "GET") {
+          const workspaceId = url.searchParams.get("workspaceId") || "";
+          const after = url.searchParams.get("after") || "0";
+          return sendJSON(res, 200, await postgresBilling.listSyncEvents(identity.sub, workspaceId, after, url.searchParams.get("limit") || "100"));
+        }
+        if (pathname === "/api/sync/cursor" && req.method === "POST") {
+          const body = await parseBody(req);
+          return sendJSON(res, 200, await postgresBilling.ackSyncCursor(identity.sub, body.deviceId, body.workspaceId, body.lastSequence));
+        }
+        return sendJSON(res, 404, { error: "同步接口不存在" });
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "同步操作失败" }); }
+    }
+
     if (await handleAssets(req, res, pathname, req.method, url)) {
       return;
     }

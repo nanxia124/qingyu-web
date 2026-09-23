@@ -197,8 +197,10 @@ export async function createPostgresBillingStore() {
       const team = await client.query(`insert into app.teams(name,slug,owner_user_id) values($1,$2,$3) returning id,name,created_at`, [cleanName, slug, ownerId]);
       const teamId = team.rows[0].id;
       const ws = await client.query(`insert into app.workspaces(type,team_id,name) values('team',$1,$2) returning id`, [teamId, cleanName]);
-      await client.query(`insert into app.team_memberships(team_id,user_id,status,joined_at) values($1,$2,'active',now())`, [teamId, ownerId]);
-      await client.query(`insert into app.role_bindings(workspace_id,user_id,role_id,created_by) select $1,$2,id,$2 from app.roles where code='owner'`, [ws.rows[0].id, ownerId]);
+      const membership = await client.query(`insert into app.team_memberships(team_id,user_id,status,joined_at) values($1,$2,'active',now()) returning id`, [teamId, ownerId]);
+      if (membership.rowCount !== 1) throw new Error('团队所有者关系创建失败');
+      const ownerBinding = await client.query(`insert into app.role_bindings(workspace_id,user_id,role_id,created_by) select $1,$2,id,$2 from app.roles where code='owner' returning id`, [ws.rows[0].id, ownerId]);
+      if (ownerBinding.rowCount !== 1) throw new Error('所有者权限模板不存在，团队创建已回滚');
       await client.query('commit');
       return { id: teamId, name: team.rows[0].name, plan: 'free', role: 'owner', createdAt: new Date(team.rows[0].created_at).toISOString() };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }

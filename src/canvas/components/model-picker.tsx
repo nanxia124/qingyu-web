@@ -99,6 +99,17 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
         return () => window.removeEventListener("model-picker-open", closeOtherPicker);
     }, [pickerId]);
 
+    // 自动同步：打开下拉菜单时自动从后端 API 拉取最新模型列表
+    useEffect(() => {
+        if (open && config.channelMode === "remote" && config.channels.length) {
+            // 防抖：避免快速多次打开时重复请求
+            const timer = setTimeout(() => {
+                void refreshModels();
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [open]);
+
     return (
         <div className={cn("inline-flex items-center gap-1", fullWidth && "w-full")}>
             <Select

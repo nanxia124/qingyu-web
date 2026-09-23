@@ -9,9 +9,18 @@ export PGDATABASE="${PGDATABASE:-qingyu_business}"
 export PGUSER="${PGUSER:-user}"
 export BACKUP_DIR="${BACKUP_DIR:-/home/ubuntu/backups/qingyu}"
 export BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+export OBJECT_DIR="${OBJECT_DIR:-/home/ubuntu/qingyu-api/api-data/objects}"
 
 "$SCRIPT_DIR/backup-business-db.sh"
 
+# 文件本体与数据库元数据一起备份。对象键保留原目录结构，恢复后可直接放回对象目录。
+if [[ -d "$OBJECT_DIR" ]]; then
+  object_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  object_archive="$BACKUP_DIR/qingyu_objects_${object_stamp}.tar.gz"
+  tar -czf "$object_archive" -C "$OBJECT_DIR" .
+  sha256sum "$object_archive" > "$object_archive.sha256"
+fi
+
 find "$BACKUP_DIR" -maxdepth 1 -type f \
-  \( -name "${PGDATABASE}_*.dump" -o -name "${PGDATABASE}_*.dump.sha256" \) \
+  \( -name "${PGDATABASE}_*.dump" -o -name "${PGDATABASE}_*.dump.sha256" -o -name "qingyu_objects_*.tar.gz" -o -name "qingyu_objects_*.tar.gz.sha256" \) \
   -mtime "+$BACKUP_RETENTION_DAYS" -print -delete

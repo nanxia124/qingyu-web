@@ -49,7 +49,6 @@ const navItems: { to: string; label: string; tooltip: string; icon: IconComp; ex
   { to: '/canvas?mode=recent', label: 'nav.canvas', tooltip: 'nav.canvas', icon: SidebarCanvasIcon, preload: () => { void import('@canvas/index') } },
   { to: '/assets', label: 'nav.assets', tooltip: 'nav.assets', icon: SidebarTeamIcon, requireAuth: true },
   { to: '/favorites', label: 'nav.favorites', tooltip: 'nav.favorites', icon: SidebarFavoriteIcon, requireAuth: true },
-  { to: '/subscription', label: 'nav.subscription', tooltip: 'nav.subscription', icon: Crown },
   { to: '/plan', label: 'nav.plan', tooltip: 'nav.plan', icon: ClipboardList },
 ]
 
@@ -305,7 +304,7 @@ export default function AppLayout() {
           <button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text" title="通知"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button>
           <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
           <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
-          <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />会员中心</button>
+          <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
           {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
           <div className="relative">
             <button

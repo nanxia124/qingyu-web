@@ -730,10 +730,29 @@ async function handleTeams(req, res, pathname, method) {
 }
 
 async function handleAssets(req, res, pathname, method, url) {
-  if (!postgresBilling || !(pathname === "/assets" || pathname === "/assets/upload" || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
+  if (!postgresBilling || !(pathname === "/assets" || pathname === "/assets/upload" || pathname.startsWith("/assets/") || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
   try {
+    const contentMatch = pathname.match(/^\/assets\/([^/]+)\/content$/);
+    if (contentMatch && method === "GET") {
+      const file = await postgresBilling.getAssetFile(identity.sub, contentMatch[1]);
+      if (file.storageProvider !== 'local') return sendJSON(res, 501, { error: '当前存储提供商暂不支持直接读取' });
+      const root = path.resolve(OBJECT_DATA_DIR);
+      const filePath = path.resolve(root, file.objectKey);
+      if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '文件不存在' });
+      const stat = fs.statSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': file.mimeType,
+        'Content-Length': stat.size,
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.title)}`,
+        'Cache-Control': 'private, max-age=60',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      });
+      fs.createReadStream(filePath).on('error', error => { console.error('[assets/content]', error.message); if (!res.headersSent) sendJSON(res, 404, { error: '文件读取失败' }); else res.destroy(error); }).pipe(res);
+      return true;
+    }
     if (pathname === "/assets/upload" && method === "POST") {
       const rawName = String(req.headers["x-asset-name"] || "未命名文件");
       let title = rawName;

@@ -60,7 +60,9 @@ jobs:
             sudo mkdir -p /var/www/qingyu-web
             sudo cp -a /home/ubuntu/qingyu-upload/. /var/www/qingyu-web/
             sudo chown -R www-data:www-data /var/www/qingyu-web
-            sudo install -m 0644 /home/ubuntu/qingyu-upload/nginx-qingyu-web.conf /etc/nginx/sites-available/qingyu-web
+            nginx_conf=$(find /home/ubuntu/qingyu-upload -name nginx-qingyu-web.conf -type f -print -quit)
+            test -n "$nginx_conf"
+            sudo install -m 0644 "$nginx_conf" /etc/nginx/sites-available/qingyu-web
             sudo ln -sfn /etc/nginx/sites-available/qingyu-web /etc/nginx/sites-enabled/qingyu-web
             sudo nginx -t && sudo systemctl reload nginx
             curl --fail --silent --show-error http://localhost/ -o /dev/null

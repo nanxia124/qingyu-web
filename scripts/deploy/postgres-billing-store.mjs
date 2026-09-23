@@ -185,7 +185,7 @@ export async function createPostgresBillingStore() {
       (select count(*) from app.orders) order_count,
       (select count(*) from app.orders where status='paid') paid_order_count,
       coalesce((select sum(amount_minor) from app.orders where status='paid'),0) revenue_minor,
-      coalesce((select sum(amount_minor) from app.orders where status='paid' and paid_at >= current_date),0) today_revenue_minor,
+      coalesce((select sum(pay.amount_minor) from app.payments pay join app.orders o on o.id=pay.order_id where o.status='paid' and pay.status='succeeded' and pay.paid_at >= current_date),0) today_revenue_minor,
       coalesce((select sum(q.available) from app.quota_accounts q),0) total_balance,
       (select count(*) from app.redeem_codes where used_by is null and (expires_at is null or expires_at > now())) unused_codes`);
     const x = r.rows[0];

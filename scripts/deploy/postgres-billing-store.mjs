@@ -55,6 +55,25 @@ function maskApiKey(value) {
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
 
+const API_KEY_ENCRYPTION_SECRET = process.env.API_KEY_ENCRYPTION_SECRET || process.env.JWT_SECRET || 'qingyu-api-key-migration-secret-change-me';
+const API_KEY_ENCRYPTION_KEY = crypto.createHash('sha256').update(API_KEY_ENCRYPTION_SECRET).digest();
+
+function encryptApiKey(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', API_KEY_ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
+  return `v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`;
+}
+
+function decryptApiKey(value) {
+  if (!value) return '';
+  const [version, ivText, tagText, dataText] = String(value).split(':');
+  if (version !== 'v1' || !ivText || !tagText || !dataText) throw new Error('供应商密钥密文格式无效');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', API_KEY_ENCRYPTION_KEY, Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+}
+
 export async function createPostgresBillingStore() {
   const pool = new Pool({
     host: process.env.PGHOST || "172.19.0.2",
@@ -404,13 +423,14 @@ export async function createPostgresBillingStore() {
   }
 
   function platformApiKeyView(row) {
+    const plaintext = row.api_key_ciphertext ? decryptApiKey(row.api_key_ciphertext) : String(row.api_key || '');
     return {
       id: row.id,
       name: row.name,
       provider: row.provider,
       base_url: row.base_url,
-      api_key: row.api_key,
-      api_key_masked: maskApiKey(row.api_key),
+      api_key: plaintext,
+      api_key_masked: maskApiKey(plaintext),
       model: row.model || '',
       max_concurrency: row.max_concurrency === null ? null : Number(row.max_concurrency),
       is_active: row.is_active === true ? 1 : 0,
@@ -420,8 +440,18 @@ export async function createPostgresBillingStore() {
   }
 
   async function listPlatformApiKeys() {
-    const r = await pool.query(`select id,name,provider,base_url,api_key,model,max_concurrency,is_active,created_at,updated_at from app.platform_api_keys order by updated_at desc`);
-    return r.rows.map(platformApiKeyView);
+    const r = await pool.query(`select id,name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active,created_at,updated_at from app.platform_api_keys order by updated_at desc`);
+    const result = [];
+    for (const row of r.rows) {
+      if (!row.api_key_ciphertext && row.api_key) {
+        const ciphertext = encryptApiKey(row.api_key);
+        await pool.query(`update app.platform_api_keys set api_key=null,api_key_ciphertext=$2,updated_at=now() where id=$1`, [row.id, ciphertext]);
+        row.api_key_ciphertext = ciphertext;
+        row.api_key = null;
+      }
+      result.push(platformApiKeyView(row));
+    }
+    return result;
   }
 
   async function createPlatformApiKey(body = {}) {
@@ -429,7 +459,7 @@ export async function createPostgresBillingStore() {
     const baseUrl = String(body.base_url || '').trim();
     const apiKey = String(body.api_key || '').trim();
     if (!name || !baseUrl || !apiKey) throw new Error('名称、API 地址、API Key 为必填项');
-    const r = await pool.query(`insert into app.platform_api_keys(name,provider,base_url,api_key,model,max_concurrency,is_active) values($1,$2,$3,$4,$5,$6,$7) returning *`, [name, String(body.provider || 'openai'), baseUrl, apiKey, String(body.model || ''), body.max_concurrency ? Number(body.max_concurrency) : null, body.is_active === undefined ? true : Boolean(Number(body.is_active))]);
+    const r = await pool.query(`insert into app.platform_api_keys(name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active) values($1,$2,$3,null,$4,$5,$6,$7) returning *`, [name, String(body.provider || 'openai'), baseUrl, encryptApiKey(apiKey), String(body.model || ''), body.max_concurrency ? Number(body.max_concurrency) : null, body.is_active === undefined ? true : Boolean(Number(body.is_active))]);
     return platformApiKeyView(r.rows[0]);
   }
 
@@ -437,7 +467,9 @@ export async function createPostgresBillingStore() {
     const current = await pool.query(`select * from app.platform_api_keys where id=$1`, [id]);
     if (!current.rowCount) throw new Error('密钥不存在');
     const old = current.rows[0];
-    const r = await pool.query(`update app.platform_api_keys set name=$2,provider=$3,base_url=$4,api_key=$5,model=$6,max_concurrency=$7,is_active=$8,updated_at=now() where id=$1 returning *`, [id, body.name === undefined ? old.name : String(body.name), body.provider === undefined ? old.provider : String(body.provider), body.base_url === undefined ? old.base_url : String(body.base_url), body.api_key ? String(body.api_key) : old.api_key, body.model === undefined ? old.model : String(body.model), body.max_concurrency === undefined ? old.max_concurrency : (body.max_concurrency ? Number(body.max_concurrency) : null), body.is_active === undefined ? old.is_active : Boolean(Number(body.is_active))]);
+    const oldApiKey = old.api_key_ciphertext ? decryptApiKey(old.api_key_ciphertext) : String(old.api_key || '');
+    const nextApiKey = body.api_key ? String(body.api_key) : oldApiKey;
+    const r = await pool.query(`update app.platform_api_keys set name=$2,provider=$3,base_url=$4,api_key=null,api_key_ciphertext=$5,model=$6,max_concurrency=$7,is_active=$8,updated_at=now() where id=$1 returning *`, [id, body.name === undefined ? old.name : String(body.name), body.provider === undefined ? old.provider : String(body.provider), body.base_url === undefined ? old.base_url : String(body.base_url), encryptApiKey(nextApiKey), body.model === undefined ? old.model : String(body.model), body.max_concurrency === undefined ? old.max_concurrency : (body.max_concurrency ? Number(body.max_concurrency) : null), body.is_active === undefined ? old.is_active : Boolean(Number(body.is_active))]);
     return platformApiKeyView(r.rows[0]);
   }
 
@@ -448,9 +480,9 @@ export async function createPostgresBillingStore() {
   }
 
   async function getPlatformApiKeySecret(id) {
-    const r = await pool.query(`select api_key from app.platform_api_keys where id=$1`, [id]);
+    const r = await pool.query(`select api_key,api_key_ciphertext from app.platform_api_keys where id=$1`, [id]);
     if (!r.rowCount) throw new Error('密钥不存在');
-    return { api_key: r.rows[0].api_key };
+    return { api_key: r.rows[0].api_key_ciphertext ? decryptApiKey(r.rows[0].api_key_ciphertext) : String(r.rows[0].api_key || '') };
   }
 
   async function listTeams(appwriteUserId) {

@@ -704,6 +704,22 @@ async function handleTeams(req, res, pathname, method) {
       const body = await parseBody(req);
       return sendJSON(res, 200, await postgresBilling.updateTeamMember(identity.sub, memberChangeMatch[1], memberChangeMatch[2], body));
     }
+    const departmentMatch = pathname.match(/^\/teams\/([^/]+)\/departments$/);
+    if (departmentMatch && method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listDepartments(identity.sub, departmentMatch[1]));
+    }
+    if (departmentMatch && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.createDepartment(identity.sub, departmentMatch[1], body.name, body.parentId || null));
+    }
+    const jobTitleMatch = pathname.match(/^\/teams\/([^/]+)\/job-titles$/);
+    if (jobTitleMatch && method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listJobTitles(identity.sub, jobTitleMatch[1]));
+    }
+    if (jobTitleMatch && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.createJobTitle(identity.sub, jobTitleMatch[1], body.name));
+    }
     sendJSON(res, 404, { error: "团队接口不存在" });
     return true;
   } catch (error) {

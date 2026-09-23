@@ -264,7 +264,9 @@ export async function createPostgresBillingStore() {
     const nextStatus = change.status ? String(change.status) : null;
     if (nextRole && !['admin','editor','viewer','member'].includes(nextRole)) throw new Error('不支持的成员角色');
     if (nextStatus && !['active','suspended','left'].includes(nextStatus)) throw new Error('不支持的成员状态');
-    if (!nextRole && !nextStatus) throw new Error('没有需要修改的内容');
+    const departmentId = change.departmentId === undefined ? undefined : (change.departmentId || null);
+    const jobTitleId = change.jobTitleId === undefined ? undefined : (change.jobTitleId || null);
+    if (!nextRole && !nextStatus && departmentId === undefined && jobTitleId === undefined) throw new Error('没有需要修改的内容');
     const client = await pool.connect();
     try {
       await client.query('begin');
@@ -274,7 +276,7 @@ export async function createPostgresBillingStore() {
       if (!target.rowCount) throw new Error('成员不存在');
       if (target.rows[0].owner_user_id === target.rows[0].id) throw new Error('团队所有者不能通过成员接口修改');
       const finalStatus = nextStatus || target.rows[0].current_status;
-      await client.query(`update app.team_memberships set status=$1::app.membership_status,left_at=case when $1='left' then now() else null end,updated_at=now() where id=$2`, [finalStatus, target.rows[0].membership_id]);
+      await client.query(`update app.team_memberships set status=$1::app.membership_status,left_at=case when $1='left' then now() else null end,department_id=coalesce($3,department_id),job_title_id=coalesce($4,job_title_id),updated_at=now() where id=$2`, [finalStatus, target.rows[0].membership_id, departmentId, jobTitleId]);
       if (finalStatus === 'left' || finalStatus === 'suspended') {
         await client.query(`delete from app.role_bindings where user_id=$1 and workspace_id in (select id from app.workspaces where team_id=$2)`, [target.rows[0].id, teamId]);
       } else if (nextRole) {
@@ -286,6 +288,46 @@ export async function createPostgresBillingStore() {
       await client.query(`insert into app.membership_events(membership_id,event_type,actor_user_id,metadata) values($1,$2,$3,$4::jsonb)`, [target.rows[0].membership_id, eventType, actor.rows[0].id, JSON.stringify({ role: nextRole })]);
       await client.query('commit');
       return { userId: targetAppwriteUserId, status: finalStatus, role: nextRole || null };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listDepartments(appwriteUserId, teamId) {
+    const r = await pool.query(`select d.id,d.name,d.parent_id,d.status,d.created_at from app.departments d where d.team_id=$1 and d.status='active' and exists(select 1 from app.team_memberships tm where tm.team_id=d.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active') order by d.parent_id nulls first,d.name`, [teamId, appwriteUserId]);
+    return r.rows.map(x => ({ id: x.id, name: x.name, parentId: x.parent_id, status: x.status, createdAt: new Date(x.created_at).toISOString() }));
+  }
+
+  async function createDepartment(appwriteUserId, teamId, name, parentId = null) {
+    const cleanName = String(name || '').trim();
+    if (!cleanName || cleanName.length > 120) throw new Error('部门名称不能为空且不能超过120个字符');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const manager = await client.query(`select u.id from app.user_accounts u join app.team_memberships tm on tm.user_id=u.id and tm.team_id=$2 and tm.status='active' join app.teams t on t.id=$2 where u.appwrite_user_id=$1 and (u.id=t.owner_user_id or exists(select 1 from app.role_bindings b join app.workspaces w on w.id=b.workspace_id join app.roles r on r.id=b.role_id where w.team_id=$2 and b.user_id=u.id and r.code='admin'))`, [appwriteUserId, teamId]);
+      if (!manager.rowCount) throw new Error('没有管理部门的权限');
+      const result = await client.query(`insert into app.departments(team_id,parent_id,name) values($1,$2,$3) returning id,name,parent_id,status,created_at`, [teamId, parentId || null, cleanName]);
+      await client.query('commit');
+      const x = result.rows[0];
+      return { id: x.id, name: x.name, parentId: x.parent_id, status: x.status, createdAt: new Date(x.created_at).toISOString() };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listJobTitles(appwriteUserId, teamId) {
+    const r = await pool.query(`select j.id,j.name,j.status,j.created_at from app.job_titles j where j.team_id=$1 and j.status='active' and exists(select 1 from app.team_memberships tm where tm.team_id=j.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active') order by j.name`, [teamId, appwriteUserId]);
+    return r.rows.map(x => ({ id: x.id, name: x.name, status: x.status, createdAt: new Date(x.created_at).toISOString() }));
+  }
+
+  async function createJobTitle(appwriteUserId, teamId, name) {
+    const cleanName = String(name || '').trim();
+    if (!cleanName || cleanName.length > 120) throw new Error('岗位名称不能为空且不能超过120个字符');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const manager = await client.query(`select u.id from app.user_accounts u join app.team_memberships tm on tm.user_id=u.id and tm.team_id=$2 and tm.status='active' join app.teams t on t.id=$2 where u.appwrite_user_id=$1 and (u.id=t.owner_user_id or exists(select 1 from app.role_bindings b join app.workspaces w on w.id=b.workspace_id join app.roles r on r.id=b.role_id where w.team_id=$2 and b.user_id=u.id and r.code='admin'))`, [appwriteUserId, teamId]);
+      if (!manager.rowCount) throw new Error('没有管理岗位的权限');
+      const result = await client.query(`insert into app.job_titles(team_id,name) values($1,$2) returning id,name,status,created_at`, [teamId, cleanName]);
+      await client.query('commit');
+      const x = result.rows[0];
+      return { id: x.id, name: x.name, status: x.status, createdAt: new Date(x.created_at).toISOString() };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
@@ -336,5 +378,5 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listAssets, listFavorites, toggleFavorite, createAssetFromFile, close: () => pool.end() };
+  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, close: () => pool.end() };
 }

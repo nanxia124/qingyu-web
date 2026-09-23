@@ -140,7 +140,7 @@ export default function AppLayout() {
   }
 
   const LANG_LABELS: Record<string, string> = {
-    'zh-CN': '简体中文', 'zh-TW': '繁體中文', 'en-US': 'English', 'ja-JP': '日本語',
+    'zh-CN': '简体', 'zh-TW': '繁体', 'en-US': 'English', 'ja-JP': '日本語',
     'ko-KR': '한국어', 'es-ES': 'Español', 'fr-FR': 'Français', 'de-DE': 'Deutsch',
     'ru-RU': 'Русский', 'pt-BR': 'Português',
   }
@@ -151,7 +151,7 @@ export default function AppLayout() {
   const isCanvas = location.pathname.startsWith('/canvas')
   const isVideo = location.pathname.startsWith('/video')
 
-  const sidebarWidth = expanded ? 'w-[168px]' : 'w-[50px]'
+  const sidebarWidth = expanded ? 'w-[148px]' : 'w-[64px]'
 
   const handleLogout = async () => {
     await logout()
@@ -181,7 +181,7 @@ export default function AppLayout() {
       end={exact}
       title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
-      className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
+      className="group relative flex h-[44px] w-full items-center justify-start outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
       style={{ transformOrigin: '50% 50%' }}
       onMouseEnter={preload}
     >
@@ -189,14 +189,14 @@ export default function AppLayout() {
         <>
           <span
             className={cn(
-              'absolute left-[8px] top-1/2 h-[30px] -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'w-[152px]' : 'w-[34px]',
+              'absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-200',
+              expanded ? 'left-[8px] h-[30px] w-[140px]' : 'left-[13px] h-[30px] w-[30px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
             )}
           />
-          <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
+          <span className="absolute left-[3px] top-1/2 z-10 flex h-[30px] w-[50px] -translate-y-1/2 items-center justify-center">
             <Icon
               className={cn(
                 'size-[22px] transition-colors',
@@ -209,7 +209,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px] transition-all duration-200',
-              expanded ? 'w-[90px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
+              expanded ? 'ml-[60px] w-[84px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
               isActive ? 'text-text' : 'text-text-muted',
             )}
           >
@@ -232,20 +232,20 @@ export default function AppLayout() {
       to={to}
       title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
-      className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
+      className="group relative flex h-[44px] w-full items-center justify-start outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
     >
       {({ isActive }) => (
         <>
           <span
             className={cn(
-              'absolute left-[8px] top-1/2 h-[30px] -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'w-[152px]' : 'w-[34px]',
+              'absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-200',
+              expanded ? 'left-[8px] h-[30px] w-[140px]' : 'left-[13px] h-[30px] w-[30px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
             )}
           />
-          <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
+          <span className="absolute left-[3px] top-1/2 z-10 flex h-[30px] w-[50px] -translate-y-1/2 items-center justify-center">
             <Icon
               className={cn(
                 'size-[22px] transition-colors',
@@ -258,7 +258,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px] transition-all duration-200',
-              expanded ? 'w-[90px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
+              expanded ? 'ml-[60px] w-[84px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
               isActive ? 'text-text' : 'text-text-muted',
             )}
           >
@@ -356,7 +356,7 @@ export default function AppLayout() {
         )}
       >
         {/* 主导航 */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 pt-0 pb-2">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 pt-3 pb-2">
           {navItems.map((item) =>
             renderItem(item.to, item.label, item.tooltip, item.icon, item.exact, item.preload, item.requireAuth),
           )}

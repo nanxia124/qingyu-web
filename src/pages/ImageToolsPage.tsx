@@ -41,15 +41,15 @@ import { api } from '@/lib/api'
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
 
-const tabs: { id?: TabId; label: string; translation?: boolean }[] = [
-  { id: 'generate', label: 'imageTools.generate', translation: true },
-  { id: 'blend', label: 'imageTools.blend', translation: true },
-  { id: 'translate', label: 'imageTools.translate', translation: true },
-  { label: '局部重绘' },
-  { label: '扩图' },
-  { label: '抠图' },
-  { label: '超分辨率' },
-  { label: '修复' },
+const tabs: { id?: TabId; label: string; translation?: boolean; width: string }[] = [
+  { id: 'generate', label: 'imageTools.generate', translation: true, width: 'w-[64px]' },
+  { id: 'blend', label: 'imageTools.blend', translation: true, width: 'w-[64px]' },
+  { id: 'translate', label: 'imageTools.translate', translation: true, width: 'w-[80px]' },
+  { label: '局部重绘', width: 'w-[80px]' },
+  { label: '扩图', width: 'w-[64px]' },
+  { label: '抠图', width: 'w-[64px]' },
+  { label: '超分辨率', width: 'w-[96px]' },
+  { label: '修复', width: 'w-[64px]' },
 ]
 
 /* ── 生图 Tab ── */
@@ -1177,10 +1177,10 @@ export default function ImageToolsPage() {
             onClick={() => tab.id && setActiveTab(tab.id)}
             aria-selected={tab.id ? activeTab === tab.id : undefined}
             className={cn(
-              'flex h-[34px] min-w-[58px] items-center justify-center whitespace-nowrap px-3 text-[12px] font-medium transition-colors',
+              cn('flex h-[34px] shrink-0 items-center justify-center whitespace-nowrap px-3 font-sans text-[12px] font-medium leading-none transition-colors', tab.width),
               activeTab === tab.id
-                ? 'relative z-10 -ml-3 rounded-t-xl bg-card pl-6 text-text'
-                : tab.id ? 'text-text-secondary hover:bg-secondary hover:text-text' : 'text-text-muted/50',
+                ? 'relative z-10 rounded-t-xl bg-card text-text'
+                : tab.id ? 'rounded-t-xl text-text-secondary hover:bg-secondary hover:text-text' : 'rounded-t-xl text-text-muted/50',
             )}
           >
             {tab.translation ? t(tab.label) : tab.label}

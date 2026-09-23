@@ -556,6 +556,24 @@ async function handleBilling(req, res, pathname, method, url) {
       return sendJSON(res, 403, { error: "无管理员权限" });
     }
 
+    // 正式环境的计费事实统一来自 PostgreSQL，避免管理后台继续读旧 JSON 账本。
+    if (postgresBilling) {
+      if (pathname === "/api/admin/billing/stats" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminStats());
+      }
+      if (pathname === "/api/admin/billing/users" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminUsers());
+      }
+      const pgAdjustMatch = pathname.match(/^\/api\/admin\/billing\/users\/([^/]+)\/adjust$/);
+      if (pgAdjustMatch && method === "POST") {
+        const body = await parseBody(req);
+        return sendJSON(res, 200, await postgresBilling.adminAdjustBalance(pgAdjustMatch[1], body.delta, body.note || "后台调整"));
+      }
+      if (pathname === "/api/admin/billing/orders" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminOrders());
+      }
+    }
+
     // 管理端统计
     if (pathname === "/api/admin/billing/stats" && method === "GET") {
       const now = Date.now();

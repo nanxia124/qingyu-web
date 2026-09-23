@@ -172,6 +172,60 @@ export async function createPostgresBillingStore() {
   async function listOrders(appwriteUserId) { const me = await getUser(appwriteUserId); if (!me) return []; const r = await pool.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id left join lateral(select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true where u.appwrite_user_id=$1 order by o.created_at desc`, [appwriteUserId]); return r.rows.map(apiOrder); }
   async function listTransactions(appwriteUserId) { const me = await getUser(appwriteUserId); if (!me) return []; const r = await pool.query(`select l.id,l.amount,l.entry_type,l.idempotency_key,l.created_at from app.quota_ledger l where l.workspace_id=$1 order by l.created_at desc limit 200`, [me.workspace_id]); return r.rows.map(x => ({ id: x.id, userId: appwriteUserId, change: Number(x.amount) * (x.entry_type === "release" ? 1 : 1), type: x.entry_type, note: x.idempotency_key, createdAt: new Date(x.created_at).getTime() })); }
 
+  async function adminStats() {
+    const r = await pool.query(`select
+      (select count(*) from app.user_accounts where status='active') user_count,
+      (select count(*) from app.subscriptions where status in ('trialing','active','past_due') and current_period_end > now()) active_member_count,
+      (select count(*) from app.orders) order_count,
+      (select count(*) from app.orders where status='paid') paid_order_count,
+      coalesce((select sum(amount_minor) from app.orders where status='paid'),0) revenue_minor,
+      coalesce((select sum(q.available) from app.quota_accounts q),0) total_balance`);
+    const x = r.rows[0];
+    return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: 0, totalBalance: Number(x.total_balance), unusedCodes: 0 };
+  }
+
+  async function adminUsers() {
+    const r = await pool.query(`select u.appwrite_user_id,u.email,w.id workspace_id,
+      coalesce(q.available,0) balance,coalesce(p.code,'free') member_level,s.current_period_end member_expire_at,
+      coalesce((select sum(o.amount_minor) from app.orders o where o.workspace_id=w.id and o.status='paid'),0) total_spent,
+      ('QY-' || upper(substr(md5(u.appwrite_user_id),1,8))) invite_code
+      from app.user_accounts u left join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active'
+      left join app.quota_accounts q on q.workspace_id=w.id and q.quota_code='monthly'
+      left join app.subscriptions s on s.workspace_id=w.id and s.status in ('trialing','active','past_due')
+      left join app.plans p on p.id=s.plan_id where u.status='active' order by u.created_at desc`);
+    return r.rows.map(publicUser);
+  }
+
+  async function adminAdjustBalance(appwriteUserId, delta, note = '后台调整') {
+    const amount = Number(delta);
+    if (!Number.isFinite(amount) || amount === 0) throw new Error('调整额度不能为空');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const owner = await client.query(`select u.id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active' for update`, [appwriteUserId]);
+      if (!owner.rowCount) throw new Error('用户不存在');
+      const account = await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict(workspace_id,quota_code) do update set updated_at=now() returning id,available`, [owner.rows[0].workspace_id]);
+      const accountId = account.rows[0].id;
+      if (amount > 0) {
+        await client.query(`update app.quota_accounts set granted=granted+$1,version=version+1,updated_at=now() where id=$2`, [amount, accountId]);
+      } else {
+        const available = Number(account.rows[0].available);
+        if (available < Math.abs(amount)) throw new Error('可用额度不足，不能扣减');
+        await client.query(`update app.quota_accounts set consumed=consumed+$1,version=version+1,updated_at=now() where id=$2`, [Math.abs(amount), accountId]);
+      }
+      await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata) values($1,$2,'adjustment',$3,$4,$5::jsonb)`, [accountId, owner.rows[0].workspace_id, Math.abs(amount), `admin-adjust:${crypto.randomUUID()}`, JSON.stringify({ delta: amount, note })]);
+      await client.query('commit');
+      return publicUser(await getUser(appwriteUserId));
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function adminOrders() {
+    const r = await pool.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at
+      from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id
+      left join lateral(select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true order by o.created_at desc limit 1000`);
+    return r.rows.map(apiOrder);
+  }
+
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
@@ -391,5 +445,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

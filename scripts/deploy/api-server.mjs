@@ -55,6 +55,36 @@ let keys = loadJSON(KEYS_FILE, []);
 
 // JWT 签名密钥
 const JWT_SECRET = process.env.JWT_SECRET || "qingyu-api-jwt-secret-2026-change-me";
+const APPWRITE_INTERNAL_URL = process.env.APPWRITE_INTERNAL_URL || "http://127.0.0.1:8081/v1";
+
+// 用 Appwrite 短期 JWT 反查当前登录身份，不能相信浏览器单独提交的 userId。
+async function verifyAppwriteUser(appwriteJwt) {
+  const token = String(appwriteJwt || "").trim();
+  if (!token) return null;
+  let endpoint;
+  try { endpoint = new URL(`${APPWRITE_INTERNAL_URL.replace(/\/$/, "")}/account`); } catch { return null; }
+  const transport = endpoint.protocol === "https:" ? https : http;
+  return await new Promise(resolve => {
+    const request = transport.request(endpoint, {
+      method: "GET",
+      headers: { "X-Appwrite-Project": "qingyu", "X-Appwrite-JWT": token, "X-Forwarded-Proto": "https", Accept: "application/json" },
+      timeout: 8000,
+    }, response => {
+      const chunks = [];
+      response.on("data", chunk => chunks.push(chunk));
+      response.on("end", () => {
+        if (response.statusCode !== 200) return resolve(null);
+        try {
+          const user = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          resolve(user && typeof user.$id === "string" ? user : null);
+        } catch { resolve(null); }
+      });
+    });
+    request.on("error", () => resolve(null));
+    request.on("timeout", () => request.destroy());
+    request.end();
+  });
+}
 
 // ===================== 计费系统：数据加载与种子 =====================
 let billingUsers = loadJSON(USERS_FILE, []);       // 客户账本数组
@@ -93,6 +123,13 @@ if (!billingSettings) {
     inviteRewardCents: 0,          // 邀请人奖励（分），0 关闭
     inviteRewardQuota: 500,        // 邀请人奖励积分
     registeredBonusQuota: 100,     // 新注册赠送积分
+    supplier: {
+      maizitech: {
+        baseUrl: "https://www.maizitech.ai",
+        apiKey: "",
+        balanceToken: "",
+      },
+    },
   };
   saveJSON(SETTINGS_FILE, billingSettings);
 }
@@ -289,6 +326,16 @@ function proxyRequest(req, res, targetPath) {
   let bodyChunks = [];
   req.on("data", chunk => bodyChunks.push(chunk));
   req.on("end", async () => {
+    // 代理调用必须绑定业务会话，不能只凭浏览器提交的模型名或上游 API Key 消耗供应商资源。
+    // 前端把业务 JWT 放在独立请求头，避免覆盖真正发给上游的 Authorization。
+    const proxyToken = String(req.headers["x-qingyu-billing-token"] || "");
+    const proxyIdentity = proxyToken ? verifyJWT(proxyToken) : null;
+    if (!proxyIdentity || proxyIdentity.role !== "customer") {
+      return sendJSON(res, 401, { error: "请先登录后再使用 AI 服务" });
+    }
+    if (postgresBilling && proxyIdentity.sid && !(await postgresBilling.isSessionActive(proxyIdentity.sub, proxyIdentity.sid))) {
+      return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录后再使用 AI 服务" });
+    }
     const rawBody = Buffer.concat(bodyChunks).toString("utf-8");
     let bodyObj = {};
     try { bodyObj = rawBody ? JSON.parse(rawBody) : {}; } catch { bodyObj = {}; }
@@ -305,6 +352,23 @@ function proxyRequest(req, res, targetPath) {
       bodyObj.model = model;
     }
     const forwardBody = JSON.stringify(bodyObj);
+
+    const proxyRequestId = String(req.headers["x-request-id"] || crypto.randomUUID()).slice(0, 160);
+    const usageKey = `proxy:${proxyRequestId}`;
+    if (postgresBilling) {
+      try {
+        await postgresBilling.recordProviderUsage(proxyIdentity.sub, {
+          requestId: proxyRequestId,
+          idempotencyKey: usageKey,
+          provider: channel.provider,
+          model,
+          metadata: { targetPath, channelId: channel.id, phase: "started" },
+        });
+      } catch (error) {
+        console.error("[proxy usage] unable to persist request", error.message);
+        return sendJSON(res, 503, { error: "当前服务无法记录本次请求，请稍后重试" });
+      }
+    }
 
     // 构建目标 URL
     let base = channel.base_url.replace(/\/+$/, "");
@@ -340,10 +404,17 @@ function proxyRequest(req, res, targetPath) {
       respHeaders["Access-Control-Allow-Origin"] = "*";
       res.writeHead(proxyRes.statusCode || 502, respHeaders);
       proxyRes.pipe(res);
+      proxyRes.on("end", () => {
+        if (postgresBilling) {
+          const result = proxyRes.statusCode >= 200 && proxyRes.statusCode < 300 ? "committed" : "failed";
+          void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, result, { targetPath, statusCode: proxyRes.statusCode || 502, phase: "finished" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
+        }
+      });
     });
 
     proxyReq.on("error", err => {
       console.error("[proxy error]", err.message);
+      if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, error: err.message, phase: "error" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
       if (!res.headersSent) {
         sendJSON(res, 502, { error: "代理请求失败: " + err.message });
       }
@@ -351,6 +422,7 @@ function proxyRequest(req, res, targetPath) {
 
     proxyReq.on("timeout", () => {
       proxyReq.destroy();
+      if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, phase: "timeout" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
       if (!res.headersSent) sendJSON(res, 504, { error: "上游请求超时" });
     });
 
@@ -370,6 +442,10 @@ async function handleBilling(req, res, pathname, method, url) {
     if (pathname === "/api/billing/login" && method === "POST") {
       const body = await parseBody(req);
       if (!body.userId) return sendJSON(res, 400, { error: "缺少用户标识" });
+      const appwriteUser = await verifyAppwriteUser(body.appwriteJwt);
+      if (!appwriteUser || appwriteUser.$id !== String(body.userId)) {
+        return sendJSON(res, 401, { error: "登录身份校验失败，请重新登录" });
+      }
       if (postgresBilling) {
         const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "");
         const session = await postgresBilling.registerSession(body.userId, {
@@ -713,6 +789,70 @@ async function handleBilling(req, res, pathname, method, url) {
       Object.assign(billingSettings, body);
       saveJSON(SETTINGS_FILE, billingSettings);
       return sendJSON(res, 200, billingSettings);
+    }
+
+    // GET /api/admin/billing/supplier/balance — 查询供应商账号余额
+    if (pathname === "/api/admin/billing/supplier/balance" && method === "GET") {
+      const sup = billingSettings.supplier?.maizitech;
+      if (!sup?.apiKey) return sendJSON(res, 400, { error: "未配置供应商 API Key" });
+      if (!sup?.balanceToken) return sendJSON(res, 400, { error: "未配置供应商余额 Token" });
+      try {
+        const url = new URL(`${sup.baseUrl}/v1/balance`);
+        const result = await new Promise((resolve, reject) => {
+          const r = https.request(url, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${sup.apiKey}`,
+              "X-Balance-Token": sup.balanceToken,
+            },
+            timeout: 10000,
+          }, resp => {
+            const chunks = [];
+            resp.on("data", c => chunks.push(c));
+            resp.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              try { resolve({ status: resp.statusCode, data: JSON.parse(text) }); }
+              catch { resolve({ status: resp.statusCode, data: { raw: text } }); }
+            });
+          });
+          r.on("error", reject);
+          r.on("timeout", () => { r.destroy(); reject(new Error("请求超时")); });
+          r.end();
+        });
+        return sendJSON(res, result.status, result.data);
+      } catch (e) {
+        return sendJSON(res, 502, { error: `供应商请求失败: ${e.message}` });
+      }
+    }
+
+    // GET /api/admin/billing/supplier/key-limits — 查询 API Key 限额
+    if (pathname === "/api/admin/billing/supplier/key-limits" && method === "GET") {
+      const sup = billingSettings.supplier?.maizitech;
+      if (!sup?.apiKey) return sendJSON(res, 400, { error: "未配置供应商 API Key" });
+      try {
+        const url = new URL(`${sup.baseUrl}/v1/api-key/limits`);
+        const result = await new Promise((resolve, reject) => {
+          const r = https.request(url, {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sup.apiKey}` },
+            timeout: 10000,
+          }, resp => {
+            const chunks = [];
+            resp.on("data", c => chunks.push(c));
+            resp.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              try { resolve({ status: resp.statusCode, data: JSON.parse(text) }); }
+              catch { resolve({ status: resp.statusCode, data: { raw: text } }); }
+            });
+          });
+          r.on("error", reject);
+          r.on("timeout", () => { r.destroy(); reject(new Error("请求超时")); });
+          r.end();
+        });
+        return sendJSON(res, result.status, result.data);
+      } catch (e) {
+        return sendJSON(res, 502, { error: `供应商请求失败: ${e.message}` });
+      }
     }
 
     return false;

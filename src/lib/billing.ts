@@ -121,4 +121,9 @@ export const adminBillingApi = {
   plans: () => request<Plan[]>("/api/admin/billing/plans", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   updatePlan: (plan: Partial<Plan> & { id: string }) =>
     request<Plan>("/api/admin/billing/plans", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: plan }),
+  getSettings: () => request<any>("/api/admin/billing/settings", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  updateSettings: (settings: any) =>
+    request<any>("/api/admin/billing/settings", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: settings }),
+  supplierBalance: () => request<any>("/api/admin/billing/supplier/balance", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  supplierKeyLimits: () => request<any>("/api/admin/billing/supplier/key-limits", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
 };

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next'
 import { adminBillingApi, type BillingUser, type Order, type Plan } from "@/lib/billing";
-import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save } from "lucide-react";
+import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, Plug, RefreshCw } from "lucide-react";
 
 export default function AdminBillingPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "supplier">("stats");
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);

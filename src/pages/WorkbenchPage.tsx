@@ -69,9 +69,12 @@ export default function WorkbenchPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-bg">
+    <div className="flex h-full flex-col bg-bg">
+      {/* 顶部占位：与生图页标签栏区域等高 */}
+      <div className="h-[62px] shrink-0" />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {/* ── 顶栏 ── */}
-      <div className="shrink-0 px-6 pt-5">
+      <div className="shrink-0 px-6 pt-0">
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-[480px]">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
@@ -88,19 +91,19 @@ export default function WorkbenchPage() {
           {/* 三个快捷入口 */}
           <button
             onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
+            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
           >
             <Gift className="size-[14px]" /> {t('mainHome.invite')}
           </button>
           <button
             onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
+            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
           >
             <Coins className="size-[14px]" /> {t('mainHome.points')}
           </button>
           <button
             onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
+            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
           >
             <Crown className="size-[14px]" /> {t('mainHome.vip')}
           </button>
@@ -228,6 +231,7 @@ export default function WorkbenchPage() {
             <Sparkles className="size-[18px]" />
           </button>
         </div>
+      </div>
       </div>
     </div>
   )

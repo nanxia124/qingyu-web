@@ -42,8 +42,12 @@ function CanvasShell({ children }: { children: ReactNode }) {
               LocalAgentPanel）原本只挂在 UserLayout 里，集成后会缺失，导致顶部 Agent 按钮只改状态、
               无面板可开。这里按 UserLayout 的同构布局显式挂载：左侧内容区 flex-1，右侧 AgentPanel。
             */}
-            <div className="absolute inset-0 min-h-0 overflow-hidden">
-                <div className="h-full min-h-0 min-w-0 overflow-hidden">{children}</div>
+            <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-bg">
+                {/* 顶部占位：与生图页标签栏区域等高（对所有画布路由统一生效） */}
+                <div className="h-[62px] shrink-0" />
+                <div className="relative min-h-0 flex-1 overflow-hidden">
+                    <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">{children}</div>
+                </div>
                 <AgentPanel />
             </div>
         </AppProviders>

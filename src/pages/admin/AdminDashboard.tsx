@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from "lucide-react";
+import ModelCatalog from "./ModelCatalog";
 
 const API = import.meta.env.VITE_API_URL || "";
 // 与后端 KEY_MAX_CONCURRENCY 默认值保持一致
@@ -132,8 +133,104 @@ const PROVIDERS = [
     { value: "other", label: "其他" },
 ];
 
+const DEFAULT_BLEND_PROMPT = `请对这张图片进行光影融合优化，保持图片中所有物体的形状、颜色、位置和细节完全不变，仅修正不自然的光影过渡：
+1. 统一整体光源方向，消除矛盾的阴影
+2. 优化明暗交界线，让过渡更自然柔和
+3. 修正局部过曝或过暗区域，保持整体曝光平衡
+4. 增强画面的立体感和空间感
+5. 不要添加任何新元素，不要移除任何现有内容，仅做光影层面的自然融合`
+
+function PromptConfig() {
+    const [blendPrompt, setBlendPrompt] = useState('')
+    const [originalPrompt, setOriginalPrompt] = useState('')
+    const [isEditing, setIsEditing] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [saved, setSaved] = useState(false)
+
+    useEffect(() => {
+        fetch('/api/config/blend-prompt')
+            .then((res) => res.json())
+            .then((data) => {
+                setBlendPrompt(data.prompt || DEFAULT_BLEND_PROMPT)
+                setOriginalPrompt(data.prompt || DEFAULT_BLEND_PROMPT)
+            })
+            .catch(() => {
+                setBlendPrompt(DEFAULT_BLEND_PROMPT)
+                setOriginalPrompt(DEFAULT_BLEND_PROMPT)
+            })
+    }, [])
+
+    const save = () => {
+        setSaving(true)
+        fetch('/api/config/blend-prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: blendPrompt }),
+        })
+            .then(() => {
+                setSaved(true)
+                setOriginalPrompt(blendPrompt)
+                setIsEditing(false)
+                setTimeout(() => setSaved(false), 2000)
+            })
+            .catch(() => alert('保存失败'))
+            .finally(() => setSaving(false))
+    }
+
+    return (
+        <div className="max-w-3xl">
+            <h2 className="mb-4 text-lg font-medium text-white">融图提示词配置</h2>
+            <p className="mb-4 text-sm text-gray-500">
+                配置融图页面使用的内置提示词。用户上传图片后，系统会自动使用此提示词调用生图模型进行光影融合。
+            </p>
+            {isEditing ? (
+                <>
+                    <textarea
+                        value={blendPrompt}
+                        onChange={(e) => setBlendPrompt(e.target.value)}
+                        rows={10}
+                        placeholder="输入融图提示词…"
+                        className="w-full resize-none rounded-lg bg-secondary px-4 py-3 text-sm text-gray-200 outline-none focus:ring-1 focus:ring-[#5051F8]" style={{ borderRadius: "8px" }}
+                    />
+                    <div className="mt-4 flex items-center gap-3">
+                        <button
+                            onClick={save}
+                            disabled={saving}
+                            className="rounded-lg bg-[#5051F8] px-6 py-2 text-sm font-medium text-white hover:bg-[#4041E8] disabled:opacity-50"
+                        >
+                            {saving ? '保存中…' : '保存'}
+                        </button>
+                        <button
+                            onClick={() => { setBlendPrompt(originalPrompt); setIsEditing(false); }}
+                            className="rounded-lg bg-secondary px-6 py-2 text-sm text-gray-400 hover:bg-border"
+                        >
+                            取消
+                        </button>
+                        {saved && <span className="text-sm text-green-400">已保存</span>}
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="whitespace-pre-wrap rounded-lg bg-secondary px-4 py-3 text-sm text-gray-300">
+                        {blendPrompt}
+                    </div>
+                    <div className="mt-4">
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="rounded-lg bg-secondary px-6 py-2 text-sm text-gray-300 hover:bg-border"
+                        >
+                            编辑
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    )
+}
+
 export default function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<"channels" | "catalog" | "prompts">("channels");
     const [keys, setKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAdd, setShowAdd] = useState(false);
@@ -447,6 +544,27 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     </div>
                 </div>
 
+                {/* Tab 切换 */}
+                <div className="mb-6 flex gap-1 rounded-lg bg-secondary p-1 w-fit">
+                    <button onClick={() => setActiveTab("channels")}
+                        className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "channels" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                        API 渠道
+                    </button>
+                    <button onClick={() => setActiveTab("catalog")}
+                        className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "catalog" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                        模型目录
+                    </button>
+                    <button onClick={() => setActiveTab("prompts")}
+                        className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "prompts" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                        提示词配置
+                    </button>
+                </div>
+
+                {activeTab === "prompts" ? (
+                    <PromptConfig />
+                ) : activeTab === "catalog" ? (
+                    <ModelCatalog />
+                ) : (<>
                 {showChangePw && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
                         <form onSubmit={handleChangePw} className="relative w-full max-w-md rounded-2xl bg-card p-6">
@@ -930,6 +1048,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                         ))}
                     </div>
                 )}
+                </>)}
             </div>
         </div>
     );

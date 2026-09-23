@@ -23,6 +23,7 @@ const TX_FILE = path.join(DATA_DIR, "billing_transactions.json");   // 流水
 const PLANS_FILE = path.join(DATA_DIR, "billing_plans.json");       // 会员套餐
 const SETTINGS_FILE = path.join(DATA_DIR, "billing_settings.json"); // 系统设置（支付开关等）
 const PORT = process.env.PORT || 3001;
+let postgresBilling = null;
 
 // ---------- 数据存储 ----------
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -32,7 +33,11 @@ function loadJSON(file, fallback) {
   catch { return fallback; }
 }
 function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  // 先写临时文件，再原子替换正式文件。进程被杀或机器断电时不会留下半个 JSON。
+  const tempFile = `${file}.${process.pid}.tmp`;
+  const payload = JSON.stringify(data, null, 2);
+  fs.writeFileSync(tempFile, payload, { encoding: "utf-8", mode: 0o600 });
+  fs.renameSync(tempFile, file);
 }
 
 // 管理员账号（首次启动初始化）
@@ -56,6 +61,12 @@ let billingCodes = loadJSON(CODES_FILE, []);       // 兑换码数组
 let billingTxs = loadJSON(TX_FILE, []);            // 流水数组
 let billingPlans = loadJSON(PLANS_FILE, []);      // 套餐数组
 let billingSettings = loadJSON(SETTINGS_FILE, null); // 设置
+
+if (process.env.BILLING_STORE === "postgres") {
+  const { createPostgresBillingStore } = await import("./postgres-billing-store.mjs");
+  postgresBilling = await createPostgresBillingStore();
+  console.log("[billing] PostgreSQL 计费存储已启用");
+}
 
 // 默认套餐（首次启动写入）
 const DEFAULT_PLANS = [
@@ -345,6 +356,12 @@ async function handleBilling(req, res, pathname, method, url) {
     if (pathname === "/api/billing/login" && method === "POST") {
       const body = await parseBody(req);
       if (!body.userId) return sendJSON(res, 400, { error: "缺少用户标识" });
+      if (postgresBilling) {
+        const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "");
+        const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+        const token = signJWT({ sub: body.userId, role: "customer", iat: Math.floor(Date.now() / 1000), exp });
+        return sendJSON(res, 200, { token, user });
+      }
       const user = upsertUser(body.userId, body.email || "");
       // 邀请人绑定（仅首次）
       if (!user.invitedBy && body.inviteCode) {
@@ -364,11 +381,12 @@ async function handleBilling(req, res, pathname, method, url) {
     if (!identity || identity.role !== "customer") {
       return sendJSON(res, 401, { error: "未登录或登录已过期" });
     }
-    const me = findUserByAppwriteId(identity.sub);
+    const me = postgresBilling ? await postgresBilling.getUser(identity.sub) : findUserByAppwriteId(identity.sub);
     if (!me) return sendJSON(res, 404, { error: "用户不存在，请重新登录" });
 
     // GET /api/billing/me
     if (pathname === "/api/billing/me" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, { user: me, settings: { currency: "CNY", inviteCode: me.inviteCode, inviteRewardQuota: 0 } });
       return sendJSON(res, 200, { user: publicUser(me), settings: {
         currency: billingSettings.currency,
         inviteCode: me.inviteCode,
@@ -378,12 +396,20 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/billing/plans — 公开套餐
     if (pathname === "/api/billing/plans" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.plans());
       return sendJSON(res, 200, billingPlans);
     }
 
     // POST /api/billing/orders — 创建订单 { planId, idempotencyKey }
     if (pathname === "/api/billing/orders" && method === "POST") {
       const body = await parseBody(req);
+      if (postgresBilling) {
+        const requestedKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+        if (requestedKey && (requestedKey.length < 16 || requestedKey.length > 200)) return sendJSON(res, 400, { error: "订单幂等编号无效，请重试" });
+        const key = requestedKey || `legacy_${crypto.createHash("sha256").update(`${identity.sub}:${body.planId}:${Math.floor(Date.now() / (15 * 60 * 1000))}`).digest("hex").slice(0, 48)}`;
+        try { return sendJSON(res, 200, await postgresBilling.createOrder(identity.sub, body.planId, key, body.method || "mock")); }
+        catch (error) { return sendJSON(res, error.message.includes("同一") ? 409 : 400, { error: error.message }); }
+      }
       const plan = billingPlans.find(p => p.id === body.planId);
       if (!plan) return sendJSON(res, 400, { error: "套餐不存在" });
       if (plan.priceCents <= 0) return sendJSON(res, 400, { error: "免费套餐无需下单" });
@@ -438,8 +464,12 @@ async function handleBilling(req, res, pathname, method, url) {
     }
 
     // POST /api/billing/orders/:id/pay — 支付（v1 走 mock/易支付沙箱，回调后加权益）
-    const payMatch = pathname.match(/^\/api\/billing\/orders\/([A-Za-z0-9]+)\/pay$/);
+    const payMatch = pathname.match(/^\/api\/billing\/orders\/([A-Za-z0-9-]+)\/pay$/);
     if (payMatch && method === "POST") {
+      if (postgresBilling) {
+        try { const result = await postgresBilling.payOrder(identity.sub, payMatch[1]); return sendJSON(res, 200, { success: true, ...result }); }
+        catch (error) { return sendJSON(res, error.message.includes("不存在") ? 404 : 409, { error: error.message }); }
+      }
       const order = billingOrders.find(o => o.id === payMatch[1] && o.userId === me.id);
       if (!order) return sendJSON(res, 404, { error: "订单不存在" });
       // 支付请求超时后再次点击属于同一个成功结果，直接返回成功，不能让前端误以为失败。
@@ -487,6 +517,7 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/billing/orders — 我的订单
     if (pathname === "/api/billing/orders" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listOrders(identity.sub));
       const list = billingOrders.filter(o => o.userId === me.id)
         .sort((a, b) => b.createdAt - a.createdAt);
       return sendJSON(res, 200, list);
@@ -494,6 +525,7 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/billing/transactions — 我的流水
     if (pathname === "/api/billing/transactions" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listTransactions(identity.sub));
       const list = billingTxs.filter(t => t.userId === me.id)
         .sort((a, b) => b.createdAt - a.createdAt);
       return sendJSON(res, 200, list.slice(0, 200));

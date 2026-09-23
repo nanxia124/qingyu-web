@@ -1,5 +1,5 @@
 ﻿import { useEffect, useId, useMemo, useState } from "react";
-import { Clapperboard, Cpu, RefreshCw } from "lucide-react";
+import { Clapperboard, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@canvas/i18n";
@@ -163,16 +163,6 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
                     )}
                 </SelectContent>
             </Select>
-            <button
-                type="button"
-                onClick={() => void refreshModels()}
-                disabled={refreshing}
-                className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-[6px] text-zinc-500 transition-colors hover:bg-secondary hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-secondary dark:hover:text-zinc-100"
-                title={t("settingsPanels.model.refresh")}
-                aria-label={t("settingsPanels.model.refresh")}
-            >
-                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            </button>
         </div>
     );
 }

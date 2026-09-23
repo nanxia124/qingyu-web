@@ -407,15 +407,21 @@ export default function VideoPage() {
 
     return (
         <div
-            className="video-page-root flex h-full gap-2 bg-background p-3"
+            className="flex h-full flex-col bg-bg p-3"
             style={{ "--accent": "#5051F8", "--accent-foreground": "#ffffff" } as CSSProperties}
         >
+            {/* 顶部占位：与生图页标签栏等高 */}
+            <div className="flex shrink-0 items-center px-3 pt-3 pb-2">
+                <div className="h-[30px]" />
+            </div>
+
+            <div className="flex min-h-0 flex-1 gap-2">
             {/* ── 左栏 配置区 520px ── */}
             <div className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-xl bg-popover">
                 <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
                     {/* 模型选择 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.model")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.model")}</label>
                         <ModelPicker
                             config={effectiveConfig}
                             value={model}
@@ -429,7 +435,7 @@ export default function VideoPage() {
 
                     {/* 提示词 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.prompt")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.prompt")}</label>
                         <div className="relative rounded-xl bg-muted">
                             <textarea
                                 value={prompt}
@@ -459,7 +465,7 @@ export default function VideoPage() {
 
                     {/* 比例 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.ratio")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.ratio")}</label>
                         <div className="grid grid-cols-7 gap-1.5">
                             {videoRatioOptions.map((item) => {
                                 const selected = selectedRatio === item.value;
@@ -485,7 +491,7 @@ export default function VideoPage() {
 
                     {/* 清晰度 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.clarity")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.clarity")}</label>
                         <div className="grid grid-cols-4 gap-1.5">
                             {["480", "720", "1080"].map((q) => (
                                 <button
@@ -514,7 +520,7 @@ export default function VideoPage() {
 
                     {/* 尺寸（自定义宽高） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.size")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.size")}</label>
                         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                             <div className={`flex h-[30px] items-center rounded-md bg-muted px-2 ${selectedRatio === "auto" ? "opacity-50" : ""}`}>
                                 <span className="mr-1 text-[12px] text-muted-foreground">W</span>
@@ -544,7 +550,7 @@ export default function VideoPage() {
 
                     {/* 时长（滑动条） */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.duration")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.duration")}</label>
                         <div className="flex items-center gap-3">
                             <input
                                 type="range"
@@ -572,7 +578,7 @@ export default function VideoPage() {
 
                     {/* 生成模式 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-foreground">{t("videoWorkbench.mode")}</label>
+                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.mode")}</label>
                         <div className="grid grid-cols-2 gap-1.5">
                             <button
                                 onClick={() => updateConfig("videoMode", "frames")}
@@ -592,7 +598,7 @@ export default function VideoPage() {
                     {/* 参考图 */}
                     <div className="mb-6">
                         <div className="mb-2 flex items-center">
-                            <label className="block text-[14px] text-foreground">{t("videoWorkbench.refImage")} <span className="ml-1 text-[12px] font-normal text-muted-foreground">{t("videoWorkbench.refMax7")}</span></label>
+                            <label className="block text-[14px] text-text">{t("videoWorkbench.refImage")} <span className="ml-1 text-[12px] font-normal text-muted-foreground">{t("videoWorkbench.refMax7")}</span></label>
                             {references.length > 0 && (
                                 <button onClick={() => setReferences([])} className="ml-auto text-[12px] text-muted-foreground hover:text-red-400">{t("videoWorkbench.clear")}</button>
                             )}
@@ -689,7 +695,7 @@ export default function VideoPage() {
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-popover">
                 {/* 顶部工具栏 */}
                 <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
-                    <span className="text-[14px] text-foreground">{t("videoWorkbench.results")}</span>
+                    <span className="text-[14px] text-text">{t("videoWorkbench.results")}</span>
                     {running ? (
                         <span className="flex h-[30px] items-center rounded-lg bg-muted px-3 text-[12px] text-muted-foreground">
                             {t("workbench.waiting", { time: formatDuration(elapsedMs) })}
@@ -720,6 +726,7 @@ export default function VideoPage() {
                         </div>
                     )}
                 </div>
+            </div>
             </div>
 
 

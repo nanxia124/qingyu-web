@@ -514,6 +514,7 @@ function GeneratePanel() {
               max={160}
               value={thumbScale}
               onChange={(e) => setThumbScale(Number(e.target.value))}
+              onWheel={(e) => { e.preventDefault(); setThumbScale(v => Math.min(160, Math.max(60, v + (e.deltaY < 0 ? 4 : -4)))) }}
               className="thumb-scale-slider w-24"
               style={{ ['--pct' as string]: `${thumbScale - 60}%` }}
             />
@@ -654,14 +655,14 @@ function GeneratePanel() {
               value={newPromptTitle}
               onChange={(e) => setNewPromptTitle(e.target.value)}
               placeholder={t("imageTools.titlePlaceholder")}
-              className="mb-3 w-full rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
+              className="mb-3 w-full rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted"
             />
             <textarea
               value={newPromptContent}
               onChange={(e) => setNewPromptContent(e.target.value)}
               placeholder={t("imageTools.promptContent")}
               rows={4}
-              className="mb-4 w-full resize-none rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none placeholder:text-text-muted"
+              className="mb-4 w-full resize-none rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted"
             />
             {commonPrompts.length > 0 && (
               <div className="mb-4 max-h-[120px] overflow-y-auto">
@@ -792,8 +793,9 @@ function GeneratePanel() {
 /* ── 融图 Tab ── */
 function BlendPanel() {
   const { t } = useTranslation()
+  const config = useConfigStore((s) => s.config)
+  const [model, setModel] = useState('')
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
-  const openAuthModal = useAuthStore((s) => s.openAuthModal)
   const [sourceImage, setSourceImage] = useState<string | null>(null)
   const [imageName, setImageName] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -801,6 +803,16 @@ function BlendPanel() {
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [serverPrompt, setServerPrompt] = useState('')
+  const [userPrompt, setUserPrompt] = useState('')
+
+  // 从服务器获取融图提示词
+  useEffect(() => {
+    fetch('/api/config/blend-prompt')
+      .then((res) => res.json())
+      .then((data) => setServerPrompt(data.prompt || ''))
+      .catch(() => {})
+  }, [])
 
   const onFile = (file: File | undefined) => {
     if (!file) return
@@ -818,11 +830,22 @@ function BlendPanel() {
 
   return (
     <div className="flex h-full gap-2">
-      <div className="flex w-[320px] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
-        <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+      <div className="flex w-[clamp(340px,30vw,520px)] shrink-0 flex-col overflow-hidden rounded-xl bg-card">
+        <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
+          {/* 模型选择器 */}
+          <div className="mb-6">
+            <ModelPicker
+              config={config}
+              value={model}
+              onChange={setModel}
+              capability="image"
+              fullWidth
+            />
+          </div>
+
           <div
-            className={cn('relative flex h-[360px] cursor-pointer items-center justify-center overflow-hidden rounded-lg',
-              !sourceImage && 'bg-[repeating-radial-gradient(circle_at_8px_8px,#242424_1.15px,transparent_1.15px)] bg-[length:16px_16px]')}
+            className={cn('relative mb-6 flex h-[360px] cursor-pointer items-center justify-center overflow-hidden rounded-lg',
+              !sourceImage && 'border-2 border-dashed border-border bg-[repeating-radial-gradient(circle_at_8px_8px,#242424_1.15px,transparent_1.15px)] bg-[length:16px_16px]')}
             onClick={() => !sourceImage && fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); onFile(e.dataTransfer.files?.[0]) }}>
@@ -854,20 +877,19 @@ function BlendPanel() {
             )}
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
-          <div className="mt-4">
-            <label className="mb-2 block text-[12px] font-medium text-text-secondary">{t("imageTools.prompt")}</label>
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4}
-              placeholder={t("imageTools.describeEffect")}
-              className="min-h-[120px] w-full resize-none rounded-xl bg-card px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-secondary focus:ring-1 focus:ring-accent" />
-          </div>
-          <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between">
-              <label className="text-[12px] font-medium text-text-secondary">{t("imageTools.blendStrength")}</label>
-              <span className="text-[12px] text-accent">{Math.round(strength * 100)}%</span>
+
+          {/* 补充要求（用户可选） */}
+          <div className="mb-6">
+            <label className="mb-2 block text-[14px] text-text">补充要求（可选）</label>
+            <div className="relative rounded-xl bg-secondary">
+              <textarea
+                value={userPrompt}
+                onChange={(e) => setUserPrompt(e.target.value)}
+                rows={3}
+                placeholder="在这里添加额外要求…"
+                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted"
+              />
             </div>
-            <input type="range" min={0} max={100} value={strength * 100}
-              onChange={(e) => setStrength(Number(e.target.value) / 100)}
-              className="w-full accent-accent" />
           </div>
         </div>
         <div className="shrink-0 p-4 pt-2">

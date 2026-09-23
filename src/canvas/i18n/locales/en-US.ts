@@ -5,7 +5,7 @@
     },
     brand: {
         name: "LITZONE",
-        welcome: "Welcome to LITZONE",
+        welcome: "Welcome to",
         documentTitle: "LITZONE · Creator Workspace",
     },
     mainHome: {
@@ -234,6 +234,10 @@
         canvas: "Canvas",
         assets: "Assets",
         favorites: "Favorites",
+        subscription: "Subscription",
+        translate: "Translate",
+        plan: "Plan",
+        monitor: "Monitor",
         teams: "Teams",
         my: "Account",
         darkMode: "Dark",

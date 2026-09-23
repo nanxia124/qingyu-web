@@ -13,7 +13,7 @@ const LEVEL_ICON: Record<string, any> = {
 
 export default function SubscriptionPage() {
   const { t } = useTranslation()
-  const { user: authUser, isLoggedIn } = useAuthStore();
+  const { user: authUser, isLoggedIn, openAuthModal } = useAuthStore();
   const { user: billingUser, plans, initFromAuth, refreshMe, refreshPlans } = useBillingStore();
   const [loading, setLoading] = useState("");
   const [msg, setMsg] = useState("");
@@ -30,7 +30,7 @@ export default function SubscriptionPage() {
 
   const buy = async (plan: Plan) => {
     if (!isLoggedIn) {
-      setMsg(t("pages.subscription.loginFirst"));
+      openAuthModal();
       return;
     }
     if (!authUser || checkoutBusyRef.current) return;
@@ -54,6 +54,7 @@ export default function SubscriptionPage() {
     } catch (e: any) {
       setMsg(e.message || t("pages.subscription.activateFailed"));
     } finally {
+      checkoutBusyRef.current = false;
       setLoading("");
     }
   };
@@ -69,13 +70,13 @@ export default function SubscriptionPage() {
       <div className="flex items-end justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-text">{t("pages.subscription.title")}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t("pages.subscription.subtitle")}</p>
+          <p className="text-sm text-text-muted mt-1">{t("pages.subscription.subtitle")}</p>
         </div>
         {billingUser && (
           <div className="text-right">
-            <div className="text-xs text-gray-500">{t("pages.subscription.currentQuota")}</div>
+            <div className="text-xs text-text-muted">{t("pages.subscription.currentQuota")}</div>
             <div className="text-2xl font-bold text-accent">{billingUser.balance.toLocaleString()}</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-text-muted">
               {memberActive ? `${t("pages.subscription.validUntil")} ${memberExpireText}` : t("pages.subscription.free")}
             </div>
           </div>
@@ -83,7 +84,7 @@ export default function SubscriptionPage() {
       </div>
 
       {msg && (
-        <div className="mb-6 rounded-lg bg-[#5051F8]/10 border border-accent/30 px-4 py-3 text-sm text-text">
+        <div className="mb-6 rounded-lg bg-accent/10 border border-accent/30 px-4 py-3 text-sm text-text">
           {msg}
         </div>
       )}
@@ -95,10 +96,10 @@ export default function SubscriptionPage() {
           return (
             <div
               key={plan.id}
-              className={`p-6 rounded-2xl border transition-colors ${
+              className={`p-6 rounded-2xl transition-colors ${
                 isCurrent
-                  ? "border-accent bg-[#eeeeff]"
-                  : "border-border bg-card hover:border-border-light"
+                  ? "bg-accent/10 ring-1 ring-accent"
+                  : "bg-card hover:bg-surface-hover"
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -107,26 +108,26 @@ export default function SubscriptionPage() {
               </div>
               <p className="text-3xl font-bold text-text mt-2">
                 ¥{(plan.priceCents / 100).toFixed(0)}
-                {plan.durationDays > 0 && <span className="text-sm text-gray-500 font-normal">{t("pages.subscription.perMonth")}</span>}
+                {plan.durationDays > 0 && <span className="text-sm text-text-muted font-normal">{t("pages.subscription.perMonth")}</span>}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{plan.description}</p>
+              <p className="text-xs text-text-muted mt-1">{plan.description}</p>
               <ul className="mt-4 space-y-2">
                 {plan.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
+                  <li key={f} className="flex items-center gap-2 text-sm text-text-secondary">
                     <Check size={15} className="text-accent shrink-0" />
                     {f}
                   </li>
                 ))}
               </ul>
               {isCurrent ? (
-                <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-secondary text-gray-500">
+                <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-secondary text-text-muted">
                   {t("pages.subscription.currentPlan")}
                 </button>
               ) : (
                 <button
                   onClick={() => buy(plan)}
                   disabled={!!loading || plan.priceCents === 0}
-                  className="mt-6 w-full py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                  className="mt-6 w-full py-2.5 rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
                   {loading === plan.id ? t("pages.subscription.activating") : plan.priceCents === 0 ? t("pages.subscription.currentFree") : t("pages.subscription.activateNow")}
                 </button>
@@ -136,7 +137,7 @@ export default function SubscriptionPage() {
         })}
       </div>
 
-      <p className="text-xs text-gray-600 mt-8 text-center">
+      <p className="text-xs text-text-muted mt-8 text-center">
         {t("pages.subscription.paymentNote")}
       </p>
     </div>

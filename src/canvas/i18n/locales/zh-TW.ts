@@ -1,11 +1,11 @@
-export default {
+﻿export default {
     meta: {
         title: "無限畫布",
         description: "一個無限畫布創作工具",
     },
     brand: {
         name: "LITZONE",
-        welcome: "歡迎來到 LITZONE",
+        welcome: "歡迎來到",
         documentTitle: "LITZONE · 創作者工作台",
     },
     mainHome: {
@@ -234,6 +234,10 @@ export default {
         canvas: "畫布",
         assets: "團隊資產",
         favorites: "我的收藏",
+        subscription: "訂閱",
+        translate: "翻譯",
+        plan: "全案策劃",
+        monitor: "監控",
         teams: "團隊管理",
         my: "我的",
         darkMode: "深色模式",

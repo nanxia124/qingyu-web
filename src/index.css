@@ -127,10 +127,10 @@
   --color-border: #383838;
   --color-border-light: #454545;
 
-  --color-text: #bebebe;
-  --color-text-active: #ececec;
-  --color-text-secondary: #8e8e8e;
-  --color-text-muted: #8a8a8a;
+  --color-text: #e0e0e0;
+  --color-text-active: #ffffff;
+  --color-text-secondary: #c0c0c0;
+  --color-text-muted: #a0a0a0;
 
   --color-accent: #5051f8;
   --color-accent-hover: #6366ff;
@@ -292,4 +292,43 @@ body {
 }
 .dark [data-tip]:hover::before {
   border-top-color: #2a2a2a;
+}
+
+
+/* Focus 时隐藏 placeholder */
+textarea:focus::placeholder, input:focus::placeholder {
+  opacity: 0;
+}
+
+/* 所有输入框 focus 时描边 */
+textarea:focus, input:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--color-accent);
+  border-radius: inherit;
+}
+/* 缩略图缩放滑块 */
+.thumb-scale-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-accent) var(--pct, 50%), var(--color-border) var(--pct, 50%));
+  outline: none;
+}
+.thumb-scale-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  cursor: pointer;
+}
+.thumb-scale-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  cursor: pointer;
+  border: none;
 }

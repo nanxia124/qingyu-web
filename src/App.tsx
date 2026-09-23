@@ -1,4 +1,4 @@
-import { lazy, Suspense, Component } from 'react'
+﻿import { lazy, Suspense, Component } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
@@ -107,7 +107,6 @@ export default function App() {
           <Route path="/settings" element={lazyPage(<SettingsPage />)} />
           <Route path="/subscription" element={lazyPage(<SubscriptionPage />)} />
           <Route path="/wallet" element={lazyPage(<WalletPage />)} />
-          <Route path="/monitor" element={lazyPage(<MonitorPage />)} />
           {/* 个人中心 */}
           <Route path="/account/profile" element={lazyPage(<ProfilePage />)} />
           <Route path="/account/security" element={lazyPage(<SecurityPage />)} />
@@ -120,6 +119,7 @@ export default function App() {
           <Route path="/admin/tenants" element={<AdminRoute>{lazyPage(<AdminTenantsPage />)}</AdminRoute>} />
           <Route path="/admin/audits" element={<AdminRoute>{lazyPage(<AdminAuditsPage />)}</AdminRoute>} />
           <Route path="/admin/billing" element={<AdminRoute>{lazyPage(<AdminBillingPage />)}</AdminRoute>} />
+          <Route path="/admin/monitor" element={<AdminRoute>{lazyPage(<MonitorPage />)}</AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

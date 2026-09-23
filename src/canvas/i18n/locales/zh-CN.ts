@@ -5,7 +5,7 @@
     },
     brand: {
         name: "LITZONE",
-        welcome: "欢迎来到 LITZONE",
+        welcome: "欢迎来到",
         documentTitle: "LITZONE · 创作者工作台",
     },
     mainHome: {
@@ -234,6 +234,10 @@
         canvas: "画布",
         assets: "团队资产",
         favorites: "我的收藏",
+        subscription: "订阅",
+        translate: "翻译",
+        plan: "全案策划",
+        monitor: "监控",
         teams: "团队管理",
         my: "我的",
         darkMode: "深色模式",

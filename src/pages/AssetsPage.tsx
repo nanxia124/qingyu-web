@@ -31,7 +31,11 @@ export default function AssetsPage() {
   )
 
   return (
-    <div className="mx-auto max-w-[1320px] p-6">
+    <div className="flex h-full flex-col bg-bg">
+      {/* 顶部占位：与生图页标签栏区域等高 */}
+      <div className="h-[62px] shrink-0" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-[1320px] p-6 pt-0">
       {/* 工具栏 */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-lg bg-secondary p-1">
@@ -89,6 +93,8 @@ export default function AssetsPage() {
           {t('pages.assets.empty')}
         </div>
       )}
+      </div>
+      </div>
     </div>
   )
 }

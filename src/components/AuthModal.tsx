@@ -123,8 +123,9 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
 
                 {/* 标题 */}
                 <div className="mb-8">
-                    <h2 className="text-2xl font-bold text-center text-text">
+                    <h2 className="text-2xl font-bold text-center text-text flex items-center justify-center gap-2">
                         {t('brand.welcome')}
+                        <img src="/litzone-wordmark.svg" alt="LITZONE" className="h-10 w-auto object-contain dark:invert" />
                     </h2>
                     <p className="text-center text-gray-500 mt-2">
                         {mode === 'login' ? t('auth.subtitleLogin') : t('auth.subtitleRegister')}

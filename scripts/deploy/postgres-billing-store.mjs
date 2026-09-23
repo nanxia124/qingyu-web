@@ -289,5 +289,32 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, close: () => pool.end() };
+  async function listAssets(appwriteUserId, type = 'all', keyword = '') {
+    const r = await pool.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
+      coalesce((select sum(1) from app.asset_likes l where l.asset_id=a.id),0) like_count,
+      exists(select 1 from app.collections c join app.collection_items ci on ci.collection_id=c.id where c.workspace_id=a.workspace_id and c.created_by=(select id from app.user_accounts where appwrite_user_id=$1) and c.name='favorites' and ci.asset_id=a.id) is_favorite
+      from app.assets a where a.status='active' and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword]);
+    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), favorited: x.is_favorite, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
+  }
+
+  async function listFavorites(appwriteUserId) { return listAssets(appwriteUserId, 'all', '').then(items => items.filter(x => x.favorited)); }
+
+  async function toggleFavorite(appwriteUserId, assetId, favorite) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const access = await client.query(`select a.id,a.workspace_id from app.assets a where a.id=$1 and a.status='active' and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=$2 or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=$2 and tm.status='active')))`, [assetId, user.rows[0].id]);
+      if (!access.rowCount) throw new Error('资产不存在或无权访问');
+      let collection = await client.query(`select id from app.collections where workspace_id=$1 and created_by=$2 and name='favorites' limit 1`, [access.rows[0].workspace_id, user.rows[0].id]);
+      if (!collection.rowCount) collection = await client.query(`insert into app.collections(workspace_id,created_by,name,description) values($1,$2,'favorites','个人收藏') returning id`, [access.rows[0].workspace_id, user.rows[0].id]);
+      if (favorite) await client.query(`insert into app.collection_items(collection_id,asset_id,added_by,workspace_id) values($1,$2,$3,$4) on conflict do nothing`, [collection.rows[0].id, assetId, user.rows[0].id, access.rows[0].workspace_id]);
+      else await client.query(`delete from app.collection_items where collection_id=$1 and asset_id=$2`, [collection.rows[0].id, assetId]);
+      await client.query('commit');
+      return { assetId, favorited: Boolean(favorite) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listAssets, listFavorites, toggleFavorite, close: () => pool.end() };
 }

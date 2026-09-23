@@ -242,6 +242,7 @@ function sendJSON(res, status, data) {
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   });
   res.end(body);
+  return true;
 }
 
 function nextId() {
@@ -710,6 +711,24 @@ async function handleTeams(req, res, pathname, method) {
   }
 }
 
+async function handleAssets(req, res, pathname, method, url) {
+  if (!postgresBilling || !(pathname === "/assets" || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
+  const identity = getBillingIdentity(req);
+  if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
+  try {
+    if (pathname === "/assets" && method === "GET") return sendJSON(res, 200, await postgresBilling.listAssets(identity.sub, url.searchParams.get('type') || 'all', url.searchParams.get('keyword') || ''));
+    if (pathname === "/favorites" && method === "GET") return sendJSON(res, 200, await postgresBilling.listFavorites(identity.sub));
+    const match = pathname.match(/^\/favorites\/([^/]+)$/);
+    if (match && (method === "PUT" || method === "DELETE")) return sendJSON(res, 200, await postgresBilling.toggleFavorite(identity.sub, match[1], method === "PUT"));
+    sendJSON(res, 404, { error: "资产接口不存在" });
+    return true;
+  } catch (error) {
+    console.error("[assets]", error.message);
+    sendJSON(res, 400, { error: error.message || "资产操作失败" });
+    return true;
+  }
+}
+
 // 对外暴露的用户视图（脱敏）
 function publicUser(u) {
   if (!u) return null;
@@ -783,6 +802,10 @@ const server = http.createServer(async (req, res) => {
 
     // ===== 团队路由（客户身份，数据来自 PostgreSQL）=====
     if (await handleTeams(req, res, pathname, req.method)) {
+      return;
+    }
+
+    if (await handleAssets(req, res, pathname, req.method, url)) {
       return;
     }
 

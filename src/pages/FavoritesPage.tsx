@@ -1,18 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Star, ImageIcon, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { api } from '@/lib/api'
 
-const initialFavorites = [
-  { id: 1, name: '国潮插画_系列', type: 'image', time: '2026-09-18' },
-  { id: 2, name: '产品主图_白底', type: 'image', time: '2026-09-16' },
-]
+type Favorite = { id: string; name: string; type: string; createdAt: string }
 
 export default function FavoritesPage() {
   const { t } = useTranslation()
-  const [favorites, setFavorites] = useState(initialFavorites)
+  const [favorites, setFavorites] = useState<Favorite[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const handleDelete = (id: number) => {
+  const loadFavorites = () => {
+    setLoading(true)
+    api.get<Favorite[]>('/favorites').then(setFavorites).catch(() => setFavorites([])).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadFavorites() }, [])
+
+  const handleDelete = async (id: string) => {
     if (!confirm(t('pages.favorites.confirmDelete'))) return
+    await api.delete(`/favorites/${id}`)
     setFavorites((prev) => prev.filter((f) => f.id !== id))
   }
 
@@ -21,7 +28,9 @@ export default function FavoritesPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[1320px] p-6 pt-0">
       <h3 className="mb-4 text-[18px] font-bold leading-[26px] text-text">{t('pages.favorites.title')}</h3>
-      {favorites.length === 0 ? (
+      {loading ? (
+        <div className="rounded-xl bg-card p-16 text-center text-[14px] text-text-muted">正在读取收藏…</div>
+      ) : favorites.length === 0 ? (
         <div className="rounded-xl bg-card p-16 text-center text-[14px] text-text-muted">
           {t('pages.favorites.empty')}
         </div>
@@ -35,7 +44,7 @@ export default function FavoritesPage() {
               <div className="flex items-center justify-between p-3">
                 <div className="min-w-0">
                   <div className="truncate text-[14px] text-text">{f.name}</div>
-                  <div className="mt-0.5 text-[12px] text-text-muted">{f.time}</div>
+                  <div className="mt-0.5 text-[12px] text-text-muted">{new Date(f.createdAt).toLocaleDateString()}</div>
                 </div>
                 <Star className="size-4 shrink-0 fill-accent text-accent" />
               </div>

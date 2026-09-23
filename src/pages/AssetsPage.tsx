@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { FolderOpen, Search, Upload, MoreVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +21,8 @@ export default function AssetsPage() {
   const [keyword, setKeyword] = useState('')
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [reloadSeq, setReloadSeq] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -31,7 +33,22 @@ export default function AssetsPage() {
       if (!cancelled) setAssets([])
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [tab, keyword])
+  }, [tab, keyword, reloadSeq])
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploading(true)
+    try {
+      await api.uploadAsset(file)
+      setReloadSeq((value) => value + 1)
+    } catch {
+      // 页面保持当前数据，上传失败由后续提示组件统一承接。
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const filtered = assets
 
@@ -66,9 +83,10 @@ export default function AssetsPage() {
             className="w-56 rounded-lg bg-input py-2 pl-9 pr-3 text-[14px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
           />
         </div>
-        <button disabled title="上传接口接入对象存储后开放" className="flex cursor-not-allowed items-center gap-2 rounded-lg bg-accent/50 px-4 py-2 text-[14px] font-medium text-accent-foreground">
+        <label title="上传到当前个人空间" className={cn('flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover', uploading && 'pointer-events-none opacity-50')}>
           <Upload className="size-4" /> {t('pages.assets.upload')}
-        </button>
+          <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+        </label>
       </div>
 
       {/* 网格 */}

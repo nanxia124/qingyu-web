@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
+const OBJECT_DATA_DIR = process.env.OBJECT_DATA_DIR || path.join(DATA_DIR, "objects");
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const ADMIN_FILE = path.join(DATA_DIR, "admin.json");
 // ===== 计费系统数据文件 =====
@@ -27,6 +28,7 @@ let postgresBilling = null;
 
 // ---------- 数据存储 ----------
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(OBJECT_DATA_DIR)) fs.mkdirSync(OBJECT_DATA_DIR, { recursive: true });
 
 function loadJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf-8")); }
@@ -712,10 +714,43 @@ async function handleTeams(req, res, pathname, method) {
 }
 
 async function handleAssets(req, res, pathname, method, url) {
-  if (!postgresBilling || !(pathname === "/assets" || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
+  if (!postgresBilling || !(pathname === "/assets" || pathname === "/assets/upload" || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
   try {
+    if (pathname === "/assets/upload" && method === "POST") {
+      const rawName = String(req.headers["x-asset-name"] || "未命名文件");
+      let title = rawName;
+      try { title = decodeURIComponent(rawName); } catch { /* 使用原始文件名 */ }
+      const mimeType = String(req.headers["content-type"] || "application/octet-stream").split(';')[0];
+      const assetType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : mimeType.includes('pdf') || mimeType.includes('document') ? 'doc' : 'file';
+      const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
+      const objectKey = `${identity.sub}/${crypto.randomUUID()}${extension}`;
+      const outputPath = path.join(OBJECT_DATA_DIR, objectKey);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const hash = crypto.createHash('sha256');
+      let sizeBytes = 0;
+      await new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(outputPath, { flags: 'wx', mode: 0o600 });
+        let settled = false;
+        const fail = (error) => { if (!settled) { settled = true; output.destroy(); reject(error); } };
+        req.on('data', chunk => {
+          sizeBytes += chunk.length;
+          if (sizeBytes > 50 * 1024 * 1024) return fail(new Error('单个文件不能超过50MB'));
+          hash.update(chunk);
+          output.write(chunk);
+        });
+        req.on('end', () => { if (!settled) { settled = true; output.end(resolve); } });
+        req.on('error', fail);
+        output.on('error', fail);
+      });
+      try {
+        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum: hash.digest('hex'), objectKey }));
+      } catch (error) {
+        try { fs.unlinkSync(outputPath); } catch { /* 文件已不存在 */ }
+        throw error;
+      }
+    }
     if (pathname === "/assets" && method === "GET") return sendJSON(res, 200, await postgresBilling.listAssets(identity.sub, url.searchParams.get('type') || 'all', url.searchParams.get('keyword') || ''));
     if (pathname === "/favorites" && method === "GET") return sendJSON(res, 200, await postgresBilling.listFavorites(identity.sub));
     const match = pathname.match(/^\/favorites\/([^/]+)$/);

@@ -125,4 +125,27 @@ export const api = {
 
   delete: <T = any>(path: string) =>
     apiRequest<T>(path, { method: "DELETE" }),
+
+  uploadAsset: async <T = any>(file: File): Promise<T> => {
+    const token = getToken();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+      const res = await fetch(`${BASE_URL}/assets/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Asset-Name": encodeURIComponent(file.name),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: file,
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new ApiError(res.status, data?.error || "上传失败", data);
+      return data as T;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  },
 };

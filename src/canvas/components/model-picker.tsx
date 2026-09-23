@@ -56,23 +56,30 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
         }
         setRefreshing(true);
         try {
-            // 从第一个远程渠道拉取最新模型列表
-            const channel = config.channels[0];
-            const models = await fetchChannelModels(channel);
-            
-            // 更新渠道里的模型列表
-            const updatedChannels = config.channels.map((ch, idx) => {
-                if (idx === 0) {
-                    return {
-                        ...ch,
-                        models: models.map((name) => ({
-                            name,
-                            capability: guessCapability(name),
-                        })),
-                    };
-                }
-                return ch;
-            });
+            // 遍历所有渠道，分别拉取最新模型列表
+            const updatedChannels = await Promise.all(
+                config.channels.map(async (channel) => {
+                    try {
+                        const remoteModels = await fetchChannelModels(channel);
+                        // 合并模型：保留用户已有配置（能力类型、脚本等），只添加新模型
+                        const existingMap = new Map(channel.models.map((m) => [m.name, m]));
+                        const mergedModels: typeof channel.models = [];
+                        for (const name of remoteModels) {
+                            if (existingMap.has(name)) {
+                                // 保留用户已有的自定义配置
+                                mergedModels.push(existingMap.get(name)!);
+                            } else {
+                                // 新模型，自动判断能力类型
+                                mergedModels.push({ name, capability: guessCapability(name) });
+                            }
+                        }
+                        return { ...channel, models: mergedModels };
+                    } catch (error) {
+                        console.error(`Failed to fetch models for channel ${channel.name}:`, error);
+                        return channel; // 拉取失败，保留原配置
+                    }
+                })
+            );
             
             // 更新 config
             updateConfig("channels", updatedChannels);
@@ -83,13 +90,6 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
             setRefreshing(false);
         }
     };
-    
-    // 自动同步：每次打开下拉菜单时自动从后端 API 拉取最新模型列表
-    useEffect(() => {
-        if (open && config.channelMode === "remote" && config.channels.length) {
-            void refreshModels();
-        }
-    }, [open]);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {

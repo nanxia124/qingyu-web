@@ -179,9 +179,10 @@ export async function createPostgresBillingStore() {
       (select count(*) from app.orders) order_count,
       (select count(*) from app.orders where status='paid') paid_order_count,
       coalesce((select sum(amount_minor) from app.orders where status='paid'),0) revenue_minor,
+      coalesce((select sum(amount_minor) from app.orders where status='paid' and paid_at >= current_date),0) today_revenue_minor,
       coalesce((select sum(q.available) from app.quota_accounts q),0) total_balance`);
     const x = r.rows[0];
-    return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: 0, totalBalance: Number(x.total_balance), unusedCodes: 0 };
+    return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: Number(x.today_revenue_minor), totalBalance: Number(x.total_balance), unusedCodes: 0 };
   }
 
   async function adminUsers() {

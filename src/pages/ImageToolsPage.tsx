@@ -240,7 +240,7 @@ function GeneratePanel() {
           {/* 提示词 */}
           <div className="mb-6">
             <label className="mb-2 block text-[14px] text-text">{t("imageTools.prompt")}</label>
-            <div className="relative rounded-xl bg-card">
+            <div className="relative rounded-xl bg-secondary">
               <textarea
                 ref={promptRef}
                 value={prompt}

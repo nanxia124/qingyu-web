@@ -65,20 +65,23 @@ export default function CanvasPage() {
     };
 
     useEffect(() => {
-        if (!hydrated || autoOpenRef.current || (mode !== "new" && mode !== "recent")) return;
+        if (!hydrated || autoOpenRef.current || mode === "choose") return;
         autoOpenRef.current = true;
         if (mode === "new") {
             enterProject(createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
             return;
         }
-        // 打开最近真正使用过的画布：优先有内容且最近更新的项目，避免落到刷新时自动产生的空项目；一个项目都没有才新建
+        // recent 或普通进入（无 mode）：直接打开最近真正使用过的画布，不展示独立画布库页；
+        // 画布列表改由画布编辑页顶栏的"画布库"按钮（ProjectListFloat）提供。
+        // 优先有内容且最近更新的项目，避免落到刷新时自动产生的空项目；一个项目都没有才新建。
         const withContent = projects.filter((project) => (project.nodes?.length || 0) > 0);
         const pool = withContent.length ? withContent : projects;
         const recentId = [...pool].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0]?.id;
         enterProject(recentId || createProject(t("canvas.defaultTitle", { count: projects.length + 1 })));
     }, [createProject, hydrated, mode, projects, t]);
 
-    if (mode === "new" || mode === "recent") return null;
+    // 只有 Agent 选画布（choose）模式才展示这个列表页；其余情况已自动跳转走。
+    if (mode !== "choose") return null;
 
     return (
         <main className="h-full overflow-auto bg-background text-zinc-950 dark:text-zinc-100">

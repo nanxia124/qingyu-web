@@ -715,3 +715,32 @@ body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-ite
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-item"][data-state="checked"][data-highlighted] {
     background: #2a2a3c;
 }
+
+/* 画布库浮层复选框：去掉原生描边，用自定义对勾 */
+.canvas-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    border: none;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+}
+.canvas-checkbox:checked {
+    background: #5051f8;
+}
+.canvas-checkbox:checked::after {
+    content: "";
+    position: absolute;
+    left: 4.5px;
+    top: 1.5px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}

@@ -4,9 +4,9 @@
         description: "一个无限画布创作工具",
     },
     brand: {
-        name: "轻域AI",
-        welcome: "欢迎来到轻域AI",
-        documentTitle: "轻域AI · 创作者工作台",
+        name: "LITZONE",
+        welcome: "欢迎来到 LITZONE",
+        documentTitle: "LITZONE · 创作者工作台",
     },
     mainHome: {
         searchPlaceholder: "搜索灵感、作品、教程…",
@@ -215,7 +215,7 @@
         },
         authPage: { fillBoth: "请填写邮箱和密码", emailInvalid: "邮箱格式不正确", pwdMin: "密码至少 6 位", fillNick: "请填写昵称", opFailed: "操作失败，请重试", login: "登录", register: "注册", nickname: "昵称", email: "邮箱", password: "密码（至少6位）", loading: "加载中...", noAccount: "还没有账号？", hasAccount: "已有账号？" },
         resetPwd: { invalid: "无效的重置链接，请重新申请", invalidOnly: "无效的重置链接", pwdMin: "密码至少 6 位", mismatch: "两次输入的密码不一致", success: "密码重置成功，正在跳转登录...", failed: "重置失败", failedRetry: "重置失败，请稍后重试", title: "重置密码", subtitle: "请设置新密码", newPwdPh: "新密码（至少6位）", confirmPh: "确认新密码", submitting: "提交中...", confirm: "确认重置", backHome: "返回首页" },
-        plan: { market: "市场分析", vision: "视觉战略", compliance: "合规审查", export: "导出成果", title: "AI 全案策划", subtitle: "输入产品信息，自动完成市场分析 → 视觉战略 → 合规审查 → 导出全案", productPh: "产品名称 / 品牌，例如：轻域AI 会员订阅", bgPh: "补充目标用户、投放平台、预算等背景（可选）", running: "策划生成中…", start: "开始生成全案" },
+        plan: { market: "市场分析", vision: "视觉战略", compliance: "合规审查", export: "导出成果", title: "AI 全案策划", subtitle: "输入产品信息，自动完成市场分析 → 视觉战略 → 合规审查 → 导出全案", productPh: "产品名称 / 品牌，例如：LITZONE 会员订阅", bgPh: "补充目标用户、投放平台、预算等背景（可选）", running: "策划生成中…", start: "开始生成全案" },
         admin: {
             login: { failed: "登录失败", title: "管理后台登录", username: "用户名", password: "密码", loading: "登录中...", login: "登录" },
             audits: { title: "审计日志", searchPh: "搜索操作或用户...", loading: "加载中...", did: "执行了" },

@@ -33,6 +33,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { requestGeneration, requestEdit } from '@canvas/services/api/image'
+import type { ReferenceImage } from '@canvas/types/image'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
@@ -70,7 +72,7 @@ function GeneratePanel() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
-  const [results, setResults] = useState<Array<{ id: number; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean }>>([])
+  const [results, setResults] = useState<Array<{ id: number; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean; imageUrl?: string }>>([])
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [thumbScale, setThumbScale] = useState(100)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
@@ -146,6 +148,7 @@ function GeneratePanel() {
   // 全局粘贴监听（提示词框除外）
   // 拉取图片模型列表
   useEffect(() => {
+    if (!model && config.imageModel) setModel(config.imageModel)
     fetch('/api/config/public')
       .then((res) => res.json())
       .then((channels: any[]) => {
@@ -201,20 +204,50 @@ function GeneratePanel() {
     showToast(t('imageTools.toasts.reused'))
   }
 
-  const generate = () => {
+  const generate = async () => {
     if (!isLoggedIn) { openAuthModal(); return }
     if (!prompt.trim() || generating) return
     setGenerating(true)
-    setTimeout(() => {
+    try {
+      const selectedModel = model || config.imageModel || config.model
+      const requestConfig = {
+        ...config,
+        model: selectedModel,
+        imageModel: selectedModel,
+        count,
+        quality: quality.toLowerCase(),
+        size: ratio === '__ORIG__' ? 'auto' : ratio,
+      }
+      const references: ReferenceImage[] = refImages.map((dataUrl, index) => ({
+        id: `image-tools-ref-${index}`,
+        name: `reference-${index + 1}`,
+        type: 'image',
+        dataUrl,
+      }))
+      const generated = references.length
+        ? await requestEdit(requestConfig, prompt.trim(), references)
+        : await requestGeneration(requestConfig, prompt.trim())
       const now = new Date()
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-      setResults((r) => [
-        { id: Date.now(), model: model.split(' · ')[1] || 'GPT Image 2.5', size: '1024 x 1024', fileSize: '0.0 MB', quality, time: timeStr, prompt, favorited: false },
-        ...r,
-      ])
+      const modelLabel = selectedModel.split('::').pop() || selectedModel
+      const newResults = generated.map((image, index) => ({
+        id: Date.now() + index,
+        model: modelLabel,
+        size: ratio === '__ORIG__' ? 'auto' : ratio,
+        fileSize: '—',
+        quality,
+        time: timeStr,
+        prompt: prompt.trim(),
+        favorited: false,
+        imageUrl: image.dataUrl,
+      }))
+      setResults((r) => [...newResults, ...r])
       setGenerating(false)
       showToast(t('imageTools.toasts.done'))
-    }, 1500)
+    } catch (error) {
+      setGenerating(false)
+      showToast(error instanceof Error ? error.message : t('workbench.generationFailed'), 'error')
+    }
   }
 
   const qualityCost = quality === '1K' ? 1 : quality === '2K' ? 3 : 8
@@ -503,7 +536,7 @@ function GeneratePanel() {
               {results.map((r) => (
                 <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
                   <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
-                    <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>
+                    {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-1 flex items-baseline gap-2">
@@ -541,7 +574,7 @@ function GeneratePanel() {
             <div className="grid grid-cols-3 gap-3">
               {results.map((r) => (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
-                  <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
@@ -558,7 +591,7 @@ function GeneratePanel() {
             <div className="space-y-4">
               {results.map((r) => (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
-                  <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-[400px] w-full object-contain bg-surface-hover" /> : <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>

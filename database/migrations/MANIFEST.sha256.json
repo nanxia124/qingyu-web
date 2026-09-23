@@ -1,0 +1,14 @@
+{
+  "0001_foundation.sql": "e92db6fe373fc80cefbe453150e6ef349a04ec88f4194d208d9fa295b5a1a422",
+  "0002_business_domains.sql": "aaf2d400227951489d1aa97b683b8bbf2b0c146dc03be0c954e6b0352fb8ea78",
+  "0003_operational_records.sql": "f6062f1a432b5ab2f068e1402341890c245e26e56f6eb1b73cd5f83cd2ae4f85",
+  "0004_resource_integrity.sql": "a8e1a596a67c7acb1dba9be264510442d3ca8d585fc6011ad0b9f94e3c355e8d",
+  "0005_canvas_agent.sql": "5189c8b4ebbc550dc447b5ef1c4be56e95936ba16311a40f663493512a4d2d57",
+  "0006_row_level_security.sql": "a068346ad71ab6621a51d9b32e7fc037e4da458e133abb72217e954407fb64e8",
+  "0007_security_boundary.sql": "9c452197fa55495cca9b6134324b5004e103ced3cb39d05b8a38cad6390f3c35",
+  "0008_business_read_boundary.sql": "0453f4952dc2c9d234440afd49d9b8426f327617569b419bd2f67ed446f445ec",
+  "0009_rls_function_execution.sql": "c70a37e5f06e5e6d0a26e25ce1281015bfa1c07dd575dc38b2b9fce3480def2b",
+  "0010_billing_consistency.sql": "5b483ba792da743b842d687cee414a62731fb68f389fe1f1e5b727aed18fd84a",
+  "0011_agent_governance.sql": "1cad9b440ac923c028ea388977f50fe3162faa9091adb3f2f304f1f9c135868a",
+  "0012_backup_catalog.sql": "74a6dd8fe99941ab50b8f69827cb28f6732a34034e35d32ddd318389c96198f8"
+}

@@ -20,6 +20,12 @@
 
 `0010_billing_consistency.sql` 增加不可变的套餐价格快照、额度账户、额度流水和预占/结算/释放函数。重复请求按幂等键返回原结果；额度不足、过期或错误状态会拒绝，账户更新在行锁内完成。`tests/billing_consistency.sql` 验证预扣、超额拒绝、结算、释放和守恒。
 
+`0011_agent_governance.sql` 把 Agent 轮次、审批、工具调用和附件从大 JSON 拆成可恢复记录，并加入提示词来源/版本、标签和插件版本。轮次用幂等键、请求哈希和租约避免重复执行；附件用复合外键保持工作空间一致。`tests/agent_governance.sql` 验证轮次唯一性。
+
+`0012_backup_catalog.sql` 增加备份运行记录和恢复演练记录，保存校验和、加密密钥版本、存储位置、WAL 范围、RPO/RTO 和核验结果。它只记录事实，不把备份文件放进业务数据库；实际异机存储和定期任务仍需按备份规范配置。
+
+`migrations/MANIFEST.sha256.json` 和 `scripts/Verify-MigrationManifest.ps1` 用 SHA-256 检查迁移文件是否被改动或漏传。执行数据库更新前先运行校验；已执行的 SQL 不直接修改，变更要新增编号。
+
 正式应用连接必须使用独立的业务数据库角色，不能长期复用 Appwrite 的 `user` 角色。前端不能直接连接 PostgreSQL；迁移、回滚和备份由服务器端受控执行。
 
 `0004_resource_integrity.sql` 使用复合外键拦截跨空间的生成结果、资产版本和文件关联，并限制评论只能回复同一资产下的评论。文件存储身份使用 PostgreSQL 16 支持的空值相等唯一约束，避免没有存储版本号时重复登记同一个对象。

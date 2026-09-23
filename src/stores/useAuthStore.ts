@@ -45,6 +45,7 @@ interface AuthState {
   changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (userId: string, secret: string, password: string) => Promise<void>;
+  loginWithOAuth: (provider: "google" | "apple") => Promise<void>;
   checkSession: () => Promise<void>;
 }
 
@@ -198,6 +199,16 @@ export const useAuthStore = create<AuthState>()(
       // 用邮件里的 token 完成密码重置
       resetPassword: async (userId, secret, password) => {
         await account.updateRecovery(userId, secret, password);
+      },
+
+      // 第三方 OAuth 登录：跳转 Appwrite OAuth 页面，成功后重定向回本站
+      loginWithOAuth: async (provider) => {
+        const origin = window.location.origin;
+        const successUrl = `${origin}/`;
+        const failureUrl = `${origin}/?oauth_error=1`;
+        trackEvent(AnalyticsEvent.LoginSuccess, { method: provider });
+        // createOAuth2Session 会跳出当前页走授权流程，完成后浏览器自动跳回 successUrl
+        await account.createOAuth2Session(provider as any, successUrl, failureUrl);
       },
     }),
     {

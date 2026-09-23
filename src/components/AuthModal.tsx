@@ -18,7 +18,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
     const [error, setError] = useState("");
     const [showPolicy, setShowPolicy] = useState<"terms" | "privacy" | null>(null);
 
-    const { login, register, isLoading, forgotPassword } = useAuthStore();
+    const { login, register, isLoading, forgotPassword, loginWithOAuth } = useAuthStore();
 
     const validateEmail = () => {
         if (!email.trim()) { setError(t('auth.emailRequired')); return false; }
@@ -134,7 +134,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 {/* 第三方登录按钮 */}
                 <div className="flex flex-col gap-3 mb-6">
                     <button
-                        onClick={() => setError(t('auth.oauthNotAvail'))}
+                        onClick={() => { setError(""); loginWithOAuth("google").catch(() => setError(t('auth.oauthNotAvail'))); }}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     </button>
 
                     <button
-                        onClick={() => setError(t('auth.oauthNotAvail'))}
+                        onClick={() => { setError(""); loginWithOAuth("apple").catch(() => setError(t('auth.oauthNotAvail'))); }}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">

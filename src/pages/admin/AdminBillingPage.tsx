@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next'
-import { adminBillingApi, type BillingUser, type Order } from "@/lib/billing";
-import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet } from "lucide-react";
+import { adminBillingApi, type BillingUser, type Order, type Plan } from "@/lib/billing";
+import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save } from "lucide-react";
 
 export default function AdminBillingPage() {
   const { t } = useTranslation()
@@ -10,6 +10,9 @@ export default function AdminBillingPage() {
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [codes, setCodes] = useState<any[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [plansDraft, setPlansDraft] = useState<Record<string, Plan>>({});
+  const [savingPlanId, setSavingPlanId] = useState<string>("");
   const [msg, setMsg] = useState("");
   // 生成兑换码表单
   const [genForm, setGenForm] = useState({ count: 10, denomination: 100, kind: "quota", days: 0 });
@@ -22,6 +25,13 @@ export default function AdminBillingPage() {
       if (t === "users") setUsers(await adminBillingApi.users());
       if (t === "orders") setOrders(await adminBillingApi.orders());
       if (t === "codes") setCodes(await adminBillingApi.codes());
+      if (t === "plans") {
+        const list = await adminBillingApi.plans();
+        setPlans(list);
+        const draft: Record<string, Plan> = {};
+        list.forEach(p => { draft[p.id] = { ...p, features: [...p.features] }; });
+        setPlansDraft(draft);
+      }
     } catch (e: any) {
       setMsg(e.message);
     }
@@ -56,6 +66,29 @@ export default function AdminBillingPage() {
       setMsg(t("pages.admin.billing.generated", { count: res.count }));
       load("codes");
     } catch (e: any) { setMsg(e.message); }
+  };
+
+  const savePlan = async (planId: string) => {
+    const draft = plansDraft[planId];
+    if (!draft) return;
+    if (!window.confirm(`确认保存「${draft.name}」套餐的修改？`)) return;
+    setSavingPlanId(planId);
+    try {
+      await adminBillingApi.updatePlan({ ...draft, priceCents: Math.round(draft.priceCents) });
+      setMsg(`套餐「${draft.name}」已保存`);
+      load("plans");
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setSavingPlanId("");
+    }
+  };
+
+  const updatePlanDraft = (planId: string, field: keyof Plan, value: any) => {
+    setPlansDraft(prev => ({
+      ...prev,
+      [planId]: { ...prev[planId], [field]: value },
+    }));
   };
 
   const TABS: [typeof tab, string, any][] = [
@@ -201,8 +234,94 @@ export default function AdminBillingPage() {
 
       {/* 套餐 */}
       {tab === "plans" && (
-        <div className="rounded-xl bg-card border border-border p-4 text-gray-500 text-sm">
-          {t("pages.admin.billing.plansNote").split("api-data/billing_plans.json")[0]}<code className="text-green-600">api-data/billing_plans.json</code>... <code className="text-green-600">api-data/billing_plans.json</code>，或后续接入可视化编辑。当前包含 free / pro / team 三档。
+        <div className="space-y-4">
+          <div className="text-sm text-gray-500">
+            直接修改下方字段，点击保存即可生效。价格单位为元，自动按分存储。
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {plans.map(plan => {
+              const draft = plansDraft[plan.id] || plan;
+              return (
+                <div key={plan.id} className="rounded-xl bg-card p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500 font-mono">{plan.id}</span>
+                    <span className="text-xs text-gray-600">level: {draft.level}</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">套餐名称</label>
+                    <input
+                      type="text"
+                      value={draft.name}
+                      onChange={e => updatePlanDraft(plan.id, "name", e.target.value)}
+                      className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">价格（元/月）</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={(draft.priceCents / 100).toFixed(2)}
+                        onChange={e => updatePlanDraft(plan.id, "priceCents", Number(e.target.value) * 100)}
+                        className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">时长（天）</label>
+                      <input
+                        type="number"
+                        value={draft.durationDays}
+                        onChange={e => updatePlanDraft(plan.id, "durationDays", Number(e.target.value))}
+                        className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">每月额度（积分）</label>
+                    <input
+                      type="number"
+                      value={draft.monthlyQuota}
+                      onChange={e => updatePlanDraft(plan.id, "monthlyQuota", Number(e.target.value))}
+                      className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">描述</label>
+                    <input
+                      type="text"
+                      value={draft.description}
+                      onChange={e => updatePlanDraft(plan.id, "description", e.target.value)}
+                      className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">权益列表（每行一条）</label>
+                    <textarea
+                      value={draft.features.join("\n")}
+                      onChange={e => updatePlanDraft(plan.id, "features", e.target.value.split("\n").filter(f => f.trim()))}
+                      rows={4}
+                      className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent resize-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => savePlan(plan.id)}
+                    disabled={savingPlanId === plan.id}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white text-sm hover:bg-accent-hover disabled:opacity-50"
+                  >
+                    <Save size={14} />
+                    {savingPlanId === plan.id ? "保存中..." : "保存"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

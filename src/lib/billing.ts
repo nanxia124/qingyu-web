@@ -90,7 +90,7 @@ export interface Txn {
 // ---------------- 客户接口 ----------------
 export const billingApi = {
   // 用 Appwrite 用户 ID 换计费 JWT
-  login: (body: { userId: string; email?: string; inviteCode?: string; installationId?: string; displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }) =>
+  login: (body: { userId: string; email?: string; inviteCode?: string; appwriteJwt?: string; installationId?: string; displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }) =>
     request("/api/billing/login", { method: "POST", body: { ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web", displayName: body.displayName || navigator.userAgent.slice(0, 100), osFamily: body.osFamily || navigator.platform || "unknown", browserFamily: body.browserFamily || navigator.userAgent.slice(0, 64) } }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
   plans: () => request<Plan[]>("/api/billing/plans"),
@@ -119,4 +119,6 @@ export const adminBillingApi = {
   genCodes: (body: any) =>
     request<{ count: number; batch: string; codes: string[] }>("/api/admin/billing/codes", { method: "POST", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body }),
   plans: () => request<Plan[]>("/api/admin/billing/plans", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  updatePlan: (plan: Partial<Plan> & { id: string }) =>
+    request<Plan>("/api/admin/billing/plans", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: plan }),
 };

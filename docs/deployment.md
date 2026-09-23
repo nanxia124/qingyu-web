@@ -11,3 +11,7 @@
 - 当前工作流只发布前端，API 后台和 Agent 服务需要独立部署。
 
 排查顺序：先定位失败步骤，再查看具体日志。SSH 认证失败时核对登录账户和公钥指纹，并查看服务器的 SSH 日志；上传成功但页面异常时检查网站根目录及 HTTP 状态。
+
+## HTTPS 反代与 Appwrite OAuth
+
+如果域名通过 Cloudflare 等代理访问，源站 Nginx 收到的可能仍是 HTTP。转发到 Appwrite 的 `/v1/` 请求必须把 `X-Forwarded-Proto` 固定传为 `https`，否则 OAuth 地址会不断重定向到自身，浏览器会报 `ERR_TOO_MANY_REDIRECTS`。Appwrite 的 `_APP_DOMAIN`、`_APP_CONSOLE_DOMAIN` 和 Google OAuth 使用的站点域名也必须统一，例如 `litzone.art`，不要继续使用服务器 IP。

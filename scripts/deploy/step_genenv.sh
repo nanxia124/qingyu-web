@@ -11,11 +11,11 @@ cp .env.template .env
 # apply overrides
 sed -i "s|^_APP_ENV=.*|_APP_ENV=production|" .env
 sed -i "s|^_APP_OPENSSL_KEY_V1=.*|_APP_OPENSSL_KEY_V1=${OPENSSL_KEY}|" .env
-sed -i "s|^_APP_DOMAIN=.*|_APP_DOMAIN=43.160.249.6|" .env
-sed -i "s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=43.160.249.6:8080|" .env
-sed -i "s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=43.160.249.6:8080|" .env
-sed -i "s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=43.160.249.6|" .env
-sed -i "s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=43.160.249.6:8080|" .env
+sed -i "s|^_APP_DOMAIN=.*|_APP_DOMAIN=litzone.art|" .env
+sed -i "s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=litzone.art|" .env
+sed -i "s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=litzone.art|" .env
+sed -i "s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=litzone.art|" .env
+sed -i "s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=litzone.art|" .env
 sed -i "s|^_APP_DB_PASS=.*|_APP_DB_PASS=${DB_PASS}|" .env
 sed -i "s|^_APP_DB_ROOT_PASS=.*|_APP_DB_ROOT_PASS=${DB_ROOT_PASS}|" .env
 sed -i "s|^_APP_EXECUTOR_SECRET=.*|_APP_EXECUTOR_SECRET=${EXEC_SECRET}|" .env

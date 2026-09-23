@@ -36,6 +36,17 @@ jobs:
           overwrite: true
           strip_components: 1
 
+      - name: Upload Nginx configuration
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 43.160.249.6
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "scripts/deploy/nginx-qingyu-web.conf"
+          target: "/home/ubuntu/qingyu-upload"
+          overwrite: true
+
       - name: Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -49,6 +60,8 @@ jobs:
             sudo mkdir -p /var/www/qingyu-web
             sudo cp -a /home/ubuntu/qingyu-upload/. /var/www/qingyu-web/
             sudo chown -R www-data:www-data /var/www/qingyu-web
+            sudo install -m 0644 /home/ubuntu/qingyu-upload/nginx-qingyu-web.conf /etc/nginx/sites-available/qingyu-web
+            sudo ln -sfn /etc/nginx/sites-available/qingyu-web /etc/nginx/sites-enabled/qingyu-web
             sudo nginx -t && sudo systemctl reload nginx
             curl --fail --silent --show-error http://localhost/ -o /dev/null
             rm -rf /home/ubuntu/qingyu-upload

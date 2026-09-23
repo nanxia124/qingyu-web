@@ -15,3 +15,5 @@
 ## HTTPS 反代与 Appwrite OAuth
 
 如果域名通过 Cloudflare 等代理访问，源站 Nginx 收到的可能仍是 HTTP。转发到 Appwrite 的 `/v1/` 请求必须把 `X-Forwarded-Proto` 固定传为 `https`，否则 OAuth 地址会不断重定向到自身，浏览器会报 `ERR_TOO_MANY_REDIRECTS`。Appwrite 的 `_APP_DOMAIN`、`_APP_CONSOLE_DOMAIN` 和 Google OAuth 使用的站点域名也必须统一，例如 `litzone.art`，不要继续使用服务器 IP。
+
+如果 Appwrite 自带 Traefik 仍然把转发协议识别为 HTTP，单纯修改 Nginx 请求头不会生效。此时给 `appwrite` 容器增加主机端口（例如 `8081:80`），让 Nginx 直接代理到该端口，并保留 `X-Forwarded-Proto: https`，再检查 OAuth 的 `redirect_uri` 必须以 `https://` 开头。

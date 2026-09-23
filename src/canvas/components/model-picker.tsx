@@ -84,10 +84,12 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
         }
     };
     
-    // 自动同步：打开下拉时自动刷新（可选，先注释掉，避免每次打开都请求）
-    // useEffect(() => {
-    //     if (open) refreshModels();
-    // }, [open]);
+    // 自动同步：每次打开下拉菜单时自动从后端 API 拉取最新模型列表
+    useEffect(() => {
+        if (open && config.channelMode === "remote" && config.channels.length) {
+            void refreshModels();
+        }
+    }, [open]);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {

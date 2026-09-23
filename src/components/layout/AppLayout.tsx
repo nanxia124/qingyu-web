@@ -290,11 +290,11 @@ export default function AppLayout() {
           </button>
           <span
             className={cn(
-              'overflow-hidden whitespace-nowrap text-[15px] font-bold leading-[22px] text-text transition-all duration-200 ease-out',
+              'flex h-6 items-center overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
               expanded ? 'w-[60px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
             )}
           >
-            {t('brand.name')}
+            <img src="/litzone-wordmark.svg" alt="litzone" className="h-5 w-[60px] max-w-none object-contain dark:invert" />
           </span>
         </div>
 

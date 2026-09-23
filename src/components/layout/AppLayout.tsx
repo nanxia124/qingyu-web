@@ -35,7 +35,7 @@ type IconComp = (props: { className?: string }) => React.ReactElement
 const navItems: { to: string; label: string; tooltip: string; icon: IconComp; exact?: boolean; preload?: () => void; requireAuth?: boolean }[] = [
   { to: '/', label: 'nav.home', tooltip: 'nav.home', icon: SidebarHomeIcon, exact: true },
   { to: '/chat', label: 'nav.chat', tooltip: 'nav.chat', icon: SidebarChatIcon },
-  { to: '/image-tools', label: 'nav.image', tooltip: 'nav.image', icon: SidebarImageIcon },
+  { to: '/image', label: 'nav.image', tooltip: 'nav.image', icon: SidebarImageIcon },
   { to: '/video', label: 'nav.video', tooltip: 'nav.video', icon: SidebarVideoIcon },
   { to: '/canvas?mode=recent', label: 'nav.canvas', tooltip: 'nav.canvas', icon: SidebarCanvasIcon, preload: () => { void import('@canvas/index') } },
   { to: '/assets', label: 'nav.assets', tooltip: 'nav.assets', icon: SidebarTeamIcon, requireAuth: true },
@@ -49,7 +49,7 @@ const utilityItems: { to: string; label: string; tooltip: string; icon: typeof S
 const pageTitleKeys: Record<string, string> = {
   '/': 'nav.home',
   '/chat': 'nav.chat',
-  '/image-tools': 'nav.image',
+  '/image': 'nav.image',
   '/video': 'nav.video',
   '/canvas': 'nav.canvas',
   '/assets': 'nav.assets',
@@ -137,7 +137,7 @@ export default function AppLayout() {
   const isCanvas = location.pathname.startsWith('/canvas')
   const isVideo = location.pathname.startsWith('/video')
 
-  const sidebarWidth = expanded ? 'w-[140px]' : 'w-[50px]'
+  const sidebarWidth = expanded ? 'w-[168px]' : 'w-[50px]'
 
   const handleLogout = async () => {
     await logout()
@@ -176,7 +176,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'absolute left-[8px] top-1/2 h-[30px] -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'w-[124px]' : 'w-[34px]',
+              expanded ? 'w-[152px]' : 'w-[34px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
@@ -225,7 +225,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'absolute left-[8px] top-1/2 h-[30px] -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'w-[124px]' : 'w-[34px]',
+              expanded ? 'w-[152px]' : 'w-[34px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
@@ -290,11 +290,11 @@ export default function AppLayout() {
           </button>
           <span
             className={cn(
-              'flex h-6 items-center overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
-              expanded ? 'w-[60px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
+              'flex h-8 items-center overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
+              expanded ? 'w-[104px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
             )}
           >
-            <img src="/litzone-wordmark.svg" alt="litzone" className="h-5 w-[60px] max-w-none object-contain dark:invert" />
+            <img src="/litzone-wordmark.svg" alt="litzone" className="h-7 w-[104px] max-w-none object-contain dark:invert" />
           </span>
         </div>
 
@@ -392,6 +392,8 @@ export default function AppLayout() {
                 {[
                   { label: '个人中心', to: '/account/profile' },
                   { label: '账单', to: '/account/billing' },
+                  { label: '订阅', to: '/subscription' },
+                  { label: '钱包', to: '/wallet' },
                   { label: '反馈', to: '/feedback' },
                   { label: '设置', to: '/settings' },
                 ].map((item) => (

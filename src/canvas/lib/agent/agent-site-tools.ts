@@ -182,9 +182,9 @@ function runImageWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
     }
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;
-    navigate("/image-tools");
+    navigate("/image");
     const taskId = useWorkbenchAgentStore.getState().dispatchImage({ prompt, run });
-    return { ok: true, navigated: "/image-tools", prompt, run, taskId, applied, note: siteText(run ? "imageGenerationStarted" : "imageConfigApplied") };
+    return { ok: true, navigated: "/image", prompt, run, taskId, applied, note: siteText(run ? "imageGenerationStarted" : "imageConfigApplied") };
 }
 
 function getVideoConfig() {

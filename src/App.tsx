@@ -93,13 +93,13 @@ export default function App() {
           <Route path="/" element={lazyPage(<WorkbenchPage />)} />
           <Route path="/chat" element={lazyPage(<ChatPage />)} />
           {/* /generate 重定向到真实生图页 */}
-          <Route path="/generate" element={<Navigate to="/image-tools" replace />} />
+          <Route path="/generate" element={<Navigate to="/image" replace />} />
           <Route path="/translate" element={lazyPage(<TranslatePage />)} />
           <Route path="/plan" element={lazyPage(<PlanPage />)} />
           <Route path="/canvas" element={lazyCanvas(<CanvasRoute />)} />
           <Route path="/canvas/new" element={lazyCanvas(<CanvasNewRoute />)} />
           <Route path="/canvas/:id" element={lazyCanvas(<CanvasProjectRoute />)} />
-          <Route path="/image-tools" element={lazyPage(<ImageToolsPage />)} />
+          <Route path="/image" element={lazyPage(<ImageToolsPage />)} />
           <Route path="/video" element={lazyCanvas(<CanvasVideoRoute />)} />
           <Route path="/assets" element={lazyPage(<AssetsPage />)} />
           <Route path="/favorites" element={lazyPage(<FavoritesPage />)} />

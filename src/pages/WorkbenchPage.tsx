@@ -61,7 +61,7 @@ export default function WorkbenchPage() {
 
   const handleQuickGenerate = () => {
     const prompt = quickPrompt.trim()
-    navigate('/image-tools', { state: { presetPrompt: prompt } })
+    navigate('/image', { state: { presetPrompt: prompt } })
   }
 
   const showToast = (msg: string) => {
@@ -111,9 +111,9 @@ export default function WorkbenchPage() {
       <div className="shrink-0 px-6 pt-5">
         <div className="grid grid-cols-4 gap-3">
           {[
-            { icon: ImageIcon, title: t('mainHome.text2img'), desc: t('mainHome.text2imgDesc'), path: '/image-tools' },
-            { icon: Zap, title: t('mainHome.expand'), desc: t('mainHome.expandDesc'), path: '/image-tools' },
-            { icon: Sparkles, title: t('mainHome.style'), desc: t('mainHome.styleDesc'), path: '/image-tools' },
+            { icon: ImageIcon, title: t('mainHome.text2img'), desc: t('mainHome.text2imgDesc'), path: '/image' },
+            { icon: Zap, title: t('mainHome.expand'), desc: t('mainHome.expandDesc'), path: '/image' },
+            { icon: Sparkles, title: t('mainHome.style'), desc: t('mainHome.styleDesc'), path: '/image' },
             { icon: FolderOpen, title: t('mainHome.works'), desc: t('mainHome.worksDesc'), path: '/favorites' },
           ].map((item) => (
             <button

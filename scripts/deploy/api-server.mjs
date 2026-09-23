@@ -501,6 +501,10 @@ async function handleBilling(req, res, pathname, method, url) {
       const body = await parseBody(req);
       const code = (body.code || "").trim().toUpperCase();
       if (!code) return sendJSON(res, 400, { error: "请输入兑换码" });
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.redeemCode(identity.sub, code)); }
+        catch (error) { return sendJSON(res, 400, { error: error.message || "兑换失败" }); }
+      }
       const record = billingCodes.find(c => c.code === code);
       if (!record) return sendJSON(res, 400, { error: "兑换码无效" });
       if (record.usedBy) return sendJSON(res, 400, { error: "兑换码已被使用" });
@@ -536,6 +540,7 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/billing/invite — 我的邀请
     if (pathname === "/api/billing/invite" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.inviteInfo(identity.sub));
       const invited = billingUsers.filter(u => u.invitedBy === me.id);
       return sendJSON(res, 200, {
         inviteCode: me.inviteCode,
@@ -571,6 +576,13 @@ async function handleBilling(req, res, pathname, method, url) {
       }
       if (pathname === "/api/admin/billing/orders" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminOrders());
+      }
+      if (pathname === "/api/admin/billing/codes" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminListCodes());
+      }
+      if (pathname === "/api/admin/billing/codes" && method === "POST") {
+        try { return sendJSON(res, 200, await postgresBilling.adminCreateCodes(await parseBody(req))); }
+        catch (error) { return sendJSON(res, 400, { error: error.message || "兑换码生成失败" }); }
       }
     }
 

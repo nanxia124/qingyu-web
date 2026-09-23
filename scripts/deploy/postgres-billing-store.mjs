@@ -87,6 +87,12 @@ export async function createPostgresBillingStore() {
         values($1,$2) on conflict(appwrite_user_id) do update set email=excluded.email,updated_at=now()
         returning id,appwrite_user_id,email`, [appwriteUserId, email || ""]);
       const userId = userResult.rows[0].id;
+      if (inviteCode) {
+        await client.query(`update app.user_accounts target set invited_by_user_id=inviter.id
+          from app.user_accounts inviter
+          where target.id=$1 and target.invited_by_user_id is null and inviter.id<>target.id
+            and ('QY-' || upper(substr(md5(inviter.appwrite_user_id),1,8)))=upper($2)`, [userId, String(inviteCode).trim()]);
+      }
       const ws = await client.query(`insert into app.workspaces(type,owner_user_id,name) values('personal',$1,$2)
         on conflict(owner_user_id) where type='personal' and status <> 'deleted' do update set updated_at=now() returning id`, [userId, email || "个人空间"]);
       const workspaceId = ws.rows[0].id;
@@ -180,9 +186,10 @@ export async function createPostgresBillingStore() {
       (select count(*) from app.orders where status='paid') paid_order_count,
       coalesce((select sum(amount_minor) from app.orders where status='paid'),0) revenue_minor,
       coalesce((select sum(amount_minor) from app.orders where status='paid' and paid_at >= current_date),0) today_revenue_minor,
-      coalesce((select sum(q.available) from app.quota_accounts q),0) total_balance`);
+      coalesce((select sum(q.available) from app.quota_accounts q),0) total_balance,
+      (select count(*) from app.redeem_codes where used_by is null and (expires_at is null or expires_at > now())) unused_codes`);
     const x = r.rows[0];
-    return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: Number(x.today_revenue_minor), totalBalance: Number(x.total_balance), unusedCodes: 0 };
+    return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: Number(x.today_revenue_minor), totalBalance: Number(x.total_balance), unusedCodes: Number(x.unused_codes) };
   }
 
   async function adminUsers() {
@@ -225,6 +232,76 @@ export async function createPostgresBillingStore() {
       from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id
       left join lateral(select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true order by o.created_at desc limit 1000`);
     return r.rows.map(apiOrder);
+  }
+
+  async function inviteInfo(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const r = await pool.query(`select u.email,
+      coalesce((select sum(o.amount_minor) from app.orders o join app.workspaces w on w.id=o.workspace_id where w.owner_user_id=u.id and o.status='paid'),0) total_spent,
+      u.created_at from app.user_accounts u where u.invited_by_user_id=(select id from app.user_accounts where appwrite_user_id=$1) order by u.created_at desc`, [appwriteUserId]);
+    return { inviteCode: me.inviteCode, invitedCount: r.rowCount, invitedList: r.rows.map(x => ({ email: x.email || '', totalSpent: Number(x.total_spent), createdAt: new Date(x.created_at).getTime() })), rewardQuota: 0 };
+  }
+
+  async function redeemCode(appwriteUserId, rawCode) {
+    const code = String(rawCode || '').trim().toUpperCase();
+    if (!code) throw new Error('请输入兑换码');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select u.id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active' for update`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const found = await client.query(`select c.*,p.code plan_code,p.billing_interval,v.id plan_version_id,v.quota_snapshot from app.redeem_codes c left join app.plans p on p.id=c.plan_id left join app.plan_versions v on v.plan_id=p.id and v.version=p.version where c.code=$1 for update`, [code]);
+      if (!found.rowCount) throw new Error('兑换码无效');
+      const item = found.rows[0];
+      if (item.used_by) throw new Error('兑换码已被使用');
+      if (item.expires_at && new Date(item.expires_at) <= new Date()) throw new Error('兑换码已过期');
+      const account = await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict(workspace_id,quota_code) do update set updated_at=now() returning id`, [user.rows[0].workspace_id]);
+      let granted = 0;
+      if (item.kind === 'membership') {
+        if (!item.plan_id || !item.plan_version_id) throw new Error('兑换码套餐配置不完整');
+        await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end)
+          values($1,$2,$3,'active',now(),now()+make_interval(days=>$4)) on conflict(workspace_id) do update set plan_id=excluded.plan_id,plan_version_id=excluded.plan_version_id,status='active',current_period_start=excluded.current_period_start,current_period_end=excluded.current_period_end,updated_at=now()`, [user.rows[0].workspace_id, item.plan_id, item.plan_version_id, item.billing_interval === 'year' ? 365 : 30]);
+        granted = Number(item.quota_snapshot?.monthly || 0);
+      } else granted = Number(item.denomination || 0);
+      if (granted > 0) {
+        await client.query(`update app.quota_accounts set granted=granted+$1,version=version+1,updated_at=now() where id=$2`, [granted, account.rows[0].id]);
+        await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata) values($1,$2,'grant',$3,$4,$5::jsonb)`, [account.rows[0].id, user.rows[0].workspace_id, granted, `redeem:${item.id}`, JSON.stringify({ redeem_code_id: item.id })]);
+      }
+      await client.query(`update app.redeem_codes set used_by=$1,used_at=now() where id=$2`, [user.rows[0].id, item.id]);
+      await client.query('commit');
+      return { success: true, user: publicUser(await getUser(appwriteUserId)) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function adminListCodes() {
+    const r = await pool.query(`select c.id,c.code,c.kind,c.denomination,c.batch,c.expires_at,c.used_at,u.appwrite_user_id used_by,c.created_at,p.code plan_id from app.redeem_codes c left join app.user_accounts u on u.id=c.used_by left join app.plans p on p.id=c.plan_id order by c.created_at desc limit 5000`);
+    return r.rows.map(x => ({ id: x.id, code: x.code, kind: x.kind, denomination: Number(x.denomination), planId: x.plan_id || '', usedBy: x.used_by || '', usedAt: x.used_at ? new Date(x.used_at).getTime() : 0, batch: x.batch || '', createdAt: new Date(x.created_at).getTime(), expiredAt: x.expires_at ? new Date(x.expires_at).getTime() : 0 }));
+  }
+
+  async function adminCreateCodes(body = {}) {
+    const count = Math.min(Math.max(1, Number(body.count || 1)), 1000);
+    const kind = body.kind === 'membership' ? 'membership' : 'quota';
+    const denomination = Number(body.denomination || 0);
+    const batch = 'B' + Date.now().toString(36);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      let planId = null;
+      if (kind === 'membership') {
+        const plan = await client.query(`select id from app.plans where code=$1 and status='active'`, [body.planId || 'pro']);
+        if (!plan.rowCount) throw new Error('套餐不存在');
+        planId = plan.rows[0].id;
+      } else if (!Number.isFinite(denomination) || denomination <= 0) throw new Error('兑换额度必须大于0');
+      const codes = [];
+      for (let i = 0; i < count; i++) {
+        const code = 'QY-' + crypto.randomBytes(9).toString('hex').toUpperCase().match(/.{1,6}/g).join('-');
+        await client.query(`insert into app.redeem_codes(code,kind,denomination,plan_id,batch,expires_at) values($1,$2,$3,$4,$5,$6)`, [code, kind, kind === 'quota' ? denomination : 0, planId, batch, body.days ? new Date(Date.now() + Number(body.days) * 86400000) : null]);
+        codes.push(code);
+      }
+      await client.query('commit');
+      return { count: codes.length, batch, codes };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function listTeams(appwriteUserId) {
@@ -446,5 +523,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

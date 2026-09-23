@@ -23,6 +23,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [reloadSeq, setReloadSeq] = useState(0)
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -34,6 +35,32 @@ export default function AssetsPage() {
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [tab, keyword, reloadSeq])
+
+  // 列表中的图片从服务器重新读取，保证换设备后仍能看到同一份资产。
+  useEffect(() => {
+    let cancelled = false
+    const urls: Record<string, string> = {}
+    const imageAssets = assets.filter((asset) => asset.type === 'image').slice(0, 24)
+    if (!imageAssets.length) {
+      setPreviewUrls({})
+      return () => { cancelled = true }
+    }
+    void Promise.all(imageAssets.map(async (asset) => {
+      try {
+        const blob = await api.fetchAssetBlob(asset.id)
+        if (!cancelled) urls[asset.id] = URL.createObjectURL(blob)
+      } catch {
+        // 单个文件读取失败不影响其余资产显示。
+      }
+    })).then(() => {
+      if (!cancelled) setPreviewUrls(urls)
+      else Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+    })
+    return () => {
+      cancelled = true
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [assets])
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -94,7 +121,7 @@ export default function AssetsPage() {
         {loading ? <div className="col-span-full rounded-xl bg-card p-12 text-center text-[14px] text-text-muted">正在读取资产…</div> : filtered.map((a) => (
           <div key={a.id} className="group relative overflow-hidden rounded-xl bg-card transition-colors hover:bg-card-hover">
             <div className="flex aspect-square items-center justify-center">
-              <FolderOpen className="size-8 text-text-muted" />
+              {previewUrls[a.id] ? <img src={previewUrls[a.id]} alt={a.name} className="size-full object-cover" loading="lazy" /> : <FolderOpen className="size-8 text-text-muted" />}
             </div>
             <div className="p-3">
               <div className="truncate text-[14px] text-text">{a.name}</div>

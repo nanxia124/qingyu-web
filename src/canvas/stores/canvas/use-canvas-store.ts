@@ -45,11 +45,46 @@ type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 
+function billingToken() {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem("billing_token") || window.localStorage.getItem("token") || "";
+}
+
+async function fetchRemoteCanvasState(): Promise<PersistedCanvasState | null> {
+    const token = billingToken();
+    if (!token) return null;
+    try {
+        const response = await fetch("/api/canvas/projects", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json() as PersistedCanvasState;
+        return Array.isArray(data.projects) ? data : null;
+    } catch {
+        return null;
+    }
+}
+
+function syncCanvasState(value: PersistedCanvasState) {
+    const token = billingToken();
+    if (!token) return;
+    void fetch("/api/canvas/projects/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(value),
+    }).catch(() => undefined);
+}
+
 const canvasStorage: PersistStorage<CanvasStore> = {
     getItem: async (name) => {
         const value = await localForageStorage.getItem(name);
-        if (!value) return null;
+        if (!value) {
+            const remote = await fetchRemoteCanvasState();
+            return remote ? { state: remote as CanvasStore, version: 0 } : null;
+        }
         const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
+        const remote = await fetchRemoteCanvasState();
+        if (remote && remote.projects.length > 0) {
+            return { ...parsed, state: { ...parsed.state, ...remote } };
+        }
         queuedPersistState = parsed.state as PersistedCanvasState;
         return parsed;
     },
@@ -61,6 +96,7 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         saveTimer = setTimeout(() => {
             saveTimer = null;
             void localForageStorage.setItem(name, JSON.stringify(value));
+            syncCanvasState(nextState);
         }, 400);
     },
     removeItem: (name) => localForageStorage.removeItem(name),

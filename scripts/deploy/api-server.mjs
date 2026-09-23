@@ -966,6 +966,16 @@ const server = http.createServer(async (req, res) => {
       } catch (error) { return sendJSON(res, 400, { error: error.message || "同步操作失败" }); }
     }
 
+    if (postgresBilling && (pathname === "/api/canvas/projects" || pathname === "/api/canvas/projects/snapshot")) {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try {
+        if (pathname === "/api/canvas/projects" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listCanvasSnapshots(identity.sub));
+        if (pathname === "/api/canvas/projects/snapshot" && req.method === "POST") return sendJSON(res, 200, await postgresBilling.saveCanvasSnapshot(identity.sub, await parseBody(req)));
+        return sendJSON(res, 404, { error: "画布接口不存在" });
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "画布保存失败" }); }
+    }
+
     if (await handleAssets(req, res, pathname, req.method, url)) {
       return;
     }

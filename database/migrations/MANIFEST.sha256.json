@@ -23,5 +23,6 @@
   "0022_single_online_session.sql": "e3690703b05bbc62fe7229562e79b6467018a4e4adc683866abe3edc2ffb9ea0",
   "0023_platform_api_keys.sql": "0f6c12021c9f533200b87353d66d86484748fad4b036b7af0710564be853e180",
   "0024_platform_api_model_length.sql": "877dd1e57bbbdc326e4fd8b3f9ee9457f89b57f25fad148ecec49f74f3e5ac98",
-  "0025_encrypt_platform_api_keys.sql": "32b5863da72049703c63877b68a2688653f698122105f2cd1d126e17d4e4f493"
+  "0025_encrypt_platform_api_keys.sql": "32b5863da72049703c63877b68a2688653f698122105f2cd1d126e17d4e4f493",
+  "0026_canvas_external_keys.sql": "fb0e2dfcb0e6dcce6128fa45ea3850feba1f96e752edffb63d6b8d71609bfdc6"
 }

@@ -485,6 +485,80 @@ export async function createPostgresBillingStore() {
     return { api_key: r.rows[0].api_key_ciphertext ? decryptApiKey(r.rows[0].api_key_ciphertext) : String(r.rows[0].api_key || '') };
   }
 
+  async function saveCanvasSnapshot(appwriteUserId, snapshot = {}) {
+    const projects = Array.isArray(snapshot.projects) ? snapshot.projects.slice(0, 100) : [];
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+      if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+      const { user_id: userId, workspace_id: workspaceId } = owner.rows[0];
+      for (const raw of projects) {
+        const externalKey = String(raw.id || '').trim().slice(0, 160);
+        if (!externalKey) continue;
+        const project = await client.query(`insert into app.canvas_projects(workspace_id,created_by,external_key,title,background_mode,show_image_info,viewport,status,updated_at)
+          values($1,$2,$3,$4,$5,$6,$7::jsonb,'active',now())
+          on conflict(workspace_id,external_key) do update set title=excluded.title,background_mode=excluded.background_mode,show_image_info=excluded.show_image_info,viewport=excluded.viewport,status='active',deleted_at=null,version=app.canvas_projects.version+1,updated_at=now()
+          returning id`, [workspaceId, userId, externalKey, String(raw.title || '未命名画布').slice(0, 240), String(raw.backgroundMode || 'lines').slice(0, 32), Boolean(raw.showImageInfo), JSON.stringify(raw.viewport || { x: 0, y: 0, k: 1 })]);
+        const projectId = project.rows[0].id;
+        await client.query(`delete from app.canvas_connections where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
+        await client.query(`delete from app.canvas_chat_sessions where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
+        await client.query(`delete from app.canvas_nodes where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
+        const nodeIds = new Map();
+        for (const node of Array.isArray(raw.nodes) ? raw.nodes.slice(0, 2000) : []) {
+          const nodeKey = String(node.id || '').trim().slice(0, 160);
+          if (!nodeKey) continue;
+          const inserted = await client.query(`insert into app.canvas_nodes(project_id,workspace_id,node_key,node_type,title,position,width,height,metadata) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb) returning id`, [projectId, workspaceId, nodeKey, String(node.type || 'text').slice(0, 120), String(node.title || '').slice(0, 240), JSON.stringify(node.position || { x: 0, y: 0 }), Math.max(1, Number(node.width) || 1), Math.max(1, Number(node.height) || 1), JSON.stringify(node.metadata || {})]);
+          nodeIds.set(nodeKey, inserted.rows[0].id);
+        }
+        for (const connection of Array.isArray(raw.connections) ? raw.connections.slice(0, 5000) : []) {
+          const connectionKey = String(connection.id || '').trim().slice(0, 160);
+          const fromId = nodeIds.get(String(connection.fromNodeId || ''));
+          const toId = nodeIds.get(String(connection.toNodeId || ''));
+          if (!connectionKey || !fromId || !toId || fromId === toId) continue;
+          await client.query(`insert into app.canvas_connections(project_id,workspace_id,connection_key,from_node_id,to_node_id) values($1,$2,$3,$4,$5)`, [projectId, workspaceId, connectionKey, fromId, toId]);
+        }
+        for (const session of Array.isArray(raw.chatSessions) ? raw.chatSessions.slice(0, 100) : []) {
+          const sessionKey = String(session.id || '').trim().slice(0, 160);
+          if (!sessionKey) continue;
+          const inserted = await client.query(`insert into app.canvas_chat_sessions(project_id,workspace_id,session_key,title,created_by) values($1,$2,$3,$4,$5) returning id`, [projectId, workspaceId, sessionKey, String(session.title || '').slice(0, 240), userId]);
+          for (const message of Array.isArray(session.messages) ? session.messages.slice(0, 5000) : []) {
+            const messageKey = String(message.id || '').trim().slice(0, 160);
+            if (!messageKey) continue;
+            const allowedRole = ['user', 'assistant', 'system', 'tool', 'error'].includes(message.role) ? message.role : 'user';
+            await client.query(`insert into app.canvas_chat_messages(session_id,workspace_id,message_key,role,content,detail) values($1,$2,$3,$4,$5,$6::jsonb)`, [inserted.rows[0].id, workspaceId, messageKey, allowedRole, String(message.text || '').slice(0, 200000), JSON.stringify({ title: message.title || null, meta: message.meta || null, detail: message.detail || null, references: message.references || [] })]);
+          }
+        }
+        await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('canvas.project.saved','canvas_project',$1,$2,$3::jsonb)`, [projectId, workspaceId, JSON.stringify({ externalKey, nodeCount: nodeIds.size })]);
+      }
+      await client.query('commit');
+      return { saved: projects.length };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listCanvasSnapshots(appwriteUserId) {
+    const owner = await pool.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+    if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+    const workspaceId = owner.rows[0].workspace_id;
+    const projects = await pool.query(`select id,external_key,title,background_mode,show_image_info,viewport,created_at,updated_at from app.canvas_projects where workspace_id=$1 and status='active' order by updated_at desc limit 100`, [workspaceId]);
+    const result = [];
+    for (const project of projects.rows) {
+      const nodes = await pool.query(`select node_key,node_type,title,position,width,height,metadata from app.canvas_nodes where project_id=$1 and workspace_id=$2 order by created_at`, [project.id, workspaceId]);
+      const nodeMap = new Map(nodes.rows.map(x => [x.node_key, x]));
+      const nodeDbIds = await pool.query(`select id,node_key from app.canvas_nodes where project_id=$1 and workspace_id=$2`, [project.id, workspaceId]);
+      const idToKey = new Map(nodeDbIds.rows.map(x => [x.id, x.node_key]));
+      const connections = await pool.query(`select connection_key,from_node_id,to_node_id from app.canvas_connections where project_id=$1 and workspace_id=$2 order by created_at`, [project.id, workspaceId]);
+      const sessions = await pool.query(`select id,session_key,title,created_at,updated_at from app.canvas_chat_sessions where project_id=$1 and workspace_id=$2 order by created_at`, [project.id, workspaceId]);
+      const chatSessions = [];
+      for (const session of sessions.rows) {
+        const messages = await pool.query(`select message_key,role,content,detail,created_at from app.canvas_chat_messages where session_id=$1 and workspace_id=$2 order by created_at`, [session.id, workspaceId]);
+        chatSessions.push({ id: session.session_key, title: session.title, createdAt: new Date(session.created_at).toISOString(), updatedAt: new Date(session.updated_at).toISOString(), messages: messages.rows.map(x => ({ id: x.message_key, role: x.role, text: x.content, title: x.detail?.title || undefined, meta: x.detail?.meta || undefined, detail: x.detail?.detail || undefined, references: x.detail?.references || [] })) });
+      }
+      result.push({ id: project.external_key, title: project.title, createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString(), nodes: nodes.rows.map(x => ({ id: x.node_key, type: x.node_type, title: x.title, position: x.position, width: Number(x.width), height: Number(x.height), metadata: x.metadata || {} })), connections: connections.rows.map(x => ({ id: x.connection_key, fromNodeId: idToKey.get(x.from_node_id), toNodeId: idToKey.get(x.to_node_id) })).filter(x => x.fromNodeId && x.toNodeId), chatSessions, activeChatId: null, backgroundMode: project.background_mode, showImageInfo: project.show_image_info, viewport: project.viewport });
+    }
+    return { projects: result, deletedProjects: [] };
+  }
+
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
@@ -717,5 +791,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

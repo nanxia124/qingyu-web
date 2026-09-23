@@ -909,7 +909,15 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 401, { error: "用户名或密码错误" });
     }
 
-    // ===== 计费系统路由（客户 + 管理端计费）=====
+    // 新版业务 Token 带数据库会话编号；会话被撤销后立即拒绝后续请求。
+    const requestIdentity = getBillingIdentity(req);
+    if (postgresBilling && requestIdentity?.role === "customer" && requestIdentity.sid) {
+      if (!(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
+        return sendJSON(res, 401, { error: "登录会话已撤销，请重新登录" });
+      }
+    }
+
+    // ===== 计费系统路由（客户 + 管理端计费）===== 
     if (await handleBilling(req, res, pathname, req.method, url)) {
       return;
     }

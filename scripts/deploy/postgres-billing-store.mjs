@@ -559,6 +559,33 @@ export async function createPostgresBillingStore() {
     return { projects: result, deletedProjects: [] };
   }
 
+  async function saveAgentSnapshot(appwriteUserId, snapshot = {}) {
+    const externalThreadId = String(snapshot.threadId || '').trim().slice(0, 200);
+    if (!externalThreadId) return { saved: false };
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+      if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+      const { user_id: userId, workspace_id: workspaceId } = owner.rows[0];
+      const thread = await client.query(`insert into app.agent_threads(workspace_id,user_id,external_thread_id,title,workspace_path,status,updated_at) values($1,$2,$3,$4,$5,'active',now()) on conflict(workspace_id,external_thread_id) do update set title=coalesce(excluded.title,app.agent_threads.title),workspace_path=coalesce(excluded.workspace_path,app.agent_threads.workspace_path),status='active',updated_at=now() returning id`, [workspaceId, userId, externalThreadId, snapshot.title ? String(snapshot.title).slice(0, 240) : null, snapshot.workspacePath ? String(snapshot.workspacePath) : null]);
+      const threadId = thread.rows[0].id;
+      for (const item of Array.isArray(snapshot.messages) ? snapshot.messages.slice(-1000) : []) {
+        const itemId = String(item.itemId || item.id || '').trim().slice(0, 200);
+        if (!itemId) continue;
+        const role = ['user', 'assistant', 'system', 'tool', 'error'].includes(item.role) ? item.role : 'assistant';
+        await client.query(`insert into app.agent_messages(thread_id,workspace_id,external_item_id,role,content,attachments,canvas_references,usage) values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) on conflict(thread_id,external_item_id) do update set role=excluded.role,content=excluded.content,attachments=excluded.attachments,canvas_references=excluded.canvas_references,usage=excluded.usage`, [threadId, workspaceId, itemId, role, String(item.text || '').slice(0, 200000), JSON.stringify((item.attachments || []).map(({ dataUrl, ...safe }) => safe)), JSON.stringify(item.canvasReferences || []), JSON.stringify(item.usage || null)]);
+      }
+      for (const event of Array.isArray(snapshot.events) ? snapshot.events.slice(-1000) : []) {
+        const eventId = String(event.id || '').trim().slice(0, 200);
+        if (!eventId) continue;
+        await client.query(`insert into app.agent_event_logs(thread_id,workspace_id,external_event_id,event_type,payload) values($1,$2,$3,$4,$5::jsonb) on conflict(thread_id,external_event_id) where external_event_id is not null do update set event_type=excluded.event_type,payload=excluded.payload`, [threadId, workspaceId, eventId, String(event.title || 'agent.event').slice(0, 120), JSON.stringify({ text: String(event.text || '').slice(0, 200000), raw: event.raw || null })]);
+      }
+      await client.query('commit');
+      return { saved: true, threadId };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
@@ -791,5 +818,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

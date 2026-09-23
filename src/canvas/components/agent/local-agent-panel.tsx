@@ -174,6 +174,8 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const clearSkillSelection = useAgentSkillStore((state) => state.clearSelection);
     const skillCount = useAgentSkillStore((state) => state.skills.length);
     const messageCount = useAgentStore((state) => state.messages.length);
+    const agentMessages = useAgentStore((state) => state.messages);
+    const agentEventLogs = useAgentStore((state) => state.eventLogs);
     const canvasContextRef = useRef<AgentCanvasContext | null>(useAgentStore.getState().canvasContext);
     const confirmToolsRef = useRef(confirmTools);
     const pendingToolRef = useRef<AgentPendingToolCall | null>(null);
@@ -191,6 +193,27 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const threadOperationSequenceRef = useRef(0);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
+
+    // Agent 服务负责实时运行；业务库保存一份脱敏后的会话快照，保证换设备后仍有历史记录。
+    useEffect(() => {
+        if (!activeThreadId || typeof window === "undefined") return;
+        const billingToken = window.localStorage.getItem("billing_token") || window.localStorage.getItem("token");
+        if (!billingToken) return;
+        const timer = window.setTimeout(() => {
+            void fetch("/api/agent/snapshot", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${billingToken}` },
+                body: JSON.stringify({
+                    threadId: activeThreadId,
+                    title: threads.find((item) => item.id === activeThreadId)?.name || undefined,
+                    workspacePath,
+                    messages: agentMessages,
+                    events: agentEventLogs,
+                }),
+            }).catch(() => undefined);
+        }, 700);
+        return () => window.clearTimeout(timer);
+    }, [activeThreadId, agentEventLogs, agentMessages, threads, workspacePath]);
     useEffect(() => {
         let disposed = false;
         void acquireAgentClientId().then((clientId) => {

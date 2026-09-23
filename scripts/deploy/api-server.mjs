@@ -976,6 +976,13 @@ const server = http.createServer(async (req, res) => {
       } catch (error) { return sendJSON(res, 400, { error: error.message || "画布保存失败" }); }
     }
 
+    if (postgresBilling && pathname === "/api/agent/snapshot" && req.method === "POST") {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try { return sendJSON(res, 200, await postgresBilling.saveAgentSnapshot(identity.sub, await parseBody(req))); }
+      catch (error) { return sendJSON(res, 400, { error: error.message || "Agent 记录保存失败" }); }
+    }
+
     if (await handleAssets(req, res, pathname, req.method, url)) {
       return;
     }

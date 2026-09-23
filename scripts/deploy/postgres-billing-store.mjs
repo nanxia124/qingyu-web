@@ -249,7 +249,19 @@ export async function createPostgresBillingStore() {
   }
 
   async function listOrders(appwriteUserId) { const me = await getUser(appwriteUserId); if (!me) return []; const r = await pool.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id left join lateral(select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true where u.appwrite_user_id=$1 order by o.created_at desc`, [appwriteUserId]); return r.rows.map(apiOrder); }
-  async function listTransactions(appwriteUserId) { const me = await getUser(appwriteUserId); if (!me) return []; const r = await pool.query(`select l.id,l.amount,l.entry_type,l.idempotency_key,l.created_at from app.quota_ledger l where l.workspace_id=$1 order by l.created_at desc limit 200`, [me.workspace_id]); return r.rows.map(x => ({ id: x.id, userId: appwriteUserId, change: Number(x.amount) * (x.entry_type === "release" ? 1 : 1), type: x.entry_type, note: x.idempotency_key, createdAt: new Date(x.created_at).getTime() })); }
+  async function listTransactions(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) return [];
+    const r = await pool.query(`select l.id,l.amount,l.entry_type,l.idempotency_key,l.metadata,l.created_at from app.quota_ledger l where l.workspace_id=$1 order by l.created_at desc limit 200`, [me.workspace_id]);
+    return r.rows.map(x => {
+      const amount = Number(x.amount);
+      const explicitDelta = x.metadata && x.metadata.delta !== undefined ? Number(x.metadata.delta) : null;
+      const change = explicitDelta !== null && Number.isFinite(explicitDelta)
+        ? explicitDelta
+        : ['grant', 'refund', 'release'].includes(x.entry_type) ? amount : -amount;
+      return { id: x.id, userId: appwriteUserId, change, type: x.entry_type, note: x.metadata?.note || x.idempotency_key, createdAt: new Date(x.created_at).getTime() };
+    });
+  }
 
   async function adminStats() {
     const r = await pool.query(`select

@@ -113,6 +113,12 @@ export async function createPostgresBillingStore() {
       if (!user.rowCount) throw new Error('用户不存在，请重新登录');
       const device = await client.query(`insert into app.user_devices(user_id,installation_id,display_name,client_type,os_family,browser_family,last_seen_at)
         values($1,$2,$3,$4,$5,$6,now()) on conflict(user_id,installation_id) do update set display_name=excluded.display_name,client_type=excluded.client_type,os_family=excluded.os_family,browser_family=excluded.browser_family,last_seen_at=now(),archived_at=null returning id`, [user.rows[0].id, installationId, String(info.displayName || '网页设备').slice(0,120), String(info.clientType || 'web').slice(0,32), String(info.osFamily || 'unknown').slice(0,64), String(info.browserFamily || 'unknown').slice(0,64)]);
+      const existing = await client.query(`select id,device_id,expires_at from app.user_sessions where user_id=$1 and device_id=$2 and admission_status='active' and expires_at > now() order by created_at desc limit 1`, [user.rows[0].id, device.rows[0].id]);
+      if (existing.rowCount) {
+        await client.query(`update app.user_sessions set last_seen_at=now() where id=$1`, [existing.rows[0].id]);
+        await client.query('commit');
+        return { id: existing.rows[0].id, deviceId: existing.rows[0].device_id, installationId, expiresAt: new Date(existing.rows[0].expires_at).toISOString(), maxActiveSessions: Number(user.rows[0].max_active_sessions || 5) };
+      }
       const active = await client.query(`select id from app.user_sessions where user_id=$1 and admission_status in ('pending','active') and expires_at > now() order by created_at desc`, [user.rows[0].id]);
       const keep = Math.max(1, Number(user.rows[0].max_active_sessions || 5) - 1);
       for (const old of active.rows.slice(keep)) {

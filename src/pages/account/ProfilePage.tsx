@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { ApiError } from "@/lib/api";
 
 export default function ProfilePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate();
   const { user, updateProfile, fetchProfile } = useAuthStore();
   const [name, setName] = useState("");
@@ -25,13 +27,13 @@ export default function ProfilePage() {
 
     try {
       await updateProfile({ name });
-      setMessage({ type: "success", text: "资料已更新" });
+      setMessage({ type: "success", text: t("pages.account.profile.updated") });
       fetchProfile();
     } catch (err: any) {
       if (err instanceof ApiError) {
         setMessage({ type: "error", text: err.message });
       } else {
-        setMessage({ type: "error", text: "更新失败，请稍后重试" });
+        setMessage({ type: "error", text: t("pages.account.profile.updateFailed") });
       }
     } finally {
       setSaving(false);
@@ -41,14 +43,14 @@ export default function ProfilePage() {
   if (!user) {
     return (
       <div className="flex items-center justify-center h-full text-text-muted">
-        请先登录
+        t("pages.account.profile.loginFirst")
       </div>
     );
   }
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-text mb-6">个人资料</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">{t("pages.account.profile.title")}</h1>
 
       {message && (
         <div
@@ -73,34 +75,34 @@ export default function ProfilePage() {
               type="button"
               className="px-4 py-2 text-sm rounded-lg bg-secondary text-text hover:bg-surface-hover transition-colors"
             >
-              上传头像
+              {t("pages.account.profile.uploadAvatar")}
             </button>
-            <p className="text-xs text-text-muted mt-1">支持 JPG、PNG，最大 2MB</p>
+            <p className="text-xs text-text-muted mt-1">{t("pages.account.profile.avatarHint")}</p>
           </div>
         </div>
 
         {/* 昵称 */}
         <div>
-          <label className="block text-sm font-medium text-text mb-2">昵称</label>
+          <label className="block text-sm font-medium text-text mb-2">{t("pages.account.profile.nickname")}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
-            placeholder="请输入昵称"
+            placeholder={t("pages.account.profile.nicknamePh")}
           />
         </div>
 
         {/* 邮箱 */}
         <div>
-          <label className="block text-sm font-medium text-text mb-2">邮箱</label>
+          <label className="block text-sm font-medium text-text mb-2">{t("pages.account.profile.email")}</label>
           <input
             type="email"
             value={email}
             disabled
             className="w-full px-4 py-3 rounded-lg bg-card border border-border text-text-muted cursor-not-allowed"
           />
-          <p className="text-xs text-text-muted mt-1">邮箱用于登录，暂不支持修改</p>
+          <p className="text-xs text-text-muted mt-1">{t("pages.account.profile.emailHint")}</p>
         </div>
 
         {/* 提交 */}
@@ -110,25 +112,25 @@ export default function ProfilePage() {
             disabled={saving}
             className="px-6 py-3 rounded-lg bg-[#5051F8] text-white font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
-            {saving ? "保存中..." : "保存"}
+            {saving ? t("pages.account.profile.saving") : t("pages.account.profile.save")}
           </button>
         </div>
       </form>
 
       {/* 账号安全 */}
       <div className="mt-8 pt-6 border-t border-border">
-        <h2 className="text-lg font-semibold text-text mb-4">账号安全</h2>
+        <h2 className="text-lg font-semibold text-text mb-4">{t("pages.account.profile.security")}</h2>
         <div className="flex items-center justify-between p-4 rounded-lg bg-secondary">
           <div>
-            <p className="text-text font-medium">修改密码</p>
-            <p className="text-xs text-text-muted mt-1">定期更换密码以保障账号安全</p>
+            <p className="text-text font-medium">{t("pages.account.profile.changePassword")}</p>
+            <p className="text-xs text-text-muted mt-1">{t("pages.account.profile.passwordHint")}</p>
           </div>
           <button
             type="button"
             onClick={() => navigate("/account/security")}
             className="px-4 py-2 text-sm rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
           >
-            去修改
+            {t("pages.account.profile.goChange")}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api, ApiError } from "@/lib/api";
 import { User, Crown, Shield, Mail, MoreHorizontal } from "lucide-react";
@@ -12,6 +13,7 @@ interface Member {
 }
 
 export default function TeamMembersPage() {
+  const { t } = useTranslation()
   const { currentTeam } = useAuthStore();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,14 +49,14 @@ export default function TeamMembersPage() {
 
     try {
       await api.post(`/teams/${currentTeam?.id}/invite`, { email: inviteEmail });
-      setMessage({ type: "success", text: "邀请已发送" });
+      setMessage({ type: "success", text: t("pages.team.members.inviteSent") });
       setShowInvite(false);
       setInviteEmail("");
     } catch (err: any) {
       if (err instanceof ApiError) {
         setMessage({ type: "error", text: err.message });
       } else {
-        setMessage({ type: "error", text: "邀请失败，请稍后重试" });
+        setMessage({ type: "error", text: t("pages.team.members.inviteFailed") });
       }
     } finally {
       setInviting(false);
@@ -75,18 +77,18 @@ export default function TeamMembersPage() {
   const getRoleText = (role: string) => {
     switch (role) {
       case "owner":
-        return "所有者";
+        return t("pages.team.members.owner");
       case "admin":
-        return "管理员";
+        return t("pages.team.members.admin");
       default:
-        return "成员";
+        return t("pages.team.members.member");
     }
   };
 
   if (!currentTeam) {
     return (
       <div className="flex items-center justify-center h-full text-text-muted">
-        请先选择一个团队
+        t("pages.team.members.selectFirst")
       </div>
     );
   }
@@ -95,7 +97,7 @@ export default function TeamMembersPage() {
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-text">团队成员</h1>
+          <h1 className="text-2xl font-bold text-text">{t("pages.team.members.title")}</h1>
           <p className="text-sm text-text-muted mt-1">{currentTeam.name}</p>
         </div>
         <button
@@ -103,7 +105,7 @@ export default function TeamMembersPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
         >
           <Mail size={16} />
-          邀请成员
+          邀请t("pages.team.members.member")
         </button>
       </div>
 
@@ -126,18 +128,18 @@ export default function TeamMembersPage() {
             className="w-full max-w-md rounded-2xl bg-card p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-bold text-text mb-4">邀请成员</h2>
+            <h2 className="text-lg font-bold text-text mb-4">{t("pages.team.members.inviteTitle")}</h2>
             <form onSubmit={handleInvite}>
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="输入对方邮箱"
+                placeholder={t("pages.team.members.emailPh")}
                 autoFocus
                 className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none mb-4"
               />
               <p className="text-xs text-text-muted mb-4">
-                对方将收到邀请邮件，接受后加入团队
+                {t("pages.team.members.inviteHint")}
               </p>
               <div className="flex justify-end gap-3">
                 <button
@@ -152,7 +154,7 @@ export default function TeamMembersPage() {
                   disabled={inviting}
                   className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
-                  {inviting ? "发送中..." : "发送邀请"}
+                  {inviting ? t("pages.team.members.sending") : t("pages.team.members.sendInvite")}
                 </button>
               </div>
             </form>
@@ -160,18 +162,18 @@ export default function TeamMembersPage() {
         </div>
       )}
 
-      {/* 成员列表 */}
+      {/* t("pages.team.members.member")列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-text-muted">加载中...</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.team.members.loading")}</div>
         ) : (
           <table className="w-full">
             <thead className="bg-card">
               <tr>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">成员</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">角色</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">加入时间</th>
-                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">操作</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.member")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.role")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.joinedAt")</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.action")</th>
               </tr>
             </thead>
             <tbody>

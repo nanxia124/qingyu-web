@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api } from "@/lib/api";
 import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
@@ -14,6 +15,7 @@ interface Invoice {
 }
 
 export default function BillingPage() {
+  const { t } = useTranslation()
   const { currentTeam } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,11 +60,11 @@ export default function BillingPage() {
   const getStatusText = (status: string) => {
     switch (status) {
       case "paid":
-        return "已支付";
+        return t("pages.account.billing.paid");
       case "pending":
-        return "待支付";
+        return t("pages.account.billing.pending");
       case "failed":
-        return "支付失败";
+        return t("pages.account.billing.failed");
       default:
         return status;
     }
@@ -83,13 +85,13 @@ export default function BillingPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-text mb-6">账单与发票</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">{t("pages.account.billing.title")}</h1>
 
       {/* 当前订阅 */}
       <div className="bg-card rounded-xl border border-border p-6 mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-medium text-text">当前订阅</h2>
+            <h2 className="text-lg font-medium text-text">{t("pages.account.billing.currentSub")}</h2>
             <p className="text-sm text-text-muted mt-1">
               {currentTeam?.plan || "免费版"} · 下次续费：2026-10-01
             </p>
@@ -98,7 +100,7 @@ export default function BillingPage() {
             onClick={handleClickUpgrade}
             className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
           >
-            升级计划
+            {t("pages.account.billing.upgrade")}
           </button>
         </div>
       </div>
@@ -106,22 +108,22 @@ export default function BillingPage() {
       {/* 发票列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-medium text-text">历史发票</h2>
+          <h2 className="text-lg font-medium text-text">{t("pages.account.billing.history")}</h2>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-text-muted">加载中...</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.account.billing.loading")}</div>
         ) : invoices.length === 0 ? (
-          <div className="p-8 text-center text-text-muted">暂无发票记录</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.account.billing.noInvoices")}</div>
         ) : (
           <table className="w-full">
             <thead className="bg-card">
               <tr>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">发票号</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">金额</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">状态</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">日期</th>
-                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">操作</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.account.billing.invNo")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.account.billing.amount")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.account.billing.status")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.account.billing.date")</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">t("pages.account.billing.action")</th>
               </tr>
             </thead>
             <tbody>

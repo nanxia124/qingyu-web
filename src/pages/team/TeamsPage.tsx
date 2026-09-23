@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api, ApiError } from "@/lib/api";
 import { Plus, Users, Crown, Settings } from "lucide-react";
 
 export default function TeamsPage() {
+  const { t } = useTranslation()
   const { teams, fetchTeams, currentTeam, switchTeam } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
@@ -26,12 +28,12 @@ export default function TeamsPage() {
       await fetchTeams();
       setShowCreate(false);
       setNewTeamName("");
-      setMessage({ type: "success", text: "团队创建成功" });
+      setMessage({ type: "success", text: t("pages.team.teams.created") });
     } catch (err: any) {
       if (err instanceof ApiError) {
         setMessage({ type: "error", text: err.message });
       } else {
-        setMessage({ type: "error", text: "创建失败，请稍后重试" });
+        setMessage({ type: "error", text: t("pages.team.teams.createFailed") });
       }
     } finally {
       setCreating(false);
@@ -41,7 +43,7 @@ export default function TeamsPage() {
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-text">我的团队</h1>
+        <h1 className="text-2xl font-bold text-text">{t("pages.team.teams.title")}</h1>
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
@@ -70,13 +72,13 @@ export default function TeamsPage() {
             className="w-full max-w-md rounded-2xl bg-card p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-bold text-text mb-4">创建新团队</h2>
+            <h2 className="text-lg font-bold text-text mb-4">{t("pages.team.teams.createTitle")}</h2>
             <form onSubmit={handleCreateTeam}>
               <input
                 type="text"
                 value={newTeamName}
                 onChange={(e) => setNewTeamName(e.target.value)}
-                placeholder="团队名称"
+                placeholder={t("pages.team.teams.namePh")}
                 autoFocus
                 className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none mb-4"
               />
@@ -93,7 +95,7 @@ export default function TeamsPage() {
                   disabled={creating}
                   className="px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
-                  {creating ? "创建中..." : "创建"}
+                  {creating ? t("pages.team.teams.creating") : t("pages.team.teams.create")}
                 </button>
               </div>
             </form>
@@ -153,7 +155,7 @@ export default function TeamsPage() {
 
         {teams.length === 0 && (
           <div className="text-center py-12 text-text-muted">
-            还没有团队，点击右上角创建第一个团队
+            {t("pages.team.teams.empty")}
           </div>
         )}
       </div>

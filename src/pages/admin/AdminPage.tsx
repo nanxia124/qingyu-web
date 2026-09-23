@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import AdminLogin from "./AdminLogin";
-import AdminDashboard from "./AdminDashboard";
+import AdminConsole from "./AdminConsole";
 
 export default function AdminPage() {
     const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
@@ -9,5 +9,5 @@ export default function AdminPage() {
         return <AdminLogin onLogin={(t) => { setToken(t); }} />;
     }
 
-    return <AdminDashboard token={token} onLogout={() => { localStorage.removeItem("admin_token"); setToken(null); }} />;
+    return <AdminConsole token={token} onLogout={() => { localStorage.removeItem("admin_token"); setToken(null); }} />;
 }

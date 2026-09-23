@@ -306,6 +306,14 @@ textarea:focus, input:focus, select:focus {
   box-shadow: 0 0 0 1px var(--color-accent);
   border-radius: inherit;
 }
+/* 顶部搜索通过外层背景表示焦点，避免出现嵌套描边。 */
+input.home-search-input:focus {
+  box-shadow: none;
+}
+input.home-search-input:focus::placeholder {
+  opacity: 1;
+}
+
 /* 缩略图缩放滑块 */
 .thumb-scale-slider {
   -webkit-appearance: none;

@@ -42,8 +42,6 @@ export default function TeamsPage() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* 顶部占位：与生图页标签栏区域等高 */}
-      <div className="h-[62px] shrink-0" />
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="max-w-4xl mx-auto p-6 pt-0">
       <div className="flex items-center justify-between mb-6">

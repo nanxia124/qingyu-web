@@ -25,10 +25,6 @@ const SecurityPage = lazy(() => import('@/pages/account/SecurityPage'))
 const BillingPage = lazy(() => import('@/pages/account/BillingPage'))
 const TeamsPage = lazy(() => import('@/pages/team/TeamsPage'))
 const TeamMembersPage = lazy(() => import('@/pages/team/TeamMembersPage'))
-const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'))
-const AdminTenantsPage = lazy(() => import('@/pages/admin/AdminTenantsPage'))
-const AdminAuditsPage = lazy(() => import('@/pages/admin/AdminAuditsPage'))
-const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage'))
 
 // 画布模块原生集成（替代 iframe）：整体懒加载，首次进入 /canvas 才拉取画布 chunk
 const CanvasRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasRoute })))
@@ -89,6 +85,13 @@ export default function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/reset-password" element={lazyPage(<ResetPasswordPage />)} />
         <Route path="/admin-secret-8f3k2x7z" element={<AdminRoute>{lazyPage(<AdminPage />)}</AdminRoute>} />
+        <Route path="/admin" element={<Navigate to="/admin-secret-8f3k2x7z" replace />} />
+        {/* 旧后台地址保留兼容，但统一回到同一个登录和导航入口 */}
+        <Route path="/admin/users" element={<Navigate to="/admin-secret-8f3k2x7z?section=users" replace />} />
+        <Route path="/admin/tenants" element={<Navigate to="/admin-secret-8f3k2x7z?section=tenants" replace />} />
+        <Route path="/admin/audits" element={<Navigate to="/admin-secret-8f3k2x7z?section=audits" replace />} />
+        <Route path="/admin/billing" element={<Navigate to="/admin-secret-8f3k2x7z?section=billing" replace />} />
+        <Route path="/admin/monitor" element={<Navigate to="/admin-secret-8f3k2x7z?section=monitor" replace />} />
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/" element={lazyPage(<WorkbenchPage />)} />
           <Route path="/chat" element={lazyPage(<ChatPage />)} />
@@ -114,12 +117,6 @@ export default function App() {
           {/* 团队系统 */}
           <Route path="/teams" element={lazyPage(<TeamsPage />)} />
           <Route path="/teams/:id/members" element={lazyPage(<TeamMembersPage />)} />
-          {/* 管理后台 */}
-          <Route path="/admin/users" element={<AdminRoute>{lazyPage(<AdminUsersPage />)}</AdminRoute>} />
-          <Route path="/admin/tenants" element={<AdminRoute>{lazyPage(<AdminTenantsPage />)}</AdminRoute>} />
-          <Route path="/admin/audits" element={<AdminRoute>{lazyPage(<AdminAuditsPage />)}</AdminRoute>} />
-          <Route path="/admin/billing" element={<AdminRoute>{lazyPage(<AdminBillingPage />)}</AdminRoute>} />
-          <Route path="/admin/monitor" element={<AdminRoute>{lazyPage(<MonitorPage />)}</AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

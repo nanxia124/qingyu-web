@@ -35,6 +35,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { requestGeneration, requestEdit } from '@canvas/services/api/image'
 import type { ReferenceImage } from '@canvas/types/image'
+import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
@@ -144,23 +145,10 @@ function GeneratePanel() {
     }).catch(() => {})
   }
 
-  // 全局粘贴监听（提示词框除外）
-  // 拉取图片模型列表
+  // 配置同步后，模型选择器会从 useConfigStore 读取完整的图片模型列表。
   useEffect(() => {
-    if (!model && config.imageModel) setModel(config.imageModel)
-    fetch('/api/config/public')
-      .then((res) => res.json())
-      .then((channels: any[]) => {
-        const allModels = channels.flatMap((ch) => ch.model.split(',').map((m: string) => m.trim()))
-        // 过滤出图片模型
-        const imageModels = allModels.filter((m: string) =>
-          m.includes('image') || m.includes('gpt-image') || m.includes('nano-banana') || m.includes('grok-imagine') || m.includes('seedream') || m.includes('gemini.*image') || m.includes('qwen-image')
-        )
-        const unique = Array.from(new Set(imageModels))
-        if (unique.length && !model) setModel(unique[0])
-      })
-      .catch(() => {})
-  }, [])
+    if (config.imageModel) setModel(config.imageModel)
+  }, [config.imageModel])
 
   useEffect(() => {
     const handler = (e: ClipboardEvent) => {
@@ -1146,9 +1134,14 @@ export default function ImageToolsPage() {
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabId>('generate')
 
+  useEffect(() => {
+    // /image 不经过画布路由壳层，因此这里也要主动同步服务端公开模型配置。
+    void ensureServerConfig()
+  }, [])
+
   return (
     <div className="flex h-full flex-col bg-bg p-3">
-      <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-2">
+      <div className="flex shrink-0 items-center gap-1 px-3 pb-2">
         {tabs.map((tab) => (
           <button
             key={tab.id}

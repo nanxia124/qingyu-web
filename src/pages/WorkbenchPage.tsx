@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  Sparkles, Search, Bell, ChevronRight, Image as ImageIcon,
+  Sparkles, Image as ImageIcon,
   Zap, Globe, Wand2, Heart, MoreHorizontal, Plus,
-  Gift, Coins, Crown, FolderOpen,
+  FolderOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -42,7 +42,8 @@ const quickTools = [
 export default function WorkbenchPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [search, setSearch] = useState('')
+  const location = useLocation()
+  const search = new URLSearchParams(location.search).get('q') || ''
   const [activeCat, setActiveCat] = useState('all')
   const [activeFilter, setActiveFilter] = useState<'recommend' | 'latest'>('recommend')
   const [quickPrompt, setQuickPrompt] = useState('')
@@ -70,46 +71,7 @@ export default function WorkbenchPage() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* 顶部占位：与生图页标签栏区域等高 */}
-      <div className="h-[62px] shrink-0" />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {/* ── 顶栏 ── */}
-      <div className="shrink-0 px-6 pt-0">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-[480px]">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("mainHome.searchPlaceholder")}
-              className="h-9 w-full rounded-lg bg-card pl-9 pr-3 text-sm text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
-            />
-          </div>
-          <button className="flex size-9 items-center justify-center rounded-lg bg-card text-text-muted hover:text-text">
-            <Bell className="size-[18px]" />
-          </button>
-          {/* 三个快捷入口 */}
-          <button
-            onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
-          >
-            <Gift className="size-[14px]" /> {t('mainHome.invite')}
-          </button>
-          <button
-            onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
-          >
-            <Coins className="size-[14px]" /> {t('mainHome.points')}
-          </button>
-          <button
-            onClick={() => showToast(t('mainHome.soon'))}
-            className="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs text-text transition-colors hover:bg-surface-hover"
-          >
-            <Crown className="size-[14px]" /> {t('mainHome.vip')}
-          </button>
-        </div>
-      </div>
-
       {/* ── 快捷创作卡片 ── */}
       <div className="shrink-0 px-6 pt-5">
         <div className="grid grid-cols-4 gap-3">

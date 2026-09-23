@@ -410,11 +410,6 @@ export default function VideoPage() {
             className="flex h-full flex-col bg-bg p-3"
             style={{ "--accent": "#5051F8", "--accent-foreground": "#ffffff" } as CSSProperties}
         >
-            {/* 顶部占位：与生图页标签栏等高 */}
-            <div className="flex shrink-0 items-center px-3 pt-3 pb-2">
-                <div className="h-[30px]" />
-            </div>
-
             <div className="flex min-h-0 flex-1 gap-2">
             {/* ── 左栏 配置区 520px ── */}
             <div className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-xl bg-popover">

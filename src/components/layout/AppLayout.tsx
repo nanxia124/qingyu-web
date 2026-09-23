@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -16,7 +16,12 @@ import {
   Crown,
   Languages,
   ClipboardList,
+  Search,
+  Bell,
+  Gift,
+  Coins,
 } from 'lucide-react'
+import EnvironmentBadge from '@/components/EnvironmentBadge'
 import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
 import { useAuthStore } from '@/stores/useAuthStore'
@@ -265,7 +270,84 @@ export default function AppLayout() {
   )
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-bg">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-bg">
+      {/* 全局顶部栏：只放站点级功能，页面内部标签继续留在主内容区 */}
+      <header className="relative z-50 flex h-[56px] shrink-0 items-center gap-4 bg-nav-bg px-3">
+        <div className="relative flex h-[44px] w-[220px] shrink-0 items-center gap-[10px]">
+          <button
+            onClick={() => { const next = !expanded; setExpanded(next); localStorage.setItem('sidebar-expanded', String(next)) }}
+            className="group relative flex size-[34px] shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-nav-hover"
+            title={expanded ? '收起侧栏' : '展开侧栏'}
+          >
+            <QingyuLogoIcon className="absolute h-[28px] w-[28px] shrink-0 text-text transition-all duration-200 group-hover:opacity-0 group-hover:scale-75" />
+            {expanded ? <PanelLeftClose size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" /> : <PanelLeftOpen size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" />}
+          </button>
+          <span className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap">
+            <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
+          </span>
+          <span className="absolute left-[160px] top-1/2 -translate-y-1/2"><EnvironmentBadge /></span>
+        </div>
+        {location.pathname === '/' && (
+          <div className="hidden min-w-0 max-w-[560px] flex-1 md:flex">
+            <label className="flex h-9 w-full items-center gap-2 rounded-xl bg-secondary px-3 text-text-muted transition-colors focus-within:bg-surface-hover">
+              <Search size={16} className="shrink-0" />
+              <input
+                value={new URLSearchParams(location.search).get('q') || ''}
+                onChange={(e) => navigate(e.target.value ? `/?q=${encodeURIComponent(e.target.value)}` : '/')}
+                className="home-search-input h-full min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
+                placeholder="搜索灵感、作品、教程..."
+                aria-label="全局搜索"
+              />
+            </label>
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text" title="通知"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button>
+          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
+          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
+          <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />会员中心</button>
+          {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
+          <div className="relative">
+            <button
+              onClick={() => (isLoggedIn ? setAccountMenuOpen((v) => !v) : openAuthModal())}
+              title={t("nav.my")}
+              aria-expanded={isLoggedIn ? accountMenuOpen : undefined}
+              className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text"
+            >
+              <User size={14} />
+              <span className="whitespace-nowrap">{t('nav.my')}</span>
+            </button>
+            {isLoggedIn && accountMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 z-50 w-[160px] rounded-xl bg-card p-1 shadow-xl">
+                {[
+                  { label: '个人中心', to: '/account/profile' },
+                  { label: '账单', to: '/account/billing' },
+                  { label: '订阅', to: '/subscription' },
+                  { label: '钱包', to: '/wallet' },
+                  { label: '反馈', to: '/feedback' },
+                  { label: '设置', to: '/settings' },
+                ].map((item) => (
+                  <button
+                    key={item.to}
+                    onClick={() => { setAccountMenuOpen(false); navigate(item.to) }}
+                    className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-text transition-colors hover:bg-secondary"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="my-1 h-1" />
+                <button
+                  onClick={() => { setAccountMenuOpen(false); handleLogout() }}
+                  className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-red-400 transition-colors hover:bg-secondary"
+                >
+                  退出登录
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      <div className="flex min-h-0 flex-1">
       {/* ── 左侧导航栏 ── */}
       <aside
         className={cn(
@@ -273,40 +355,6 @@ export default function AppLayout() {
           sidebarWidth,
         )}
       >
-        {/* Logo 区：点 LOGO 切换折叠/展开，悬浮时变成折叠按钮图标 */}
-        <div className="mt-1 flex h-[44px] shrink-0 items-center gap-[10px] px-2">
-          <button
-            onClick={() => { const next = !expanded; setExpanded(next); localStorage.setItem('sidebar-expanded', String(next)) }}
-            className="group relative flex size-[34px] shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-nav-hover"
-            title={expanded ? '收起侧栏' : '展开侧栏'}
-          >
-            {/* 默认：小怪兽 LOGO */}
-            <QingyuLogoIcon
-              className="absolute h-[28px] w-[28px] shrink-0 text-text transition-all duration-200 group-hover:opacity-0 group-hover:scale-75"
-            />
-            {/* 悬浮：折叠/展开箭头图标 */}
-            {expanded ? (
-              <PanelLeftClose
-                size={18}
-                className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100"
-              />
-            ) : (
-              <PanelLeftOpen
-                size={18}
-                className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100"
-              />
-            )}
-          </button>
-          <span
-            className={cn(
-              'flex h-8 items-center overflow-hidden whitespace-nowrap transition-all duration-200 ease-out',
-              expanded ? 'w-[104px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
-            )}
-          >
-            <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
-          </span>
-        </div>
-
         {/* 主导航 */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden px-0 pt-0 pb-2">
           {navItems.map((item) =>
@@ -319,7 +367,7 @@ export default function AppLayout() {
           </div>
         </nav>
 
-        {/* 底部：主题切换 + 登录/退出登录 */}
+        {/* 底部：主题切换 + 语言切换 */}
         <div className="shrink-0 border-t border-border px-2 py-2">
           {/* 浅色 / 深色 切换 */}
           <button
@@ -378,52 +426,6 @@ export default function AppLayout() {
             )}
           </div>
 
-          {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
-          <div className="relative">
-            <button
-              onClick={() => (isLoggedIn ? setAccountMenuOpen((v) => !v) : openAuthModal())}
-              title={t("nav.my")}
-              className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
-            >
-              <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
-              <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
-                <User className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
-              </span>
-              {expanded && (
-                <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
-                  {t('nav.my')}
-                </span>
-              )}
-            </button>
-
-            {isLoggedIn && accountMenuOpen && (
-              <div className="absolute left-0 bottom-full mb-2 z-50 w-[160px] rounded-xl border border-border bg-card p-1 shadow-xl">
-                {[
-                  { label: '个人中心', to: '/account/profile' },
-                  { label: '账单', to: '/account/billing' },
-                  { label: '订阅', to: '/subscription' },
-                  { label: '钱包', to: '/wallet' },
-                  { label: '反馈', to: '/feedback' },
-                  { label: '设置', to: '/settings' },
-                ].map((item) => (
-                  <button
-                    key={item.to}
-                    onClick={() => { setAccountMenuOpen(false); navigate(item.to) }}
-                    className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-text transition-colors hover:bg-secondary"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-                <div className="my-1 border-t border-border" />
-                <button
-                  onClick={() => { setAccountMenuOpen(false); handleLogout() }}
-                  className="flex w-full items-center rounded-lg px-3 py-2 text-[13px] text-red-400 transition-colors hover:bg-secondary"
-                >
-                  退出登录
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </aside>
 
@@ -442,6 +444,7 @@ export default function AppLayout() {
         >
           <Outlet />
         </main>
+      </div>
       </div>
 
       {/* 登录弹窗（全局：底部登录按钮、受保护导航、各页生成按钮均可触发） */}

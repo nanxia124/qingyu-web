@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Video stüdyosu",
+      promptPlaceholder: "Kamera hareketini anlat…",
+      references: "Referans görseller",
+      videoReferences: "Referans videolar",
+      model: "Model",
+      ratio: "Oran",
+      quality: "Kalite",
+      size: "Boyut",
+      duration: "Süre",
+      mode: "Mod",
+      clear: "Temizle",
+      upload: "Yükle",
+      generate: "Üret",
+      results: "Sonuçlar",
+      download: "İndir",
+      saveAsset: "Varlıklara kaydet",
+    },
+    canvas: {
+      library: "Tuval kitaplığı",
+      projects: "Tuvallerim",
+      create: "Yeni tuval",
+      empty: "Tuval yok",
+      undo: "Geri al",
+      redo: "Yinele",
+      resetView: "Görünümü sıfırla",
+      home: "Ana sayfa",
+      docs: "Belgeler",
+      toolbar: {
+        select: "Seç",
+        pan: "Taşı",
+        upload: "Varlık yükle",
+        clear: "Tuvali temizle",
+        themeMode: "Tema",
+        light: "Açık",
+        dark: "Koyu",
+      },
+      project: {
+        rename: "Yeniden adlandır",
+        delete: "Sil",
+        export: "Dışa aktar",
+      },
+      createMenu: {
+        close: "Kapat",
+      },
+      node: {
+        untitled: "Adsız düğüm",
+        generate: "Üret",
+        retry: "Tekrar dene",
+        renameHint: "Yeniden adlandırmak için çift tıkla",
+      },
+    },
     workbench: {
       logs: "Geçmiş",
       settings: "Ayarlar",

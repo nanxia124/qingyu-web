@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "動画スタジオ",
+      promptPlaceholder: "カメラの動き・動作・雰囲気を説明…",
+      references: "参照画像",
+      videoReferences: "参照動画",
+      model: "モデル",
+      ratio: "比率",
+      quality: "品質",
+      size: "サイズ",
+      duration: "長さ",
+      mode: "モード",
+      clear: "クリア",
+      upload: "アップロード",
+      generate: "生成",
+      results: "結果",
+      download: "ダウンロード",
+      saveAsset: "アセットに保存",
+    },
+    canvas: {
+      library: "キャンバスライブラリ",
+      projects: "マイキャンバス",
+      create: "新規キャンバス",
+      empty: "キャンバスはまだありません",
+      undo: "元に戻す",
+      redo: "やり直し",
+      resetView: "ビューをリセット",
+      home: "ホーム",
+      docs: "ドキュメント",
+      toolbar: {
+        select: "選択",
+        pan: "移動",
+        upload: "アセットをアップロード",
+        clear: "キャンバスをクリア",
+        themeMode: "テーマ",
+        light: "ライト",
+        dark: "ダーク",
+      },
+      project: {
+        rename: "名前変更",
+        delete: "削除",
+        export: "エクスポート",
+      },
+      createMenu: {
+        close: "閉じる",
+      },
+      node: {
+        untitled: "無題のノード",
+        generate: "生成",
+        retry: "再試行",
+        renameHint: "ダブルクリックで名前変更",
+      },
+    },
     workbench: {
       logs: "生成履歴",
       settings: "設定",

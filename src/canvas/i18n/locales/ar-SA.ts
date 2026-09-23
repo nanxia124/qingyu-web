@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "استوديو الفيديو",
+      promptPlaceholder: "صف الحركة والأجواء…",
+      references: "صور مرجعية",
+      videoReferences: "مقاطع فيديو مرجعية",
+      model: "النموذج",
+      ratio: "النسبة",
+      quality: "الجودة",
+      size: "الحجم",
+      duration: "المدة",
+      mode: "الوضع",
+      clear: "مسح",
+      upload: "رفع",
+      generate: "إنشاء",
+      results: "النتائج",
+      download: "تنزيل",
+      saveAsset: "حفظ في الأصول",
+    },
+    canvas: {
+      library: "اللوحات",
+      projects: "لوحاتي",
+      create: "لوحة جديدة",
+      empty: "لا توجد لوحات",
+      undo: "تراجع",
+      redo: "إعادة",
+      resetView: "إعادة ضبط العرض",
+      home: "الرئيسية",
+      docs: "الوثائق",
+      toolbar: {
+        select: "تحديد",
+        pan: "تحريك",
+        upload: "رفع الأصول",
+        clear: "مسح اللوحة",
+        themeMode: "السمة",
+        light: "فاتح",
+        dark: "داكن",
+      },
+      project: {
+        rename: "إعادة تسمية",
+        delete: "حذف",
+        export: "تصدير",
+      },
+      createMenu: {
+        close: "إغلاق",
+      },
+      node: {
+        untitled: "عقدة بدون عنوان",
+        generate: "إنشاء",
+        retry: "إعادة المحاولة",
+        renameHint: "نقرتان لإعادة التسمية",
+      },
+    },
     workbench: {
       logs: "سجل التوليد",
       settings: "الإعدادات",

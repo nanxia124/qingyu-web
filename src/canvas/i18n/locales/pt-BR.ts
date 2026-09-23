@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Estúdio de vídeo",
+      promptPlaceholder: "Descreva movimento, clima…",
+      references: "Imagens de referência",
+      videoReferences: "Vídeos de referência",
+      model: "Modelo",
+      ratio: "Proporção",
+      quality: "Qualidade",
+      size: "Tamanho",
+      duration: "Duração",
+      mode: "Modo",
+      clear: "Limpar",
+      upload: "Enviar",
+      generate: "Gerar",
+      results: "Resultados",
+      download: "Baixar",
+      saveAsset: "Salvar nos recursos",
+    },
+    canvas: {
+      library: "Canavas",
+      projects: "Minhas telas",
+      create: "Nova tela",
+      empty: "Sem telas",
+      undo: "Desfazer",
+      redo: "Refazer",
+      resetView: "Redefinir vista",
+      home: "Início",
+      docs: "Documentação",
+      toolbar: {
+        select: "Selecionar",
+        pan: "Mover",
+        upload: "Enviar recursos",
+        clear: "Limpar tela",
+        themeMode: "Tema",
+        light: "Claro",
+        dark: "Escuro",
+      },
+      project: {
+        rename: "Renomear",
+        delete: "Excluir",
+        export: "Exportar",
+      },
+      createMenu: {
+        close: "Fechar",
+      },
+      node: {
+        untitled: "Nó sem título",
+        generate: "Gerar",
+        retry: "Tentar novamente",
+        renameHint: "Duplo clique para renomear",
+      },
+    },
     workbench: {
       logs: "Histórico",
       settings: "Configurações",

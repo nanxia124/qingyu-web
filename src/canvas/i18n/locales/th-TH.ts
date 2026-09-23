@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "สตูดิโอวิดีโอ",
+      promptPlaceholder: "อธิบายการเคลื่อนไหวกล้อง…",
+      references: "ภาพอ้างอิง",
+      videoReferences: "วิดีโออ้างอิง",
+      model: "โมเดล",
+      ratio: "สัดส่วน",
+      quality: "คุณภาพ",
+      size: "ขนาด",
+      duration: "ระยะเวลา",
+      mode: "โหมด",
+      clear: "ล้าง",
+      upload: "อัปโหลด",
+      generate: "สร้าง",
+      results: "ผลลัพธ์",
+      download: "ดาวน์โหลด",
+      saveAsset: "บันทึกลงเนื้อหา",
+    },
+    canvas: {
+      library: "คลังแคนวาส",
+      projects: "แคนวาสของฉัน",
+      create: "สร้างแคนวาสใหม",
+      empty: "ยังไม่มีแคนวาส",
+      undo: "เลิกทำ",
+      redo: "ทำซ้ำ",
+      resetView: "รีเซ็ตมุมมอง",
+      home: "หน้าแรก",
+      docs: "เอกสาร",
+      toolbar: {
+        select: "เลือก",
+        pan: "เลื่อน",
+        upload: "อัปโหลด",
+        clear: "ล้างแคนวาส",
+        themeMode: "ธีม",
+        light: "สว่าง",
+        dark: "มืด",
+      },
+      project: {
+        rename: "เปลี่ยนชื่อ",
+        delete: "ลบ",
+        export: "ส่งออก",
+      },
+      createMenu: {
+        close: "ปิด",
+      },
+      node: {
+        untitled: "โหนดไม่มีชื่อ",
+        generate: "สร้าง",
+        retry: "ลองใหม่",
+        renameHint: "ดับเบิลคลิกเพื่อเปลี่ยนชื่อ",
+      },
+    },
     workbench: {
       logs: "ประวัติการสร้าง",
       settings: "ตั้งค่า",

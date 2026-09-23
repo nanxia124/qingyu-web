@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Video-Studio",
+      promptPlaceholder: "Kamera, Stimmung beschreiben…",
+      references: "Referenzbilder",
+      videoReferences: "Referenzvideos",
+      model: "Modell",
+      ratio: "Seitenverhältnis",
+      quality: "Qualität",
+      size: "Größe",
+      duration: "Dauer",
+      mode: "Modus",
+      clear: "Löschen",
+      upload: "Hochladen",
+      generate: "Generieren",
+      results: "Ergebnisse",
+      download: "Herunterladen",
+      saveAsset: "In Assets speichern",
+    },
+    canvas: {
+      library: "Canvas-Bibliothek",
+      projects: "Meine Canvases",
+      create: "Neues Canvas",
+      empty: "Keine Canvases",
+      undo: "Rückgängig",
+      redo: "Wiederherstellen",
+      resetView: "Ansicht zurücksetzen",
+      home: "Start",
+      docs: "Dokumentation",
+      toolbar: {
+        select: "Auswählen",
+        pan: "Verschieben",
+        upload: "Assets hochladen",
+        clear: "Canvas leeren",
+        themeMode: "Thema",
+        light: "Hell",
+        dark: "Dunkel",
+      },
+      project: {
+        rename: "Umbenennen",
+        delete: "Löschen",
+        export: "Export",
+      },
+      createMenu: {
+        close: "Schließen",
+      },
+      node: {
+        untitled: "Unbenannter Knoten",
+        generate: "Generieren",
+        retry: "Wiederholen",
+        renameHint: "Doppelklick zum Umbenennen",
+      },
+    },
     workbench: {
       logs: "Verlauf",
       settings: "Einstellungen",

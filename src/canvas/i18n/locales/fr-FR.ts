@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Studio vidéo",
+      promptPlaceholder: "Décrivez mouvement, ambiance…",
+      references: "Images de référence",
+      videoReferences: "Vidéos de référence",
+      model: "Modèle",
+      ratio: "Ratio",
+      quality: "Qualité",
+      size: "Taille",
+      duration: "Durée",
+      mode: "Mode",
+      clear: "Effacer",
+      upload: "Importer",
+      generate: "Générer",
+      results: "Résultats",
+      download: "Télécharger",
+      saveAsset: "Enregistrer dans les ressources",
+    },
+    canvas: {
+      library: "Toiles",
+      projects: "Mes toiles",
+      create: "Nouvelle toile",
+      empty: "Aucune toile",
+      undo: "Annuler",
+      redo: "Rétablir",
+      resetView: "Réinitialiser la vue",
+      home: "Accueil",
+      docs: "Documentation",
+      toolbar: {
+        select: "Sélection",
+        pan: "Déplacer",
+        upload: "Importer des ressources",
+        clear: "Effacer la toile",
+        themeMode: "Thème",
+        light: "Clair",
+        dark: "Sombre",
+      },
+      project: {
+        rename: "Renommer",
+        delete: "Supprimer",
+        export: "Exporter",
+      },
+      createMenu: {
+        close: "Fermer",
+      },
+      node: {
+        untitled: "Nœud sans titre",
+        generate: "Générer",
+        retry: "Réessayer",
+        renameHint: "Double-clic pour renommer",
+      },
+    },
     workbench: {
       logs: "Historique",
       settings: "Réglages",

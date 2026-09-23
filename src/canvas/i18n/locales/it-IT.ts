@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Studio video",
+      promptPlaceholder: "Descrivi movimento, atmosfera…",
+      references: "Immagini di riferimento",
+      videoReferences: "Video di riferimento",
+      model: "Modello",
+      ratio: "Proporzione",
+      quality: "Qualità",
+      size: "Dimensione",
+      duration: "Durata",
+      mode: "Modalità",
+      clear: "Pulisci",
+      upload: "Carica",
+      generate: "Genera",
+      results: "Risultati",
+      download: "Scarica",
+      saveAsset: "Salva nelle risorse",
+    },
+    canvas: {
+      library: "Tavole",
+      projects: "Le mie tele",
+      create: "Nuova tela",
+      empty: "Nessuna tela",
+      undo: "Annulla",
+      redo: "Ripeti",
+      resetView: "Reimposta vista",
+      home: "Home",
+      docs: "Documentazione",
+      toolbar: {
+        select: "Seleziona",
+        pan: "Sposta",
+        upload: "Carica risorse",
+        clear: "Svuota tela",
+        themeMode: "Tema",
+        light: "Chiaro",
+        dark: "Scuro",
+      },
+      project: {
+        rename: "Rinomina",
+        delete: "Elimina",
+        export: "Esporta",
+      },
+      createMenu: {
+        close: "Chiudi",
+      },
+      node: {
+        untitled: "Nodo senza titolo",
+        generate: "Genera",
+        retry: "Riprova",
+        renameHint: "Doppio clic per rinominare",
+      },
+    },
     workbench: {
       logs: "Cronologia",
       settings: "Impostazioni",

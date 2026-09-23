@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Estudio de vídeo",
+      promptPlaceholder: "Describe movimiento, ambiente…",
+      references: "Imágenes de referencia",
+      videoReferences: "Vídeos de referencia",
+      model: "Modelo",
+      ratio: "Proporción",
+      quality: "Calidad",
+      size: "Tamaño",
+      duration: "Duración",
+      mode: "Modo",
+      clear: "Limpiar",
+      upload: "Subir",
+      generate: "Generar",
+      results: "Resultados",
+      download: "Descargar",
+      saveAsset: "Guardar en recursos",
+    },
+    canvas: {
+      library: "Lienzos",
+      projects: "Mis lienzos",
+      create: "Nuevo lienzo",
+      empty: "Sin lienzos",
+      undo: "Deshacer",
+      redo: "Rehacer",
+      resetView: "Restablecer vista",
+      home: "Inicio",
+      docs: "Documentación",
+      toolbar: {
+        select: "Seleccionar",
+        pan: "Mover",
+        upload: "Subir recursos",
+        clear: "Limpiar lienzo",
+        themeMode: "Tema",
+        light: "Claro",
+        dark: "Oscuro",
+      },
+      project: {
+        rename: "Renombrar",
+        delete: "Eliminar",
+        export: "Exportar",
+      },
+      createMenu: {
+        close: "Cerrar",
+      },
+      node: {
+        untitled: "Nodo sin título",
+        generate: "Generar",
+        retry: "Reintentar",
+        renameHint: "Doble clic para renombrar",
+      },
+    },
     workbench: {
       logs: "Historial",
       settings: "Ajustes",

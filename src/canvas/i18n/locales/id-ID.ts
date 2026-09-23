@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Studio video",
+      promptPlaceholder: "Jelaskan gerakan kamera…",
+      references: "Gambar referensi",
+      videoReferences: "Video referensi",
+      model: "Model",
+      ratio: "Rasio",
+      quality: "Kualitas",
+      size: "Ukuran",
+      duration: "Durasi",
+      mode: "Mode",
+      clear: "Bersihkan",
+      upload: "Unggah",
+      generate: "Buat",
+      results: "Hasil",
+      download: "Unduh",
+      saveAsset: "Simpan ke aset",
+    },
+    canvas: {
+      library: "Galeri kanvas",
+      projects: "Kanvas saya",
+      create: "Kanvas baru",
+      empty: "Belum ada kanvas",
+      undo: "Urungkan",
+      redo: "Ulangi",
+      resetView: "Atur ulang tampilan",
+      home: "Beranda",
+      docs: "Dokumentasi",
+      toolbar: {
+        select: "Pilih",
+        pan: "Geser",
+        upload: "Unggah aset",
+        clear: "Bersihkan kanvas",
+        themeMode: "Tema",
+        light: "Terang",
+        dark: "Gelap",
+      },
+      project: {
+        rename: "Ganti nama",
+        delete: "Hapus",
+        export: "Ekspor",
+      },
+      createMenu: {
+        close: "Tutup",
+      },
+      node: {
+        untitled: "Node tanpa judul",
+        generate: "Buat",
+        retry: "Coba lagi",
+        renameHint: "Klik dua kali untuk ganti nama",
+      },
+    },
     workbench: {
       logs: "Riwayat",
       settings: "Pengaturan",

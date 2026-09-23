@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Видео-студия",
+      promptPlaceholder: "Опишите движение камеры…",
+      references: "Референсные изображения",
+      videoReferences: "Референсные видео",
+      model: "Модель",
+      ratio: "Пропорция",
+      quality: "Качество",
+      size: "Размер",
+      duration: "Длительность",
+      mode: "Режим",
+      clear: "Очистить",
+      upload: "Загрузить",
+      generate: "Создать",
+      results: "Результаты",
+      download: "Скачать",
+      saveAsset: "Сохранить в ассеты",
+    },
+    canvas: {
+      library: "Холсты",
+      projects: "Мои холсты",
+      create: "Новый холст",
+      empty: "Нет холстов",
+      undo: "Отменить",
+      redo: "Повторить",
+      resetView: "Сбросить вид",
+      home: "Главная",
+      docs: "Документация",
+      toolbar: {
+        select: "Выделение",
+        pan: "Перемещение",
+        upload: "Загрузить ассеты",
+        clear: "Очистить холст",
+        themeMode: "Тема",
+        light: "Светлая",
+        dark: "Тёмная",
+      },
+      project: {
+        rename: "Переименовать",
+        delete: "Удалить",
+        export: "Экспорт",
+      },
+      createMenu: {
+        close: "Закрыть",
+      },
+      node: {
+        untitled: "Без названия",
+        generate: "Создать",
+        retry: "Повторить",
+        renameHint: "Двойной клик для переименования",
+      },
+    },
     workbench: {
       logs: "История генераций",
       settings: "Настройки",

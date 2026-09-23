@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "वीडियो स्टूडियो",
+      promptPlaceholder: "कैमरा मूवमेंट बताएं…",
+      references: "संदर्भ इमेज",
+      videoReferences: "संदर्भ वीडियो",
+      model: "मॉडल",
+      ratio: "अनुपात",
+      quality: "गुणवत्ता",
+      size: "साइज",
+      duration: "अवधि",
+      mode: "मोड",
+      clear: "साफ़",
+      upload: "अपलोड",
+      generate: "जनरेट",
+      results: "परिणाम",
+      download: "डाउनलोड",
+      saveAsset: "एसेट में सहेजें",
+    },
+    canvas: {
+      library: "कैनवस लाइब्रेरी",
+      projects: "मेरे कैनवस",
+      create: "नया कैनवस",
+      empty: "कोई कैनवस नहीं",
+      undo: "पूर्ववत",
+      redo: "फिर से",
+      resetView: "व्यू रीसेट",
+      home: "होम",
+      docs: "दस्तावेज़",
+      toolbar: {
+        select: "चुनें",
+        pan: "हिलाएं",
+        upload: "अपलोड",
+        clear: "कैनवास साफ़",
+        themeMode: "थीम",
+        light: "लाइट",
+        dark: "डार्क",
+      },
+      project: {
+        rename: "नाम बदलें",
+        delete: "हटाएं",
+        export: "एक्सपोर्ट",
+      },
+      createMenu: {
+        close: "बंद करें",
+      },
+      node: {
+        untitled: "अनाम नोड",
+        generate: "जनरेट",
+        retry: "फिर से",
+        renameHint: "डबल-क्लिक करें",
+      },
+    },
     workbench: {
       logs: "इतिहास",
       settings: "सेटिंग",

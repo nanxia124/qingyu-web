@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "Studio video",
+      promptPlaceholder: "Mô tả chuyển động máy ảnh…",
+      references: "Ảnh tham khảo",
+      videoReferences: "Video tham khảo",
+      model: "Mô hình",
+      ratio: "Tỷ lệ",
+      quality: "Chất lượng",
+      size: "Kích thước",
+      duration: "Thời lượng",
+      mode: "Chế độ",
+      clear: "Xóa",
+      upload: "Tải lên",
+      generate: "Tạo",
+      results: "Kết quả",
+      download: "Tải xuống",
+      saveAsset: "Lưu vào tài sản",
+    },
+    canvas: {
+      library: "Thư viện canvas",
+      projects: "Canvas của tôi",
+      create: "Canvas mới",
+      empty: "Chưa có canvas",
+      undo: "Hoàn tác",
+      redo: "Làm lại",
+      resetView: "Đặt lại chế độ xem",
+      home: "Trang chủ",
+      docs: "Tài liệu",
+      toolbar: {
+        select: "Chọn",
+        pan: "Di chuyển",
+        upload: "Tải tài sản",
+        clear: "Xóa canvas",
+        themeMode: "Chủ đề",
+        light: "Sáng",
+        dark: "Tối",
+      },
+      project: {
+        rename: "Đổi tên",
+        delete: "Xóa",
+        export: "Xuất",
+      },
+      createMenu: {
+        close: "Đóng",
+      },
+      node: {
+        untitled: "Nút chưa đặt tên",
+        generate: "Tạo",
+        retry: "Thử lại",
+        renameHint: "Nhấp đúp để đổi tên",
+      },
+    },
     workbench: {
       logs: "Lịch sử",
       settings: "Cài đặt",

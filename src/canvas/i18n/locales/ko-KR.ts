@@ -2,6 +2,58 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    videoWorkbench: {
+      title: "비디오 스튜디오",
+      promptPlaceholder: "카메라 움직임, 분위기 설명…",
+      references: "참고 이미지",
+      videoReferences: "참고 비디오",
+      model: "모델",
+      ratio: "비율",
+      quality: "품질",
+      size: "크기",
+      duration: "길이",
+      mode: "모드",
+      clear: "지우기",
+      upload: "업로드",
+      generate: "생성",
+      results: "결과",
+      download: "다운로드",
+      saveAsset: "에셋에 저장",
+    },
+    canvas: {
+      library: "캔버스 라이브러리",
+      projects: "내 캔버스",
+      create: "새 캔버스",
+      empty: "캔버스 없음",
+      undo: "실행 취소",
+      redo: "다시 실행",
+      resetView: "뷰 재설정",
+      home: "홈",
+      docs: "문서",
+      toolbar: {
+        select: "선택",
+        pan: "이동",
+        upload: "에셋 업로드",
+        clear: "캔버스 지우기",
+        themeMode: "테마",
+        light: "라이트",
+        dark: "다크",
+      },
+      project: {
+        rename: "이름 변경",
+        delete: "삭제",
+        export: "내보내기",
+      },
+      createMenu: {
+        close: "닫기",
+      },
+      node: {
+        untitled: "제목 없는 노드",
+        generate: "생성",
+        retry: "재시도",
+        renameHint: "더블클릭하여 이름 변경",
+      },
+    },
     workbench: {
       logs: "기록",
       settings: "설정",

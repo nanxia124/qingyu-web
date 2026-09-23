@@ -106,7 +106,8 @@ CREATE TABLE app.job_titles (
     status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'deleted')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (team_id, name)
+    UNIQUE (team_id, name),
+    UNIQUE (id, team_id)
 );
 
 CREATE TABLE app.team_memberships (
@@ -170,7 +171,8 @@ CREATE TABLE app.user_devices (
     created_at timestamptz NOT NULL DEFAULT now(),
     last_seen_at timestamptz,
     archived_at timestamptz,
-    UNIQUE (user_id, installation_id)
+    UNIQUE (user_id, installation_id),
+    UNIQUE (id, user_id)
 );
 
 CREATE TABLE app.user_sessions (

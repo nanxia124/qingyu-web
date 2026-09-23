@@ -160,6 +160,7 @@ export default {
         hasAccount: "Already have an account?",
         loginNow: "Sign in",
         agree: "By continuing you agree to our",
+        and: "and",
         terms: "Terms",
         privacy: "Privacy Policy",
         processing: "Processing...",
@@ -196,6 +197,14 @@ export default {
         send: "Send",
         copyFailed: "Copy failed, please copy manually",
         servicePending: "(Chat service is not yet available on web, stay tuned)",
+    },
+    pages: {
+        assets: { all: "All", image: "Images", video: "Videos", doc: "Docs", search: "Search assets…", upload: "Upload", empty: "No matching assets found" },
+        favorites: { title: "My Favorites", empty: "No favorites yet. Find something you like on the workbench.", confirmDelete: "Delete this favorite?", deleteTitle: "Delete favorite" },
+        feedback: { suggestion: "Suggestion", bug: "Bug report", other: "Other", submitted: "Feedback submitted", thanks: "Thanks for your feedback, we'll review it carefully", title: "Feedback", subtitle: "Tell us what you think and help us improve", placeholder: "Describe your suggestion or issue…", contact: "Contact (optional)", submitting: "Submitting…", submit: "Submit feedback", failed: "Submission failed" },
+        settings: { api: "API", notify: "Notifications", security: "Security", appearance: "Appearance", team: "Team", data: "Data", apiTitle: "API", apiDesc: "Configure the AI service gateway used by the server", serverAddr: "Server URL", saved: "Saved", save: "Save", developing: "settings coming soon" },
+        subscription: { loginFirst: "Please sign in first", activated: "Activated, quota added", activateFailed: "Activation failed", title: "Plans", subtitle: "Choose a plan to unlock all features", currentQuota: "Current quota", free: "Free", validUntil: "Valid until", perMonth: "/mo", currentPlan: "Current plan", activating: "Activating...", currentFree: "Free now", activateNow: "Activate", paymentNote: "Payment: demo checkout for now, WeChat Pay / Alipay coming later" },
+        wallet: { title: "My Wallet", currentBalance: "Balance", currentMember: "Plan", team: "Team", free: "Free", until: "until", totalSpent: "Total spent", tabCodes: "Redeem code", tabOrders: "Orders", tabTxns: "Transactions", tabInvite: "Invite", redeemTitle: "Enter redeem code", redeem: "Redeem", redeemHint: "Get a code from an admin, credit is applied instantly", noOrders: "No orders yet", hOrderId: "Order ID", hPlan: "Plan", hAmount: "Amount", hStatus: "Status", hTime: "Time", paid: "Paid", pending: "Pending", noTxns: "No transactions yet", hType: "Type", hChange: "Change", hBalance: "Balance", hNote: "Note", inviteTitle: "Invite friends", inviteDesc: "Friends who sign up and top up via your link earn you credits", copyLink: "Copy link", invited: "Invited", redeemSuccess: "Redeemed, balance is", typeRegister: "Signup bonus", typeRedeem: "Redeem code", typeMembership: "Membership", typeConsume: "Consumption", typeRefund: "Refund", typeInvite: "Invite reward", typeAdmin: "Admin adjustment", typeRecharge: "Online recharge" },
     },
     nav: {
         home: "Home",

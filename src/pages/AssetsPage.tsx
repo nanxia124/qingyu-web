@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { FolderOpen, Search, Upload, MoreVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 
 type AssetType = 'image' | 'video' | 'doc' | 'all'
 
 const typeTabs: { id: AssetType; label: string }[] = [
-  { id: 'all', label: '全部' },
-  { id: 'image', label: '图片' },
-  { id: 'video', label: '视频' },
-  { id: 'doc', label: '文档' },
+  { id: 'all', label: 'pages.assets.all' },
+  { id: 'image', label: 'pages.assets.image' },
+  { id: 'video', label: 'pages.assets.video' },
+  { id: 'doc', label: 'pages.assets.doc' },
 ]
 
 const mockAssets = [
@@ -19,6 +20,7 @@ const mockAssets = [
 ]
 
 export default function AssetsPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<AssetType>('all')
   const [keyword, setKeyword] = useState('')
 
@@ -33,18 +35,18 @@ export default function AssetsPage() {
       {/* 工具栏 */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-lg bg-secondary p-1">
-          {typeTabs.map((t) => (
+          {typeTabs.map((item) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={item.id}
+              onClick={() => setTab(item.id)}
               className={cn(
                 'rounded-md px-3 py-1.5 text-[12px] font-medium leading-[18px] transition-colors',
-                tab === t.id
+                tab === item.id
                   ? 'bg-accent text-accent-foreground'
                   : 'text-text-muted hover:text-text-active',
               )}
             >
-              {t.label}
+              {t(item.label)}
             </button>
           ))}
         </div>
@@ -53,12 +55,12 @@ export default function AssetsPage() {
           <input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索素材…"
+            placeholder={t("pages.assets.search")}
             className="w-56 rounded-lg bg-input py-2 pl-9 pr-3 text-[14px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
           />
         </div>
         <button className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover">
-          <Upload className="size-4" /> 上传素材
+          <Upload className="size-4" /> {t('pages.assets.upload')}
         </button>
       </div>
 
@@ -84,7 +86,7 @@ export default function AssetsPage() {
 
       {filtered.length === 0 && (
         <div className="mt-8 rounded-xl bg-card p-12 text-center text-[14px] text-text-muted">
-          没有找到匹配的素材
+          {t('pages.assets.empty')}
         </div>
       )}
     </div>

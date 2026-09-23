@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { Check, Zap, Crown, Rocket } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useBillingStore } from "@/stores/useBillingStore";
@@ -11,6 +12,7 @@ const LEVEL_ICON: Record<string, any> = {
 };
 
 export default function SubscriptionPage() {
+  const { t } = useTranslation()
   const { user: authUser, isLoggedIn } = useAuthStore();
   const { user: billingUser, plans, initFromAuth, refreshMe, refreshPlans } = useBillingStore();
   const [loading, setLoading] = useState("");
@@ -25,7 +27,7 @@ export default function SubscriptionPage() {
 
   const buy = async (plan: Plan) => {
     if (!isLoggedIn) {
-      setMsg("请先登录");
+      setMsg(t("pages.subscription.loginFirst"));
       return;
     }
     setLoading(plan.id);
@@ -35,9 +37,9 @@ export default function SubscriptionPage() {
       // v1：模拟支付直接成功；接微信/支付宝后这里改为跳转收银台
       await billingApi.payOrder(order.id);
       await refreshMe();
-      setMsg(`已开通 ${plan.name}，额度已到账`);
+      setMsg(`${t("pages.subscription.activated")}：${plan.name}`);
     } catch (e: any) {
-      setMsg(e.message || "开通失败");
+      setMsg(e.message || t("pages.subscription.activateFailed"));
     } finally {
       setLoading("");
     }
@@ -53,15 +55,15 @@ export default function SubscriptionPage() {
     <div className="p-8 max-w-5xl mx-auto">
       <div className="flex items-end justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-text">订阅套餐</h1>
-          <p className="text-sm text-gray-500 mt-1">选择适合你的套餐，解锁全部能力</p>
+          <h1 className="text-2xl font-bold text-text">{t("pages.subscription.title")}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t("pages.subscription.subtitle")}</p>
         </div>
         {billingUser && (
           <div className="text-right">
-            <div className="text-xs text-gray-500">当前额度</div>
+            <div className="text-xs text-gray-500">{t("pages.subscription.currentQuota")}</div>
             <div className="text-2xl font-bold text-accent">{billingUser.balance.toLocaleString()}</div>
             <div className="text-xs text-gray-500">
-              {memberActive ? `会员有效期至 ${memberExpireText}` : "免费版"}
+              {memberActive ? `${t("pages.subscription.validUntil")} ${memberExpireText}` : t("pages.subscription.free")}
             </div>
           </div>
         )}
@@ -92,7 +94,7 @@ export default function SubscriptionPage() {
               </div>
               <p className="text-3xl font-bold text-text mt-2">
                 ¥{(plan.priceCents / 100).toFixed(0)}
-                {plan.durationDays > 0 && <span className="text-sm text-gray-500 font-normal">/月</span>}
+                {plan.durationDays > 0 && <span className="text-sm text-gray-500 font-normal">{t("pages.subscription.perMonth")}</span>}
               </p>
               <p className="text-xs text-gray-500 mt-1">{plan.description}</p>
               <ul className="mt-4 space-y-2">
@@ -105,7 +107,7 @@ export default function SubscriptionPage() {
               </ul>
               {isCurrent ? (
                 <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-secondary text-gray-500">
-                  当前套餐
+                  {t("pages.subscription.currentPlan")}
                 </button>
               ) : (
                 <button
@@ -113,7 +115,7 @@ export default function SubscriptionPage() {
                   disabled={!!loading || plan.priceCents === 0}
                   className="mt-6 w-full py-2.5 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                 >
-                  {loading === plan.id ? "开通中..." : plan.priceCents === 0 ? "当前免费" : "立即开通"}
+                  {loading === plan.id ? t("pages.subscription.activating") : plan.priceCents === 0 ? t("pages.subscription.currentFree") : t("pages.subscription.activateNow")}
                 </button>
               )}
             </div>
@@ -122,7 +124,7 @@ export default function SubscriptionPage() {
       </div>
 
       <p className="text-xs text-gray-600 mt-8 text-center">
-        支付方式：当前为演示支付，微信支付 / 支付宝将在后续接入
+        {t("pages.subscription.paymentNote")}
       </p>
     </div>
   );

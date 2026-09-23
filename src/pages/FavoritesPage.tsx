@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Star, ImageIcon, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 const initialFavorites = [
   { id: 1, name: '国潮插画_系列', type: 'image', time: '2026-09-18' },
@@ -7,19 +8,20 @@ const initialFavorites = [
 ]
 
 export default function FavoritesPage() {
+  const { t } = useTranslation()
   const [favorites, setFavorites] = useState(initialFavorites)
 
   const handleDelete = (id: number) => {
-    if (!confirm('确定要删除这条收藏吗？')) return
+    if (!confirm(t('pages.favorites.confirmDelete'))) return
     setFavorites((prev) => prev.filter((f) => f.id !== id))
   }
 
   return (
     <div className="mx-auto max-w-[1320px] p-6">
-      <h3 className="mb-4 text-[18px] font-bold leading-[26px] text-text">我的收藏</h3>
+      <h3 className="mb-4 text-[18px] font-bold leading-[26px] text-text">{t('pages.favorites.title')}</h3>
       {favorites.length === 0 ? (
         <div className="rounded-xl bg-card p-16 text-center text-[14px] text-text-muted">
-          暂无收藏，去工作台看看喜欢的作品吧
+          {t('pages.favorites.empty')}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -37,7 +39,7 @@ export default function FavoritesPage() {
               </div>
               <button
                 onClick={() => handleDelete(f.id)}
-                title="删除收藏"
+                title={t("pages.favorites.deleteTitle")}
                 className="absolute right-2 top-2 hidden size-7 items-center justify-center rounded-lg bg-black/50 text-white backdrop-blur hover:bg-red-500 group-hover:flex"
               >
                 <Trash2 className="size-4" />

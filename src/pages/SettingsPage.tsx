@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { KeyRound, Bell, Shield, Palette, Users, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const sections = [
-  { id: 'api', label: 'API 配置', icon: KeyRound },
-  { id: 'notify', label: '通知', icon: Bell },
-  { id: 'security', label: '安全', icon: Shield },
-  { id: 'appearance', label: '外观', icon: Palette },
-  { id: 'team', label: '团队', icon: Users },
-  { id: 'data', label: '数据', icon: Database },
+  { id: 'api', label: 'pages.settings.api', icon: KeyRound },
+  { id: 'notify', label: 'pages.settings.notify', icon: Bell },
+  { id: 'security', label: 'pages.settings.security', icon: Shield },
+  { id: 'appearance', label: 'pages.settings.appearance', icon: Palette },
+  { id: 'team', label: 'pages.settings.team', icon: Users },
+  { id: 'data', label: 'pages.settings.data', icon: Database },
 ]
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const [active, setActive] = useState('api')
   const [apiKey, setApiKey] = useState('')
   const [apiBase, setApiBase] = useState('')
@@ -57,11 +59,11 @@ export default function SettingsPage() {
       <div className="min-w-0 flex-1 rounded-xl bg-card p-6">
         {active === 'api' && (
           <>
-            <h4 className="text-[18px] font-bold leading-[26px] text-text">API 配置</h4>
-            <p className="mt-1 text-[12px] leading-[18px] text-text-muted">配置服务端使用的 AI 服务网关</p>
+            <h4 className="text-[18px] font-bold leading-[26px] text-text">{t("pages.settings.apiTitle")}</h4>
+            <p className="mt-1 text-[12px] leading-[18px] text-text-muted">{t("pages.settings.apiDesc")}</p>
             <div className="mt-5 space-y-4">
               <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-text-muted">服务地址</label>
+                <label className="mb-1.5 block text-[12px] font-medium text-text-muted">{t("pages.settings.serverAddr")}</label>
                 <input
                   value={apiBase}
                   onChange={(e) => setApiBase(e.target.value)}
@@ -82,14 +84,14 @@ export default function SettingsPage() {
                 onClick={save}
                 className="rounded-lg bg-accent px-5 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
               >
-                {saved ? '已保存' : '保存'}
+                {saved ? t('pages.settings.saved') : t('pages.settings.save')}
               </button>
             </div>
           </>
         )}
         {active !== 'api' && (
           <div className="flex h-48 items-center justify-center text-[14px] text-text-muted">
-            「{sections.find((s) => s.id === active)?.label}」设置项开发中
+            「{t(sections.find((s) => s.id === active)?.label ?? '')}」{t('pages.settings.developing')}
           </div>
         )}
       </div>

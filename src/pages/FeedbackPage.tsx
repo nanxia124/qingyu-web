@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Send, MessageCircle, Bug, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const types = [
-  { id: 'suggestion', label: '建议', icon: Lightbulb },
-  { id: 'bug', label: '问题反馈', icon: Bug },
-  { id: 'other', label: '其他', icon: MessageCircle },
+  { id: 'suggestion', label: 'pages.feedback.suggestion', icon: Lightbulb },
+  { id: 'bug', label: 'pages.feedback.bug', icon: Bug },
+  { id: 'other', label: 'pages.feedback.other', icon: MessageCircle },
 ]
 
 export default function FeedbackPage() {
+  const { t } = useTranslation()
   const [type, setType] = useState('suggestion')
   const [content, setContent] = useState('')
   const [contact, setContact] = useState('')
@@ -31,7 +33,7 @@ export default function FeedbackPage() {
       })
       clearTimeout(timeoutId)
 
-      if (!res.ok) throw new Error('提交失败')
+      if (!res.ok) throw new Error(t('pages.feedback.failed'))
       setSent(true)
     } catch (err: any) {
       // 后端接口未接入时，仍显示成功（临时方案）
@@ -47,16 +49,16 @@ export default function FeedbackPage() {
         <div className="flex size-14 items-center justify-center rounded-full bg-success/15">
           <Send className="size-6 text-success" />
         </div>
-        <h3 className="text-[18px] font-bold text-text">反馈已提交</h3>
-        <p className="text-[14px] text-text-muted">感谢你的建议，我们会认真评估</p>
+        <h3 className="text-[18px] font-bold text-text">{t("pages.feedback.submitted")}</h3>
+        <p className="text-[14px] text-text-muted">{t("pages.feedback.thanks")}</p>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <h3 className="text-[18px] font-bold leading-[26px] text-text">反馈中心</h3>
-      <p className="mt-1 text-[14px] leading-[22px] text-text-muted">告诉我们你的想法，帮助我们做得更好</p>
+      <h3 className="text-[18px] font-bold leading-[26px] text-text">{t("pages.feedback.title")}</h3>
+      <p className="mt-1 text-[14px] leading-[22px] text-text-muted">{t("pages.feedback.subtitle")}</p>
 
       <div className="mt-5 flex gap-2">
         {types.map((t) => (
@@ -80,13 +82,13 @@ export default function FeedbackPage() {
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={6}
-        placeholder="请描述你的建议或遇到的问题…"
+        placeholder={t("pages.feedback.placeholder")}
         className="mt-4 w-full resize-none rounded-xl bg-input px-4 py-3 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
       />
       <input
         value={contact}
         onChange={(e) => setContact(e.target.value)}
-        placeholder="联系方式（可选）"
+        placeholder={t("pages.feedback.contact")}
         className="mt-3 w-full rounded-xl bg-input px-4 py-2.5 text-[14px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
       />
       <button
@@ -94,7 +96,7 @@ export default function FeedbackPage() {
         disabled={!content.trim() || submitting}
         className="mt-4 flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40"
       >
-        <Send className="size-4" /> {submitting ? '提交中…' : '提交反馈'}
+        <Send className="size-4" /> {submitting ? t('pages.feedback.submitting') : t('pages.feedback.submit')}
       </button>
     </div>
   )

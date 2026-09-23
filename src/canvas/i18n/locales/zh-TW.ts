@@ -160,6 +160,7 @@ export default {
         hasAccount: "已有帳號？",
         loginNow: "直接登入",
         agree: "繼續即表示您同意",
+        and: "和",
         terms: "使用條款",
         privacy: "隱私政策",
         processing: "处理中...",
@@ -196,6 +197,14 @@ export default {
         send: "發送",
         copyFailed: "複製失败，請手动複製",
         servicePending: "（网页端對話服务待接入，敬請期待）",
+    },
+    pages: {
+        assets: { all: "全部", image: "圖片", video: "影片", doc: "文件", search: "搜尋素材…", upload: "上傳素材", empty: "没有找到匹配的素材" },
+        favorites: { title: "我的收藏", empty: "尚無收藏，去工作台看看喜歡的作品吧", confirmDelete: "確定要刪除这条收藏吗？", deleteTitle: "刪除收藏" },
+        feedback: { suggestion: "建議", bug: "問題回饋", other: "其他", submitted: "回饋已提交", thanks: "感謝你的建議，我們会認真評估", title: "回饋中心", subtitle: "告訴我們你的想法，帮助我們做得更好", placeholder: "请描述你的建議或遇到的問題…", contact: "聯絡方式（可選）", submitting: "提交中…", submit: "提交回饋", failed: "提交失敗" },
+        settings: { api: "API 設定", notify: "通知", security: "安全", appearance: "外觀", team: "團隊", data: "資料", apiTitle: "API 設定", apiDesc: "設定服務端使用的 AI 服務閘道", serverAddr: "服務位址", saved: "已儲存", save: "儲存", developing: "设置項開發中" },
+        subscription: { loginFirst: "请先登入", activated: "已開通，額度已入帳", activateFailed: "開通失敗", title: "訂閱方案", subtitle: "選擇適合你的方案，解鎖全部功能", currentQuota: "目前額度", free: "免費版", validUntil: "會員有效期至", perMonth: "/月", currentPlan: "目前方案", activating: "開通中...", currentFree: "目前免費", activateNow: "立即開通", paymentNote: "支付方式：目前为演示支付，微信支付 / 支付宝将在後續接入" },
+        wallet: { title: "我的錢包", currentBalance: "目前餘額", currentMember: "目前會員", team: "團隊版", free: "免費版", until: "至", totalSpent: "累計消費", tabCodes: "兌換碼", tabOrders: "訂單", tabTxns: "餘額流水", tabInvite: "邀請好友", redeemTitle: "輸入兌換碼", redeem: "兌換", redeemHint: "兌換碼可聯絡管理員获取，兌換后額度立即入帳", noOrders: "尚無訂單", hOrderId: "訂單號", hPlan: "方案", hAmount: "金額", hStatus: "狀態", hTime: "時間", paid: "已支付", pending: "待支付", noTxns: "尚無流水", hType: "類型", hChange: "異動", hBalance: "餘額", hNote: "說明", inviteTitle: "邀請好友", inviteDesc: "好友通过你的連結註冊并儲值，你可獲得積分獎勵", copyLink: "複製連結", invited: "已邀請", redeemSuccess: "兌換成功，目前餘額", typeRegister: "註冊贈送", typeRedeem: "兌換碼儲值", typeMembership: "會員入帳", typeConsume: "消費扣款", typeRefund: "退款", typeInvite: "邀請獎勵", typeAdmin: "後台調整", typeRecharge: "在线儲值" },
     },
     nav: {
         home: "首頁",

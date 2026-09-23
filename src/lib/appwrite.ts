@@ -1,7 +1,11 @@
 import { Client, Account, Databases, Storage, Teams, Functions } from "appwrite";
 
-// Appwrite 配置（自托管地址，通过 nginx 同源反代 /v1）
-const APPWRITE_ENDPOINT = "http://43.160.249.6/v1";
+// Appwrite 配置（自托管地址，通过 nginx 同源反代 /v1）。
+// 用 window.location.origin 拼接，自动继承当前页面的协议与域名：
+//  - 生产环境套 Cloudflare CDN 后是 https://your-domain/v1，Realtime 自动升级为 wss://
+//  - 本地开发环境走 vite proxy（见 vite.config.ts 的 /v1 段）
+// 不再硬编码 http://IP，避免 HTTPS 页面下的混合内容拦截。
+const APPWRITE_ENDPOINT = `${window.location.origin}/v1`;
 const APPWRITE_PROJECT_ID = "qingyu";
 
 // 创建 Appwrite 客户端

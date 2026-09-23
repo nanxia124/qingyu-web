@@ -10,10 +10,12 @@
       body { margin: 0; background-color: #171717; }
     </style>
     <!-- Umami 网站访问统计（PV/UV/来源/页面路径自动采集）。
+         走 nginx 同源反代 /umami/（后端容器只监听 127.0.0.1:3000，不直接暴露公网），
+         协议与域名自动继承当前页面，兼容 Cloudflare CDN/HTTPS，避免混合内容。
          defer 保证不阻塞首屏。 -->
     <script
       defer
-      src="http://43.160.249.6:3000/script.js"
+      src="/umami/script.js"
       data-website-id="2d28207e-d490-420f-8490-c2375db2d4eb"
     ></script>
   </head>

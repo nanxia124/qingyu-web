@@ -29,6 +29,14 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3001',
         changeOrigin: true,
       },
+      // Appwrite 代理：本地开发时把 /v1/* 转发到线上 nginx，
+      // 浏览器侧仍是同源 localhost:5173，避免开发环境 CORS 与协议硬编码。
+      // 生产环境由 nginx 直接反代到 127.0.0.1:8080，不走这里。
+      '/v1': {
+        target: process.env.VITE_APPWRITE_PROXY_TARGET || 'http://43.160.249.6',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 })

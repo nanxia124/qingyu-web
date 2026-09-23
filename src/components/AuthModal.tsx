@@ -285,7 +285,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     <p className="text-center text-xs text-gray-500">
                         {t("auth.agree")}{" "}
                         <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("terms")}>{t("auth.terms")}</span>{" "}
-                        {t("chat.or")}{" "}
+                        {t("auth.and")}{" "}
                         <span className="underline cursor-pointer hover:text-gray-600" onClick={() => setShowPolicy("privacy")}>{t("auth.privacy")}</span>
                     </p>
                 </div>

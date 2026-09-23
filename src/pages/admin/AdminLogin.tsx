@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next'
 
 const API = import.meta.env.VITE_API_URL || "";
 
 export default function AdminLogin({ onLogin }: { onLogin: (token: string) => void }) {
+    const { t } = useTranslation()
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -19,7 +21,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                 body: JSON.stringify({ username, password }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "登录失败");
+            if (!res.ok) throw new Error(data.error || t("pages.admin.login.failed"));
             localStorage.setItem("admin_token", data.token);
             onLogin(data.token);
         } catch (err: any) {
@@ -32,11 +34,11 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
     return (
         <div className="min-h-screen flex items-center justify-center bg-bg">
             <div className="w-full max-w-sm rounded-2xl bg-card p-8">
-                <h1 className="text-xl font-bold text-white mb-6 text-center">管理后台登录</h1>
+                <h1 className="text-xl font-bold text-white mb-6 text-center">{t("pages.admin.login.title")}</h1>
                 {error && <p className="mb-4 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>}
                 <form onSubmit={handleLogin} className="space-y-4">
                     <div>
-                        <label className="mb-1 block text-sm text-gray-500">用户名</label>
+                        <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.login.username")}</label>
                         <input
                             type="text"
                             value={username}
@@ -45,7 +47,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                         />
                     </div>
                     <div>
-                        <label className="mb-1 block text-sm text-gray-500">密码</label>
+                        <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.login.password")}</label>
                         <input
                             type="password"
                             value={password}
@@ -58,7 +60,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                         disabled={loading}
                         className="w-full rounded-lg bg-[#5051F8] py-2 font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                     >
-                        {loading ? "登录中..." : "登录"}
+                        {loading ? t("pages.admin.login.loading") : t("pages.admin.login.login")}
                     </button>
                 </form>
             </div>

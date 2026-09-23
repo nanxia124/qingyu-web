@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { api } from "@/lib/api";
 import { Shield, Search } from "lucide-react";
 
@@ -14,6 +15,7 @@ interface AuditLog {
 }
 
 export default function AdminAuditsPage() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -36,7 +38,7 @@ export default function AdminAuditsPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-text mb-6">审计日志</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">{t("pages.admin.audits.title")}</h1>
 
       {/* 搜索栏 */}
       <div className="mb-4 flex items-center gap-3">
@@ -46,7 +48,7 @@ export default function AdminAuditsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索操作或用户..."
+            placeholder={t("pages.admin.audits.searchPh")}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
           />
         </div>
@@ -55,7 +57,7 @@ export default function AdminAuditsPage() {
       {/* 日志列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-text-muted">加载中...</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.admin.audits.loading")}</div>
         ) : (
           <div className="divide-y divide-border">
             {logs.map((log) => (
@@ -66,7 +68,7 @@ export default function AdminAuditsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-text">{log.userName}</span>
-                    <span className="text-text-muted">执行了</span>
+                    <span className="text-text-muted">{t("pages.admin.audits.did")}</span>
                     <span className="font-medium text-text">{log.action}</span>
                     <span className="text-text-muted">{log.resource}</span>
                   </div>

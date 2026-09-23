@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { api } from "@/lib/api";
 import { Search, MoreHorizontal, UserCheck, UserX } from "lucide-react";
 
@@ -12,6 +13,7 @@ interface AdminUser {
 }
 
 export default function AdminUsersPage() {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -34,7 +36,7 @@ export default function AdminUsersPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-text mb-6">用户管理</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">{t("pages.admin.users.title")}</h1>
 
       {/* 搜索栏 */}
       <div className="mb-4 flex items-center gap-3">
@@ -44,7 +46,7 @@ export default function AdminUsersPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索用户邮箱或昵称..."
+            placeholder={t("pages.admin.users.searchPh")}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
           />
         </div>
@@ -53,16 +55,16 @@ export default function AdminUsersPage() {
       {/* 用户列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-text-muted">加载中...</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.admin.users.loading")}</div>
         ) : (
           <table className="w-full">
             <thead className="bg-card">
               <tr>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">用户</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">状态</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">注册时间</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">最后登录</th>
-                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">操作</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.users.user")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.users.status")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.users.registered")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.users.lastLogin")}</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.users.action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -85,7 +87,7 @@ export default function AdminUsersPage() {
                         ? "bg-green-500/10 text-green-400"
                         : "bg-red-500/10 text-red-400"
                     }`}>
-                      {user.status === "active" ? "正常" : "已禁用"}
+                      {user.status === "active" ? t("pages.admin.users.normal") : t("pages.admin.users.disabled")}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-text-muted">

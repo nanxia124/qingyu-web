@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from 'react-i18next'
 import { ChevronRight } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "";
@@ -132,6 +133,7 @@ const PROVIDERS = [
 ];
 
 export default function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
+  const { t } = useTranslation()
     const [keys, setKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAdd, setShowAdd] = useState(false);
@@ -210,7 +212,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         // 新增模式：前端先校验必填项
         if (!editId) {
             if (!payload.name || !payload.base_url || !payload.api_key) {
-                alert("请填写完整信息：名称、API 地址、API Key 为必填项");
+                alert(t("pages.admin.dashboard.fillRequired"));
                 return;
             }
         } else if (!payload.api_key) {
@@ -230,7 +232,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             const data = await res.json().catch(() => ({}));
             // 关键：HTTP 4xx/5xx 时 fetch 不会抛异常，必须显式检查 res.ok
             if (!res.ok) {
-                alert("保存失败：" + (data.error || `HTTP ${res.status}`));
+                alert(t("pages.admin.dashboard.saveFailed") + (data.error || `HTTP ${res.status}`));
                 return; // 保留弹窗，方便用户改完重存
             }
             // 只有成功才关闭并刷新列表
@@ -241,7 +243,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             setModels([]);
             fetchKeys();
         } catch (err: any) {
-            alert("保存失败：" + (err.message || err));
+            alert(t("pages.admin.dashboard.saveFailed") + (err.message || err));
         }
     };
 
@@ -255,7 +257,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm("确定删除？")) return;
+        if (!confirm(t("pages.admin.dashboard.confirmDelete"))) return;
         await fetch(`${API}/api/admin/api-keys/${id}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${token}` },
@@ -265,7 +267,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
     const fetchModels = async () => {
         if (!form.base_url) {
-            alert("请先填写 API 地址");
+            alert(t("pages.admin.dashboard.apiUrlFirst"));
             return;
         }
         setLoadingModels(true);
@@ -280,7 +282,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                 apiKey = data.api_key;
             }
             if (!apiKey) {
-                alert("请先填写 API Key");
+                alert(t("pages.admin.dashboard.apiKeyFirst"));
                 return;
             }
             // 通过后端代理拉取供应商 /models（服务端请求，规避浏览器跨域）
@@ -291,16 +293,16 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                alert("拉取失败：" + (data.error || `HTTP ${res.status}`));
+                alert(t("pages.admin.dashboard.pullFailed") + (data.error || `HTTP ${res.status}`));
                 return;
             }
             if (data.data) {
                 setModels(data.data.map((m: any) => m.id));
             } else {
-                alert("拉取失败：" + (data.error?.message || "未知错误"));
+                alert(t("pages.admin.dashboard.pullFailed") + (data.error?.message || t("pages.admin.dashboard.unknownErr")));
             }
         } catch (err: any) {
-            alert("拉取失败：" + err.message);
+            alert(t("pages.admin.dashboard.pullFailed") + err.message);
         } finally {
             setLoadingModels(false);
         }
@@ -381,7 +383,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             });
             const keyData = await keyRes.json();
             const key = keys.find(k => k.id === id);
-            if (!key) throw new Error("配置不存在");
+            if (!key) throw new Error(t("pages.admin.dashboard.configNotExist"));
 
             // 测试 /models 接口
             const url = key.base_url.replace(/\/$/, "") + "/models";
@@ -407,11 +409,11 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         setPwError("");
         setPwSuccess(false);
         if (pwForm.newPassword !== pwForm.confirmPassword) {
-            setPwError("两次新密码不一致");
+            setPwError(t("pages.admin.dashboard.pwMismatch"));
             return;
         }
         if (pwForm.newPassword.length < 8) {
-            setPwError("新密码至少 8 位");
+            setPwError(t("pages.admin.dashboard.pwMin"));
             return;
         }
         try {
@@ -434,7 +436,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         <div className="min-h-screen bg-bg p-8">
             <div className="mx-auto max-w-5xl">
                 <div className="mb-8 flex items-center justify-between">
-                    <h1 className="text-2xl font-bold text-white">API 配置管理</h1>
+                    <h1 className="text-2xl font-bold text-white">{t("pages.admin.dashboard.title")}</h1>
                     <div className="flex gap-2">
                         <button onClick={() => setShowChangePw(true)} className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border">
                             修改密码
@@ -448,29 +450,29 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                 {showChangePw && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
                         <form onSubmit={handleChangePw} className="relative w-full max-w-md rounded-2xl bg-card p-6">
-                        <h2 className="mb-4 text-lg font-semibold text-white">修改密码</h2>
+                        <h2 className="mb-4 text-lg font-semibold text-white">{t("pages.admin.dashboard.changePw")}</h2>
                         <button type="button" onClick={() => setShowChangePw(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
                         {pwError && <p className="mb-4 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">{pwError}</p>}
-                        {pwSuccess && <p className="mb-4 rounded bg-green-500/10 px-3 py-2 text-sm text-green-400">密码修改成功</p>}
+                        {pwSuccess && <p className="mb-4 rounded bg-green-500/10 px-3 py-2 text-sm text-green-400">{t("pages.admin.dashboard.pwSuccess")}</p>}
                         <div className="grid gap-4">
                             <div>
-                                <label className="mb-1 block text-sm text-gray-500">旧密码</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.oldPw")}</label>
                                 <input type="password" value={pwForm.oldPassword} onChange={e => setPwForm({...pwForm, oldPassword: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                             <div>
-                                <label className="mb-1 block text-sm text-gray-500">新密码（至少 8 位）</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.newPw")}</label>
                                 <input type="password" value={pwForm.newPassword} onChange={e => setPwForm({...pwForm, newPassword: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                             <div>
-                                <label className="mb-1 block text-sm text-gray-500">确认新密码</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.confirmPw")}</label>
                                 <input type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({...pwForm, confirmPassword: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
                             </div>
                         </div>
                         <div className="mt-4 flex gap-2">
-                            <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">确认修改</button>
+                            <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">{t("pages.admin.dashboard.confirm")}</button>
                             <button type="button" onClick={() => setShowChangePw(false)} className="rounded-lg bg-secondary px-4 py-2 text-gray-600">取消</button>
                         </div>
                         </form>
@@ -479,23 +481,23 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
                 <div className="mb-6 flex justify-end">
                     <button onClick={() => setShowAdd(!showAdd)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">
-                        + 添加 API 配置
+                        {t("pages.admin.dashboard.addBtn")}
                     </button>
                 </div>
 
                 {showAdd && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
                         <form onSubmit={handleAdd} className="relative w-full max-w-2xl rounded-2xl bg-card p-6 max-h-[85vh] overflow-y-auto thin-scrollbar">
-                        <h2 className="mb-4 text-lg font-semibold text-white">{editId ? "编辑配置" : "新增配置"}</h2>
+                        <h2 className="mb-4 text-lg font-semibold text-white">{editId ? t("pages.admin.dashboard.editTitle") : t("pages.admin.dashboard.newTitle")}</h2>
                         <button type="button" onClick={() => setShowAdd(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="mb-1 block text-sm text-gray-500">名称</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.name")}</label>
                                 <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="比如：OpenAI 主 Key" />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder={t("pages.admin.dashboard.namePh")} />
                             </div>
                             <div>
-                                <label className="mb-1 block text-sm text-gray-500">提供商</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.provider")}</label>
                                 <div className="relative" ref={providerRef}>
                                     <button type="button" onClick={() => setProviderOpen(v => !v)}
                                         className="flex w-full items-center justify-between rounded-lg bg-secondary px-3 py-2 text-sm text-white outline-none">
@@ -505,22 +507,22 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                 </div>
                             </div>
                             <div className="col-span-2">
-                                <label className="mb-1 block text-sm text-gray-500">API 地址</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.apiUrl")}</label>
                                 <input value={form.base_url} onChange={e => setForm({...form, base_url: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="https://api.openai.com/v1" />
                             </div>
                             <div className="col-span-2">
-                                <label className="mb-1 block text-sm text-gray-500">API Key{editId && "（留空则不修改）"}</label>
+                                <label className="mb-1 block text-sm text-gray-500">t("pages.admin.dashboard.apiKey"){editId && t("pages.admin.dashboard.apiKeyEdit")}</label>
                                 <input type="password" value={form.api_key} onChange={e => setForm({...form, api_key: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="sk-..." />
                             </div>
                             <div className="col-span-2">
-                                <label className="mb-1 block text-sm text-gray-500">单 key 最大并发（留空用全局默认 {keyMaxConcurrency}）</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.concurrency")} {keyMaxConcurrency}）</label>
                                 <input type="number" min="1" value={form.max_concurrency} onChange={e => setForm({...form, max_concurrency: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="如 5" />
                             </div>
                             <div className="col-span-2">
-                                <span className="text-sm text-gray-500">模型已选 {selectedModels.length} 个</span>
+                                <span className="text-sm text-gray-500">{t("pages.admin.dashboard.selectedModels", { count: selectedModels.length })}</span>
                                 {showModelsModal && (() => {
                                     const allCaps = ["图片", "视频", "文本", "音频", "其他"];
                                     const tabs = ["全部", ...allCaps.filter(c => models.some(m => capOf(m) === c))];
@@ -542,7 +544,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                     return (
                                     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70">
                                         <div className="relative flex h-[80vh] w-full max-w-2xl flex-col rounded-2xl bg-card p-6">
-                                            <h3 className="mb-4 text-xl font-semibold text-white">选择模型</h3>
+                                            <h3 className="mb-4 text-xl font-semibold text-white">{t("pages.admin.dashboard.selectModels")}</h3>
                                             <button type="button" onClick={() => setShowModelsModal(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
                                             <div className="mb-4 flex flex-wrap items-center gap-5 border-b border-border pb-3">
                                                 {tabs.map(t => (
@@ -553,11 +555,11 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                 ))}
                                                 <button type="button" onClick={() => setAllExpanded(!allExpanded)}
                                                     className="ml-auto rounded bg-secondary px-3 py-1 text-xs text-gray-600 hover:bg-border">
-                                                    {allExpanded ? "折叠全部" : "展开全部"}
+                                                    {allExpanded ? t("pages.admin.dashboard.collapseAll") : t("pages.admin.dashboard.expandAll")}
                                                 </button>
                                                 <button type="button" onClick={() => toggleBrand(filtered)}
                                                     className={`rounded px-3 py-1 text-xs ${allFilteredIn ? "bg-[#5051F8]/15 text-accent-soft-text" : "bg-secondary text-gray-600 hover:bg-border"}`}>
-                                                    {allFilteredIn ? "取消全选" : "全选"}
+                                                    {allFilteredIn ? t("pages.admin.dashboard.deselectAll") : t("pages.admin.dashboard.selectAll")}
                                                 </button>
                                             </div>
                                             <div className="flex-1 space-y-3 overflow-y-auto thin-scrollbar">
@@ -588,7 +590,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                 {headLogo}
                                                                 <span className="text-base font-semibold text-gray-100">{b}</span>
                                                                 <span className="rounded-full bg-[#5051F8]/20 px-1.5 text-xs text-accent-soft-text">{list.length}</span>
-                                                                <button type="button" onClick={() => toggleBrand(list)} title={allIn ? "取消添加全部" : "添加全部"}
+                                                                <button type="button" onClick={() => toggleBrand(list)} title={allIn ? t("pages.admin.dashboard.removeAll") : t("pages.admin.dashboard.addAll")}
                                                                     className={`ml-auto flex h-4 w-4 items-center justify-center rounded-full transition-all ${allIn ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover:opacity-100"}`}>
                                                                     {allIn ? (
                                                                         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -619,7 +621,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                         <div key={m} className="group/row flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 hover:bg-surface-hover">
                                                                                             {rowLogo}
                                                                                             <span className="truncate text-sm text-gray-600">{prettyModel(m)}</span>
-                                                                                            <button type="button" onClick={() => toggleModel(m)} title={sel ? "移除" : "添加"}
+                                                                                            <button type="button" onClick={() => toggleModel(m)} title={sel ? t("pages.admin.dashboard.remove") : t("pages.admin.dashboard.add")}
                                                                                                 className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-all ${sel ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover/row:opacity-100"}`}>
                                                                                                 {sel ? (
                                                                                                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -638,10 +640,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         </div>
                                                     );
                                                 })}
-                                                {brandKeys.length === 0 && <p className="py-8 text-center text-sm text-gray-500">该分类下没有模型</p>}
+                                                {brandKeys.length === 0 && <p className="py-8 text-center text-sm text-gray-500">{t("pages.admin.dashboard.noModelInCat")}</p>}
                                             </div>
                                             <div className="mt-4 flex justify-end border-t border-border pt-4">
-                                                <button type="button" onClick={() => setShowModelsModal(false)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">完成（已选 {selectedModels.length} 个）</button>
+                                                <button type="button" onClick={() => setShowModelsModal(false)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">{t("pages.admin.dashboard.doneSelected", { count: selectedModels.length })}</button>
                                             </div>
                                         </div>
                                     </div>
@@ -656,10 +658,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                 setShowModelsModal(true);
                             }} disabled={loadingModels}
                                 className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border disabled:opacity-50">
-                                {loadingModels ? "拉取中..." : "拉取模型"}
+                                {loadingModels ? t("pages.admin.dashboard.pulling") : t("pages.admin.dashboard.pullModels")}
                             </button>
                             <div className="ml-auto flex gap-2">
-                                <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">保存</button>
+                                <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">{t("pages.admin.dashboard.save")}</button>
                                 <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg bg-secondary px-4 py-2 text-gray-600">取消</button>
                             </div>
                         </div>
@@ -688,9 +690,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                 })()}
 
                 {loading ? (
-                    <p className="text-gray-500">加载中...</p>
+                    <p className="text-gray-500">{t("pages.admin.dashboard.loading")}</p>
                 ) : keys.length === 0 ? (
-                    <p className="text-gray-500">还没有配置，点上面"添加 API 配置"开始</p>
+                    <p className="text-gray-500">{t("pages.admin.dashboard.emptyHint")}</p>
                 ) : (
                     <div className="space-y-6">
                         {Object.entries(keys.reduce((acc: Record<string, typeof keys>, k) => {
@@ -711,9 +713,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-medium text-white">{k.name}</span>
                                                         {k.is_active ? (
-                                                            <span className="rounded bg-green-500/10 px-2 py-0.5 text-xs text-green-400">启用中</span>
+                                                            <span className="rounded bg-green-500/10 px-2 py-0.5 text-xs text-green-400">{t("pages.admin.dashboard.active")}</span>
                                                         ) : (
-                                                            <span className="rounded bg-gray-500/10 px-2 py-0.5 text-xs text-gray-500">已停用</span>
+                                                            <span className="rounded bg-gray-500/10 px-2 py-0.5 text-xs text-gray-500">{t("pages.admin.dashboard.inactive")}</span>
                                                         )}
                                                     </div>
                                                     <p className="text-sm text-gray-500">{k.base_url}</p>
@@ -727,15 +729,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         return (
                                                             <div className="flex flex-wrap items-center gap-2 pt-1">
                                                                 <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${st.inFlight > 0 ? "bg-blue-500/20 text-blue-300" : "bg-secondary text-gray-500"}`}>
-                                                                    并发 {st.inFlight || 0}/{max}
+                                                                    {t("pages.admin.dashboard.concurrencyLabel")} {st.inFlight || 0}/{max}
                                                                 </span>
-                                                                <span className="rounded-md bg-emerald-500/15 px-2.5 py-1 text-sm font-medium text-emerald-300">成功 {s}</span>
-                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${f > 0 ? "bg-red-500/15 text-red-300" : "bg-secondary text-gray-500"}`}>失败 {f}</span>
+                                                                <span className="rounded-md bg-emerald-500/15 px-2.5 py-1 text-sm font-medium text-emerald-300">{t("pages.admin.dashboard.success")} {s}</span>
+                                                                <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${f > 0 ? "bg-red-500/15 text-red-300" : "bg-secondary text-gray-500"}`}>{t("pages.admin.dashboard.fail")} {f}</span>
                                                                 <span className={`rounded-md px-2.5 py-1 text-sm font-medium ${total === 0 ? "bg-secondary text-gray-500" : rate >= 90 ? "bg-emerald-500/15 text-emerald-300" : rate >= 60 ? "bg-amber-500/15 text-amber-300" : "bg-red-500/15 text-red-300"}`}>
                                                                     {total === 0 ? "—" : rate + "%"}
                                                                 </span>
                                                                 {st.avgLatencyMs > 0 && <span className="rounded-md bg-secondary px-2.5 py-1 text-sm font-medium text-gray-600">{st.avgLatencyMs}ms</span>}
-                                                                {st.cooling && <span className="rounded-md bg-red-500/20 px-2.5 py-1 text-sm font-semibold text-red-300">熔断中</span>}
+                                                                {st.cooling && <span className="rounded-md bg-red-500/20 px-2.5 py-1 text-sm font-semibold text-red-300">{t("pages.admin.dashboard.cooling")}</span>}
                                                             </div>
                                                         );
                                                     })()}
@@ -785,7 +787,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                     <div className="space-y-0.5">
                                                                         {today && today.calls > 0 && (
                                                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                <span className="w-16 shrink-0 text-gray-600">今日调用</span>
+                                                                                <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.todayCalls")}</span>
                                                                                 <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(today.calls)}</span></span>
                                                                                 <span className="text-gray-500">成功 <span className="text-emerald-300">{today.successes}</span></span>
                                                                                 <span className="text-gray-500">失败 <span className={failCls(today.failures)}>{today.failures}</span></span>
@@ -793,7 +795,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                         )}
                                                                         {week && week.calls > 0 && (
                                                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                <span className="w-16 shrink-0 text-gray-600">近7天调用</span>
+                                                                                <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.weekCalls")}</span>
                                                                                 <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(week.calls)}</span></span>
                                                                                 <span className="text-gray-500">成功 <span className="text-emerald-300">{week.successes}</span></span>
                                                                                 <span className="text-gray-500">失败 <span className={failCls(week.failures)}>{week.failures}</span></span>
@@ -814,15 +816,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         编辑
                                                     </button>
                                                     <button onClick={() => testConnection(k.id)} className="rounded bg-secondary px-3 py-1 text-sm text-gray-600 hover:bg-border">
-                                                        {testingId === k.id ? "测试中..." : "测试连接"}
+                                                        {testingId === k.id ? t("pages.admin.dashboard.testing") : t("pages.admin.dashboard.testConn")}
                                                     </button>
                                                     {testResult[k.id] && (
                                                         <span className={`rounded px-2 py-1 text-xs ${testResult[k.id].ok ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
-                                                            {testResult[k.id].ok ? "正常" : "失败"}
+                                                            {testResult[k.id].ok ? t("pages.admin.dashboard.normal") : t("pages.admin.dashboard.fail")}
                                                         </span>
                                                     )}
                                                     <button onClick={() => handleToggle(k.id, !!k.is_active)} className="rounded bg-secondary px-3 py-1 text-sm text-gray-600 hover:bg-border">
-                                                        {k.is_active ? "停用" : "启用"}
+                                                        {k.is_active ? t("pages.admin.dashboard.disable") : t("pages.admin.dashboard.enable")}
                                                     </button>
                                                     <button onClick={() => handleDelete(k.id)} className="rounded bg-red-500/10 px-3 py-1 text-sm text-red-400 hover:bg-red-500/20">
                                                         删除
@@ -847,7 +849,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                 return (
                                                     <div className="mt-5 space-y-4 border-t border-border pt-3">
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <button onClick={() => setAll(collapsed)} className="rounded bg-secondary px-3 py-1 text-xs text-gray-600 hover:bg-border">{collapsed ? "展开全部" : "折叠全部"}</button>
+                                                            <button onClick={() => setAll(collapsed)} className="rounded bg-secondary px-3 py-1 text-xs text-gray-600 hover:bg-border">{collapsed ? t("pages.admin.dashboard.expandAll2") : t("pages.admin.dashboard.collapseAll2")}</button>
                                                         </div>
                                                         {!collapsed && brands.map(brand => {
                                                             const caps = brandGroups[brand];
@@ -895,11 +897,11 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                                             </button>
                                                                                                             {open && (
                                                                                                                 <div className="rounded bg-secondary px-2 py-1.5 text-[11px] leading-5 text-gray-500">
-                                                                                                                    {!has && <div className="text-gray-600">暂无数据</div>}
+                                                                                                                    {!has && <div className="text-gray-600">{t("pages.admin.dashboard.noData")}</div>}
                                                                                                                     {has && (
                                                                                                                         <>
-                                                                                                                            <div>近7天 调用 {d7m?.calls ?? 0} · 成功 <span className="text-emerald-300">{d7m?.successes ?? 0}</span> · 失败 <span className={(d7m?.failures ?? 0) > 0 ? "text-red-300" : "text-emerald-300"}>{d7m?.failures ?? 0}</span> · 成功率 <span className={rateTxt(d7m?.successRate)}>{pctTxt(d7m?.successRate)}</span></div>
-                                                                                                                            <div>近30天 调用 {d30m?.calls ?? 0} · 成功 <span className="text-emerald-300">{d30m?.successes ?? 0}</span> · 失败 <span className={(d30m?.failures ?? 0) > 0 ? "text-red-300" : "text-emerald-300"}>{d30m?.failures ?? 0}</span> · 成功率 <span className={rateTxt(d30m?.successRate)}>{pctTxt(d30m?.successRate)}</span></div>
+                                                                                                                            <div>{t("pages.admin.dashboard.d7")} {t("pages.admin.dashboard.calls")} {d7m?.calls ?? 0} · 成功 <span className="text-emerald-300">{d7m?.successes ?? 0}</span> · 失败 <span className={(d7m?.failures ?? 0) > 0 ? "text-red-300" : "text-emerald-300"}>{d7m?.failures ?? 0}</span> · 成功率 <span className={rateTxt(d7m?.successRate)}>{pctTxt(d7m?.successRate)}</span></div>
+                                                                                                                            <div>{t("pages.admin.dashboard.d30")} {t("pages.admin.dashboard.calls")} {d30m?.calls ?? 0} · 成功 <span className="text-emerald-300">{d30m?.successes ?? 0}</span> · 失败 <span className={(d30m?.failures ?? 0) > 0 ? "text-red-300" : "text-emerald-300"}>{d30m?.failures ?? 0}</span> · 成功率 <span className={rateTxt(d30m?.successRate)}>{pctTxt(d30m?.successRate)}</span></div>
                                                                                                                         </>
                                                                                                                     )}
                                                                                                                 </div>

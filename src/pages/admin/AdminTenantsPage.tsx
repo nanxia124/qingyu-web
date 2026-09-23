@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next'
 import { api } from "@/lib/api";
 import { Search, Building2, MoreHorizontal } from "lucide-react";
 
@@ -12,6 +13,7 @@ interface Tenant {
 }
 
 export default function AdminTenantsPage() {
+  const { t } = useTranslation()
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -34,7 +36,7 @@ export default function AdminTenantsPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-text mb-6">租户管理</h1>
+      <h1 className="text-2xl font-bold text-text mb-6">{t("pages.admin.tenants.title")}</h1>
 
       {/* 搜索栏 */}
       <div className="mb-4 flex items-center gap-3">
@@ -44,7 +46,7 @@ export default function AdminTenantsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索租户名称..."
+            placeholder={t("pages.admin.tenants.searchPh")}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
           />
         </div>
@@ -53,17 +55,17 @@ export default function AdminTenantsPage() {
       {/* 租户列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-text-muted">加载中...</div>
+          <div className="p-8 text-center text-text-muted">{t("pages.admin.tenants.loading")}</div>
         ) : (
           <table className="w-full">
             <thead className="bg-card">
               <tr>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">租户</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">计划</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">成员数</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">状态</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">创建时间</th>
-                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">操作</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.tenant")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.plan")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.members")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.status")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.created")}</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">{t("pages.admin.tenants.action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -78,14 +80,14 @@ export default function AdminTenantsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-text">{tenant.plan}</td>
-                  <td className="px-6 py-4 text-text-muted">{tenant.memberCount} 人</td>
+                  <td className="px-6 py-4 text-text-muted">{tenant.memberCount} {t("pages.admin.tenants.people")}</td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
                       tenant.status === "active"
                         ? "bg-green-500/10 text-green-400"
                         : "bg-red-500/10 text-red-400"
                     }`}>
-                      {tenant.status === "active" ? "正常" : "已禁用"}
+                      {tenant.status === "active" ? t("pages.admin.tenants.normal") : t("pages.admin.tenants.disabled")}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-text-muted">

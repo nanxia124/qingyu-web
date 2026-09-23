@@ -34,6 +34,7 @@ jobs:
           source: "dist/*"
           target: "/home/ubuntu/qingyu-upload"
           overwrite: true
+          strip_components: 1
 
       - name: Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
@@ -43,11 +44,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
+            set -eu
+            test -s /home/ubuntu/qingyu-upload/index.html
             sudo mkdir -p /var/www/qingyu-web
-            sudo rm -rf /var/www/qingyu-web/*
-            sudo cp -r /home/ubuntu/qingyu-upload/* /var/www/qingyu-web/
+            sudo cp -a /home/ubuntu/qingyu-upload/. /var/www/qingyu-web/
             sudo chown -R www-data:www-data /var/www/qingyu-web
             sudo nginx -t && sudo systemctl reload nginx
+            curl --fail --silent --show-error http://localhost/ -o /dev/null
             rm -rf /home/ubuntu/qingyu-upload
             echo "✅ Deploy completed successfully"
 

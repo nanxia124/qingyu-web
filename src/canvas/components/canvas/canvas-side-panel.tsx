@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
+import { App, Dropdown, Empty, Input, Popconfirm, Select, Spin, Tag, Tooltip } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Globe, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -18,6 +18,8 @@ import { usePromptSourceStore } from "@canvas/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@canvas/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@canvas/types/canvas";
+import { AnimatedThemeToggler } from "@canvas/components/ui/animated-theme-toggler";
+import { changeAppLocale, SUPPORTED_LOCALES, type AppLocale } from "@canvas/i18n";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
 
@@ -112,6 +114,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     )}
                 </div>
+                <SidePanelSettings theme={theme} />
                 <button type="button" className="absolute inset-y-0 right-0 z-40 w-4 translate-x-1/2 cursor-col-resize" onPointerDown={startResize} aria-label={t("canvas.sidePanel.resize")} />
             </motion.aside>
         </motion.div>
@@ -605,6 +608,88 @@ function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: Can
                     <Plus className="size-3.5" />
                 </button>
             </div>
+        </div>
+    );
+}
+
+const LOCALE_LABELS: Record<AppLocale, string> = {
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文",
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "es-ES": "Español",
+    "fr-FR": "Français",
+    "de-DE": "Deutsch",
+    "ru-RU": "Русский",
+    "pt-BR": "Português",
+    "it-IT": "Italiano",
+    "ar-SA": "العربية",
+    "tr-TR": "Türkçe",
+    "hi-IN": "हिन्दी",
+    "th-TH": "ไทย",
+    "vi-VN": "Tiếng Việt",
+    "id-ID": "Bahasa Indonesia",
+};
+
+const LOCALE_SHORT_LABELS: Record<AppLocale, string> = {
+    "zh-CN": "中",
+    "zh-TW": "繁",
+    "en-US": "EN",
+    "ja-JP": "日",
+    "ko-KR": "한",
+    "es-ES": "ES",
+    "fr-FR": "FR",
+    "de-DE": "DE",
+    "ru-RU": "RU",
+    "pt-BR": "PT",
+    "it-IT": "IT",
+    "ar-SA": "ع",
+    "tr-TR": "TR",
+    "hi-IN": "हि",
+    "th-TH": "TH",
+    "vi-VN": "VI",
+    "id-ID": "ID",
+};
+
+function SidePanelSettings({ theme }: { theme: CanvasTheme }) {
+    const { i18n, t } = useTranslation();
+    const themeMode = useThemeStore((state) => state.theme);
+    const setTheme = useThemeStore((state) => state.setTheme);
+    const locale = (i18n.resolvedLanguage as AppLocale) || "zh-CN";
+
+    const languageMenuItems = SUPPORTED_LOCALES.map((loc) => ({
+        key: loc,
+        label: (
+            <div className="flex items-center justify-between min-w-[140px]">
+                <span>{LOCALE_LABELS[loc]}</span>
+                {loc === locale && <span className="text-xs text-blue-500">✓</span>}
+            </div>
+        ),
+        onClick: () => void changeAppLocale(loc),
+    }));
+
+    const buttonClass = "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-black/5 hover:text-zinc-950 dark:hover:bg-white/10 dark:hover:text-white";
+
+    return (
+        <div className="flex items-center justify-between gap-2 border-t px-3 py-2.5" style={{ borderColor: theme.toolbar.border }}>
+            <Tooltip title={t(themeMode === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} mouseEnterDelay={0.2}>
+                <AnimatedThemeToggler theme={themeMode} onThemeChange={setTheme} className={buttonClass} />
+            </Tooltip>
+            <Dropdown
+                menu={{ items: languageMenuItems }}
+                placement="topRight"
+                trigger={["click"]}
+            >
+                <Tooltip title={t("topNav.switchLanguage", { language: LOCALE_LABELS[locale] })} mouseEnterDelay={0.2}>
+                    <button type="button" className={`${buttonClass} text-[11px] font-semibold tracking-tight`} aria-label={t("topNav.switchLanguage", { language: LOCALE_LABELS[locale] })}>
+                        <span className="flex items-center gap-1">
+                            <Globe className="size-4" />
+                            {LOCALE_SHORT_LABELS[locale]}
+                        </span>
+                    </button>
+                </Tooltip>
+            </Dropdown>
         </div>
     );
 }

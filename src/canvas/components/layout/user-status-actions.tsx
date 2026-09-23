@@ -99,26 +99,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Settings2 className="size-4" />
                 </button>
             ) : null}
-            <Dropdown
-                menu={{ items: languageMenuItems }}
-                placement="bottomRight"
-                trigger={["click"]}
-            >
-                <Tooltip title={t("topNav.switchLanguage", { language: LOCALE_LABELS[locale] })} mouseEnterDelay={0.2}>
-                    <button
-                        type="button"
-                        className={`${naturalIconClass} text-[11px] font-semibold tracking-tight`}
-                        style={iconStyle}
-                        aria-label={t("topNav.switchLanguage", { language: LOCALE_LABELS[locale] })}
-                    >
-                        <span className="flex items-center gap-0.5">
-                            <Globe className="size-3.5" />
-                            {LOCALE_SHORT_LABELS[locale]}
-                        </span>
-                    </button>
-                </Tooltip>
-            </Dropdown>
-            <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
             <VersionReleaseModal style={versionStyle} />
             <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
             {onOpenShortcuts ? (

@@ -52,6 +52,7 @@ export function onLanguageSuggestion(cb: LanguageSuggestionListener) {
     };
 }
 const MANUAL_SELECT_KEY = "infinite-canvas:locale-manual";
+const LANGUAGE_SUGGESTION_SEEN_KEY = "infinite-canvas:locale-suggestion-seen";
 
 export const SUPPORTED_LOCALES: AppLocale[] = [
     "zh-CN",
@@ -202,6 +203,11 @@ export async function autoDetectLanguageByIP() {
 
     const detected = await detectLanguageByIP();
     if (detected && detected.locale !== i18n.resolvedLanguage) {
+        // 同一个语言建议只提示一次，避免用户刷新页面后反复打扰。
+        if (localStorage.getItem(LANGUAGE_SUGGESTION_SEEN_KEY) === detected.locale) {
+            return;
+        }
+        localStorage.setItem(LANGUAGE_SUGGESTION_SEEN_KEY, detected.locale);
         // 不自动切换，通知 UI 弹 toast 询问用户是否切换
         languageSuggestionListener?.(detected);
     }

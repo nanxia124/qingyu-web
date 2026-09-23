@@ -1,11 +1,12 @@
 ﻿import { useEffect, useId, useMemo, useState } from "react";
-import { Clapperboard, Cpu } from "lucide-react";
+import { Clapperboard, Cpu, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@canvas/i18n";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from "@canvas/components/ui/select";
 import { cn } from "@canvas/lib/utils";
-import { modelOptionLabel, modelOptionName, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@canvas/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, selectableModelsByCapability, useConfigStore, guessCapability, type AiConfig, type ModelCapability, type ModelChannel } from "@canvas/stores/use-config-store";
+import { fetchChannelModels } from "@canvas/services/api/image";
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -22,9 +23,11 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const updateConfig = useConfigStore((state) => state.updateConfig);
     const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
     const current = value || "";
-    
+
     // 按模型品牌分组
     const groupedOptions = useMemo(() => {
         const groups: Record<string, string[]> = {};
@@ -45,6 +48,47 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
     }, [options]);
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
 
+    const refreshModels = async () => {
+        if (refreshing) return;
+        if (config.channelMode === "local" || !config.channels.length) {
+            onMissingConfig?.();
+            return;
+        }
+        setRefreshing(true);
+        try {
+            // 从第一个远程渠道拉取最新模型列表
+            const channel = config.channels[0];
+            const models = await fetchChannelModels(channel);
+            
+            // 更新渠道里的模型列表
+            const updatedChannels = config.channels.map((ch, idx) => {
+                if (idx === 0) {
+                    return {
+                        ...ch,
+                        models: models.map((name) => ({
+                            name,
+                            capability: guessCapability(name),
+                        })),
+                    };
+                }
+                return ch;
+            });
+            
+            // 更新 config
+            updateConfig("channels", updatedChannels);
+            updateConfig("models", updatedChannels.flatMap((ch) => ch.models.map((m) => `${ch.id}::${m.name}`)));
+        } catch (error) {
+            console.error("Failed to refresh models:", error);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+    
+    // 自动同步：打开下拉时自动刷新（可选，先注释掉，避免每次打开都请求）
+    // useEffect(() => {
+    //     if (open) refreshModels();
+    // }, [open]);
+
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
             if ((event as CustomEvent<string>).detail !== pickerId) setOpen(false);
@@ -54,57 +98,69 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
     }, [pickerId]);
 
     return (
-        <Select
-            open={open}
-            value={current}
-            onOpenChange={(nextOpen) => {
-                if (nextOpen && !options.length && config.channelMode === "local") onMissingConfig?.();
-                if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
-                setOpen(nextOpen);
-            }}
-            onValueChange={onChange}
-        >
-            <SelectTrigger
-                className={cn(
-                    "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-[6px] !border-0 !bg-secondary px-3 text-[13px] font-normal !shadow-none transition-colors",
-                    fullWidth ? "w-full min-w-0 justify-between" : "min-w-[9rem] justify-start",
-                    "data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/20",
-                )}
-                onMouseDown={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-                title={current ? modelOptionLabel(config, current) : pickerPlaceholder}
+        <div className={cn("inline-flex items-center gap-1", fullWidth && "w-full")}>
+            <Select
+                open={open}
+                value={current}
+                onOpenChange={(nextOpen) => {
+                    if (nextOpen && !options.length && config.channelMode === "local") onMissingConfig?.();
+                    if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
+                    setOpen(nextOpen);
+                }}
+                onValueChange={onChange}
             >
-                <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : pickerPlaceholder}</span>
-            </SelectTrigger>
-            <SelectContent
-                data-canvas-no-zoom
-                className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl bg-popover p-1 shadow-xl ring-0 border-0"
-                position="popper"
-                align="start"
-                side="bottom"
-                sideOffset={6}
-                onPointerDown={(event) => event.stopPropagation()}
-                onMouseDown={(event) => event.stopPropagation()}
+                <SelectTrigger
+                    className={cn(
+                        "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-[6px] !border-0 !bg-secondary px-3 text-[13px] font-normal !shadow-none transition-colors",
+                        fullWidth ? "w-full min-w-0 justify-between" : "min-w-[9rem] justify-start",
+                        "data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/20",
+                    )}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    title={current ? modelOptionLabel(config, current) : pickerPlaceholder}
+                >
+                    <ModelIcon model={current} />
+                    <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : pickerPlaceholder}</span>
+                </SelectTrigger>
+                <SelectContent
+                    data-canvas-no-zoom
+                    className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl bg-popover p-1 shadow-xl ring-0 border-0"
+                    position="popper"
+                    align="start"
+                    side="bottom"
+                    sideOffset={6}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => event.stopPropagation()}
+                >
+                    {options.length ? (
+                        Object.entries(groupedOptions).map(([group, models]) => (
+                            <SelectGroup key={group}>
+                                <SelectLabel className="px-2 py-1.5 text-xs font-normal text-[#6a6a6a]">{group}</SelectLabel>
+                                {models.map((model) => (
+                                    <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)} title={modelOptionLabel(config, model)}>
+                                        <ModelLabel config={config} model={model} />
+                                    </SelectItem>
+                                ))}
+                            </SelectGroup>
+                        ))
+                    ) : (
+                        <SelectItem value="__empty__" disabled>
+                            {emptyModelLabel(config, capability)}
+                        </SelectItem>
+                    )}
+                </SelectContent>
+            </Select>
+            <button
+                type="button"
+                onClick={() => void refreshModels()}
+                disabled={refreshing}
+                className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-[6px] text-zinc-500 transition-colors hover:bg-secondary hover:text-zinc-900 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-secondary dark:hover:text-zinc-100"
+                title={t("settingsPanels.model.refresh")}
+                aria-label={t("settingsPanels.model.refresh")}
             >
-                {options.length ? (
-                    Object.entries(groupedOptions).map(([group, models]) => (
-                        <SelectGroup key={group}>
-                            <SelectLabel className="px-2 py-1.5 text-xs font-normal text-[#6a6a6a]">{group}</SelectLabel>
-                            {models.map((model) => (
-                                <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)} title={modelOptionLabel(config, model)}>
-                                    <ModelLabel config={config} model={model} />
-                                </SelectItem>
-                            ))}
-                        </SelectGroup>
-                    ))
-                ) : (
-                    <SelectItem value="__empty__" disabled>
-                        {emptyModelLabel(config, capability)}
-                    </SelectItem>
-                )}
-            </SelectContent>
-        </Select>
+                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+            </button>
+        </div>
     );
 }
 

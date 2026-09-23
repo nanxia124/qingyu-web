@@ -31,15 +31,16 @@ import {
   PanelRightOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
 
 const tabs: { id: TabId; label: string }[] = [
-  { id: 'generate', label: '生图' },
-  { id: 'blend', label: '融图' },
-  { id: 'translate', label: '图片翻译' },
+  { id: 'generate', label: 'imageTools.generate' },
+  { id: 'blend', label: 'imageTools.blend' },
+  { id: 'translate', label: 'imageTools.translate' },
 ]
 
 /* ── 生图 Tab ── */
@@ -53,6 +54,7 @@ const models = [
 ]
 
 function GeneratePanel() {
+  const { t } = useTranslation()
   const config = useConfigStore((s) => s.config)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
@@ -237,7 +239,7 @@ function GeneratePanel() {
 
           {/* 提示词 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-text">提示词</label>
+            <label className="mb-2 block text-[14px] text-text">{t("imageTools.prompt")}</label>
             <div className="relative rounded-xl bg-card">
               <textarea
                 ref={promptRef}
@@ -276,7 +278,7 @@ function GeneratePanel() {
 
           {/* 比例 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-text">比例</label>
+            <label className="mb-2 block text-[14px] text-text">{t("imageTools.ratio")}</label>
             <div className="grid grid-cols-7 gap-1.5">
               {ratios.map((r) => (
                 <button key={r} onClick={() => setRatio(r)}
@@ -291,7 +293,7 @@ function GeneratePanel() {
 
           {/* 画质 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-text">画质</label>
+            <label className="mb-2 block text-[14px] text-text">{t("imageTools.quality")}</label>
             <div className="grid grid-cols-3 gap-1.5 max-w-[300px]">
               {qualities.map((q) => (
                 <button key={q} onClick={() => setQuality(q)}
@@ -305,7 +307,7 @@ function GeneratePanel() {
 
           {/* 数量 */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-text">数量</label>
+            <label className="mb-2 block text-[14px] text-text">{t("imageTools.count")}</label>
             <div className="grid grid-cols-4 gap-1.5 max-w-[400px]">
               {counts.map((c) => (
                 <button key={c} onClick={() => setCount(c)}
@@ -320,9 +322,9 @@ function GeneratePanel() {
           {/* 参考图上传 */}
           <div className="mb-6">
             <div className="mb-2 flex items-center">
-              <label className="block text-[14px] text-text">参考图 <span className="ml-1 text-[12px] font-normal text-text-muted">最多4张</span></label>
+              <label className="block text-[14px] text-text">{t("imageTools.refImage")} <span className="ml-1 text-[12px] font-normal text-text-muted">{t("imageTools.refMax")}</span></label>
               {refImages.length > 0 && (
-                <button onClick={() => setRefImages([])} className="ml-auto text-[12px] text-text-secondary hover:text-red-400">清空</button>
+                <button onClick={() => setRefImages([])} className="ml-auto text-[12px] text-text-secondary hover:text-red-400">{t("imageTools.clear")}</button>
               )}
             </div>
             <div className="grid grid-cols-4 gap-2">
@@ -351,7 +353,7 @@ function GeneratePanel() {
                 {/* 默认加号 */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted transition-opacity group-hover:opacity-0">
                   <Plus className="mb-1 size-5" />
-                  <span className="text-[11px]">上传</span>
+                  <span className="text-[11px]">{t("imageTools.upload")}</span>
                 </div>
                 {/* hover 分两半 */}
                 <div className="absolute inset-0 grid grid-rows-2 opacity-0 transition-opacity group-hover:opacity-100">
@@ -414,9 +416,9 @@ function GeneratePanel() {
         {/* 存储位置 + 队列 — 固定在生成按钮上方 */}
         <div className="shrink-0 px-5 pb-2">
           <div className="mb-3 flex items-center gap-2">
-            <span className="text-[14px] text-text">存储位置</span>
+            <span className="text-[14px] text-text">{t("imageTools.storage")}</span>
             <span className="flex-1 truncate text-[12px] text-text-secondary">{storagePath}</span>
-            <button onClick={() => showToast('已打开存储文件夹')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">打开</button>
+            <button onClick={() => showToast('已打开存储文件夹')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.open")}</button>
             <button onClick={async () => {
               try {
                 // @ts-ignore
@@ -426,22 +428,22 @@ function GeneratePanel() {
               } catch {
                 showToast('已取消选择文件夹')
               }
-            }} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">更改</button>
+            }} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.change")}</button>
           </div>
           <div className="mb-2 flex items-center gap-1.5">
-            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">排队1张</button>
+            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queue1")}</button>
             <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+5张</button>
             <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">+10张</button>
             <div className="flex h-[30px] w-[72px] items-center rounded-md bg-card px-2">
               <input value={queueNum} onChange={(e) => setQueueNum(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 className="w-full bg-transparent text-center text-[12px] text-text outline-none" />
             </div>
-            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">张入队</button>
-            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-surface-hover', showQueue ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary')}>查看队列{queueSize > 0 && `(${queueSize})`}</button>
+            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queueCustom")}</button>
+            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-surface-hover', showQueue ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary')}>{t("imageTools.viewQueue")}{queueSize > 0 && `(${queueSize})`}</button>
           </div>
           {showQueue && (
             <div className="mb-2 rounded-lg bg-card p-3 text-[12px] text-text-secondary">
-              {queueSize === 0 ? '队列为空' : `队列中有 ${queueSize} 张待生成`}
+              {queueSize === 0 ? t('imageTools.queueEmpty') : `${t('imageTools.queueEmpty').slice(0,0)}队列中有 ${queueSize} 张待生成`}
             </div>
           )}
         </div>
@@ -450,7 +452,7 @@ function GeneratePanel() {
         <div className="shrink-0 px-5 pb-4 pt-1">
           <button onClick={generate} disabled={!prompt.trim() || generating}
             className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45">
-            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />生成中…</> : (prompt.trim() ? `开始生成 · 预估 ${estimatedCost} 积分` : '输入提示词后生成')}
+            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
           </button>
         </div>
       </div>
@@ -461,15 +463,15 @@ function GeneratePanel() {
         {/* 顶部工具栏 */}
         <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
           <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
-            <option>全部时间</option>
-            <option>今天</option>
-            <option>近7天</option>
-            <option>近30天</option>
+            <option>{t("imageTools.allTime")}</option>
+            <option>{t("imageTools.today")}</option>
+            <option>{t("imageTools.last7")}</option>
+            <option>{t("imageTools.last30")}</option>
           </select>
           <select className="h-[30px] rounded-lg bg-secondary px-2 text-[12px] text-text-secondary outline-none">
-            <option>全部星级</option>
-            <option>已收藏</option>
-            <option>未收藏</option>
+            <option>{t("imageTools.allStars")}</option>
+            <option>{t("imageTools.favorited")}</option>
+            <option>{t("imageTools.notFavorited")}</option>
           </select>
           <button onClick={() => showToast('搜索')} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
@@ -492,8 +494,8 @@ function GeneratePanel() {
         <div className="flex-1 overflow-y-auto p-4 pt-2">
           {results.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-text-muted">
-              <p className="text-sm">还没有生成结果</p>
-              <p className="mt-1 text-xs text-text-secondary">输入提示词后点击生成</p>
+              <p className="text-sm">{t("imageTools.noResults")}</p>
+              <p className="mt-1 text-xs text-text-secondary">{t("imageTools.resultsHint")}</p>
             </div>
           )}
           {results.length > 0 && viewMode === 'list' && (
@@ -515,7 +517,7 @@ function GeneratePanel() {
                       <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
                       {r.prompt.length > 40 && (
                         <button onClick={() => togglePrompt(r.id)} className="mt-0.5 text-[12px] text-accent hover:underline">
-                          {expandedIds.has(r.id) ? '收起' : '展开'}
+                          {expandedIds.has(r.id) ? t('imageTools.collapse') : t('imageTools.expand')}
                         </button>
                       )}
                     </div>
@@ -567,7 +569,7 @@ function GeneratePanel() {
                       <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
                       {r.prompt.length > 40 && (
                         <button onClick={() => togglePrompt(r.id)} className="mt-0.5 text-[12px] text-accent hover:underline">
-                          {expandedIds.has(r.id) ? '收起' : '展开'}
+                          {expandedIds.has(r.id) ? t('imageTools.collapse') : t('imageTools.expand')}
                         </button>
                       )}
                     </div>
@@ -750,6 +752,7 @@ function GeneratePanel() {
 }
 /* ── 融图 Tab ── */
 function BlendPanel() {
+  const { t } = useTranslation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
   const [sourceImage, setSourceImage] = useState<string | null>(null)
@@ -870,6 +873,7 @@ function BlendPanel() {
 
 /* ── 图片翻译 Tab ── */
 function TranslatePanel() {
+  const { t } = useTranslation()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
   const [targetLang, setTargetLang] = useState('中文')
@@ -933,23 +937,24 @@ function TranslatePanel() {
 }
 
 export default function ImageToolsPage() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabId>('generate')
 
   return (
     <div className="flex h-full flex-col bg-bg p-3">
       <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-2">
-        {tabs.map((t) => (
+        {tabs.map((tab) => (
           <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             className={cn(
               'flex h-[30px] min-w-[58px] items-center rounded-lg px-3 text-[12px] font-medium transition-colors',
-              activeTab === t.id
+              activeTab === tab.id
                 ? 'bg-accent text-accent-foreground'
                 : 'text-text-secondary hover:bg-secondary hover:text-text',
             )}
           >
-            {t.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>

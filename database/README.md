@@ -24,6 +24,8 @@
 
 `0012_backup_catalog.sql` 增加备份运行记录和恢复演练记录，保存校验和、加密密钥版本、存储位置、WAL 范围、RPO/RTO 和核验结果。它只记录事实，不把备份文件放进业务数据库；实际异机存储和定期任务仍需按备份规范配置。
 
+`0013_sessions_realtime.sql` 为设备会话增加最大并发数量、撤销动作记录、outbox 顺序号和同步游标。`revoke_other_sessions` 在事务内撤销其他会话；实时同步以后按顺序号从 outbox 补发，不能依赖客户端时间戳。
+
 `migrations/MANIFEST.sha256.json` 和 `scripts/Verify-MigrationManifest.ps1` 用 SHA-256 检查迁移文件是否被改动或漏传。执行数据库更新前先运行校验；已执行的 SQL 不直接修改，变更要新增编号。
 
 `scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件；`scripts/verify-backup-file.sh` 只做文件校验。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本并做隔离恢复演练。

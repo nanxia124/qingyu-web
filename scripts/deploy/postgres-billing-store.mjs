@@ -229,9 +229,65 @@ export async function createPostgresBillingStore() {
       const token = crypto.randomBytes(32).toString('hex');
       const result = await client.query(`insert into app.team_invitations(team_id,email,invited_user_id,invited_by,token_hash,expires_at) values($1,$2,$3,$4,$5,now()+interval '7 days') returning id,status,expires_at`, [teamId, cleanEmail, target.rows[0]?.id || null, actor.rows[0].id, crypto.createHash('sha256').update(token).digest('hex')]);
       await client.query('commit');
-      return { id: result.rows[0].id, status: result.rows[0].status, expiresAt: new Date(result.rows[0].expires_at).toISOString() };
+      return { id: result.rows[0].id, status: result.rows[0].status, expiresAt: new Date(result.rows[0].expires_at).toISOString(), inviteToken: token };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, close: () => pool.end() };
+  async function acceptTeamInvitation(appwriteUserId, token) {
+    const cleanToken = String(token || '').trim();
+    if (!cleanToken) throw new Error('邀请链接无效');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const me = await client.query(`select id,email from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!me.rowCount) throw new Error('用户不存在，请重新登录');
+      const tokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+      const invitation = await client.query(`select i.*,t.name team_name from app.team_invitations i join app.teams t on t.id=i.team_id where i.token_hash=$1 for update`, [tokenHash]);
+      if (!invitation.rowCount) throw new Error('邀请不存在或已失效');
+      const invite = invitation.rows[0];
+      if (invite.status !== 'pending' || new Date(invite.expires_at) <= new Date()) throw new Error('邀请不存在或已失效');
+      if (String(invite.email).toLowerCase() !== String(me.rows[0].email || '').toLowerCase()) throw new Error('该邀请不是发给当前登录邮箱的');
+      await client.query(`insert into app.team_memberships(team_id,user_id,status,joined_at,invited_by) values($1,$2,'active',now(),$3)
+        on conflict(team_id,user_id) do update set status='active',joined_at=coalesce(app.team_memberships.joined_at,now()),left_at=null,updated_at=now()`, [invite.team_id, me.rows[0].id, invite.invited_by]);
+      const membership = await client.query(`select id from app.team_memberships where team_id=$1 and user_id=$2`, [invite.team_id, me.rows[0].id]);
+      const workspace = await client.query(`select id from app.workspaces where team_id=$1 and type='team'`, [invite.team_id]);
+      await client.query(`insert into app.role_bindings(workspace_id,user_id,role_id,created_by) select $1,$2,id,$2 from app.roles where code='member' on conflict do nothing`, [workspace.rows[0].id, me.rows[0].id]);
+      await client.query(`update app.team_invitations set status='accepted',accepted_at=now(),invited_user_id=$1 where id=$2`, [me.rows[0].id, invite.id]);
+      await client.query(`insert into app.membership_events(membership_id,event_type,actor_user_id,metadata) values($1,'accepted',$2,'{}'::jsonb)`, [membership.rows[0].id, me.rows[0].id]);
+      await client.query('commit');
+      return { teamId: invite.team_id, teamName: invite.team_name, status: 'active' };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function updateTeamMember(actorAppwriteUserId, teamId, targetAppwriteUserId, change = {}) {
+    const nextRole = change.role ? String(change.role) : null;
+    const nextStatus = change.status ? String(change.status) : null;
+    if (nextRole && !['admin','editor','viewer','member'].includes(nextRole)) throw new Error('不支持的成员角色');
+    if (nextStatus && !['active','suspended','left'].includes(nextStatus)) throw new Error('不支持的成员状态');
+    if (!nextRole && !nextStatus) throw new Error('没有需要修改的内容');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const actor = await client.query(`select u.id,t.owner_user_id from app.user_accounts u join app.teams t on t.id=$2 join app.team_memberships tm on tm.team_id=t.id and tm.user_id=u.id where u.appwrite_user_id=$1 and tm.status='active' and (u.id=t.owner_user_id or exists(select 1 from app.role_bindings b join app.workspaces w on w.id=b.workspace_id join app.roles r on r.id=b.role_id where w.team_id=t.id and b.user_id=u.id and r.code='admin'))`, [actorAppwriteUserId, teamId]);
+      if (!actor.rowCount) throw new Error('没有管理成员的权限');
+      const target = await client.query(`select u.id,tm.id membership_id,tm.status current_status,t.owner_user_id from app.user_accounts u join app.team_memberships tm on tm.user_id=u.id and tm.team_id=$2 join app.teams t on t.id=$2 where u.appwrite_user_id=$1 for update`, [targetAppwriteUserId, teamId]);
+      if (!target.rowCount) throw new Error('成员不存在');
+      if (target.rows[0].owner_user_id === target.rows[0].id) throw new Error('团队所有者不能通过成员接口修改');
+      const finalStatus = nextStatus || target.rows[0].current_status;
+      await client.query(`update app.team_memberships set status=$1::app.membership_status,left_at=case when $1='left' then now() else null end,updated_at=now() where id=$2`, [finalStatus, target.rows[0].membership_id]);
+      if (finalStatus === 'left' || finalStatus === 'suspended') {
+        await client.query(`delete from app.role_bindings where user_id=$1 and workspace_id in (select id from app.workspaces where team_id=$2)`, [target.rows[0].id, teamId]);
+      } else if (nextRole) {
+        const workspace = await client.query(`select id from app.workspaces where team_id=$1 and type='team'`, [teamId]);
+        await client.query(`delete from app.role_bindings where user_id=$1 and workspace_id=$2`, [target.rows[0].id, workspace.rows[0].id]);
+        await client.query(`insert into app.role_bindings(workspace_id,user_id,role_id,created_by) select $1,$2,id,$3 from app.roles where code=$4`, [workspace.rows[0].id, target.rows[0].id, actor.rows[0].id, nextRole]);
+      }
+      const eventType = finalStatus === 'left' ? 'left' : finalStatus === 'suspended' ? 'suspended' : 'reinstated';
+      await client.query(`insert into app.membership_events(membership_id,event_type,actor_user_id,metadata) values($1,$2,$3,$4::jsonb)`, [target.rows[0].membership_id, eventType, actor.rows[0].id, JSON.stringify({ role: nextRole })]);
+      await client.query('commit');
+      return { userId: targetAppwriteUserId, status: finalStatus, role: nextRole || null };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  return { ensureUser, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, close: () => pool.end() };
 }

@@ -672,7 +672,7 @@ async function handleBilling(req, res, pathname, method, url) {
 
 // ===================== 团队路由（业务数据统一走 PostgreSQL） =====================
 async function handleTeams(req, res, pathname, method) {
-  if (!postgresBilling || !(pathname === "/teams" || pathname.startsWith("/teams/"))) return false;
+  if (!postgresBilling || !(pathname === "/teams" || pathname.startsWith("/teams/") || pathname === "/team-invitations/accept")) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
   try {
@@ -683,6 +683,10 @@ async function handleTeams(req, res, pathname, method) {
       const body = await parseBody(req);
       return sendJSON(res, 201, await postgresBilling.createTeam(identity.sub, body.name));
     }
+    if (pathname === "/team-invitations/accept" && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 200, await postgresBilling.acceptTeamInvitation(identity.sub, body.token));
+    }
     const membersMatch = pathname.match(/^\/teams\/([^/]+)\/members$/);
     if (membersMatch && method === "GET") {
       return sendJSON(res, 200, await postgresBilling.listTeamMembers(identity.sub, membersMatch[1]));
@@ -691,6 +695,11 @@ async function handleTeams(req, res, pathname, method) {
     if (inviteMatch && method === "POST") {
       const body = await parseBody(req);
       return sendJSON(res, 201, await postgresBilling.inviteToTeam(identity.sub, inviteMatch[1], body.email));
+    }
+    const memberChangeMatch = pathname.match(/^\/teams\/([^/]+)\/members\/([^/]+)$/);
+    if (memberChangeMatch && method === "PATCH") {
+      const body = await parseBody(req);
+      return sendJSON(res, 200, await postgresBilling.updateTeamMember(identity.sub, memberChangeMatch[1], memberChangeMatch[2], body));
     }
     sendJSON(res, 404, { error: "团队接口不存在" });
     return true;

@@ -27,8 +27,8 @@ jobs:
       - name: Deploy to server via SSH
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: 43.160.249.6
+          username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           source: "dist/*"
@@ -38,8 +38,8 @@ jobs:
       - name: Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: 43.160.249.6
+          username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
@@ -50,3 +50,4 @@ jobs:
             sudo nginx -t && sudo systemctl reload nginx
             rm -rf /home/ubuntu/qingyu-upload
             echo "✅ Deploy completed successfully"
+

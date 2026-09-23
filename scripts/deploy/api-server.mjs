@@ -381,12 +381,44 @@ async function handleBilling(req, res, pathname, method, url) {
       return sendJSON(res, 200, billingPlans);
     }
 
-    // POST /api/billing/orders — 创建订单 { planId }
+    // POST /api/billing/orders — 创建订单 { planId, idempotencyKey }
     if (pathname === "/api/billing/orders" && method === "POST") {
       const body = await parseBody(req);
       const plan = billingPlans.find(p => p.id === body.planId);
       if (!plan) return sendJSON(res, 400, { error: "套餐不存在" });
       if (plan.priceCents <= 0) return sendJSON(res, 400, { error: "免费套餐无需下单" });
+      const requestedKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+      if (requestedKey && (requestedKey.length < 16 || requestedKey.length > 200)) {
+        return sendJSON(res, 400, { error: "订单幂等编号无效，请重试" });
+      }
+      // 兼容尚未升级的前端：没有编号时按用户、套餐和 15 分钟窗口生成稳定编号。
+      const windowKey = Math.floor(Date.now() / (15 * 60 * 1000));
+      const legacySeed = `${me.id}:${plan.id}:${windowKey}`;
+      const idempotencyKey = requestedKey || `legacy_${crypto.createHash("sha256").update(legacySeed).digest("hex").slice(0, 48)}`;
+      // 网络超时后客户端会用同一个编号重试；必须返回原订单，不能再创建一笔。
+      const sameRequest = billingOrders.find(o => o.userId === me.id &&
+        (o.idempotencyKey === idempotencyKey || o.requestKeys?.includes(idempotencyKey)));
+      if (sameRequest) {
+        if (sameRequest.planId !== plan.id) return sendJSON(res, 409, { error: "同一购买编号不能用于不同套餐" });
+        return sendJSON(res, 200, sameRequest);
+      }
+      // 开通入口不是续费入口：已有有效会员时只返回原来的成功订单。
+      if (me.memberLevel === plan.level && me.memberExpireAt > Date.now()) {
+        const paid = billingOrders.filter(o => o.userId === me.id && o.planId === plan.id && o.status === "paid")
+          .sort((a, b) => b.paidAt - a.paidAt)[0];
+        if (paid) return sendJSON(res, 200, paid);
+        return sendJSON(res, 409, { error: "此套餐已生效，无需重复开通" });
+      }
+      // 页面刷新后编号可能丢失：同一用户同一套餐的短期未付款单继续使用，避免重复弹出收银台。
+      const pendingCutoff = Date.now() - 15 * 60 * 1000;
+      const recentPending = billingOrders
+        .filter(o => o.userId === me.id && o.planId === plan.id && o.status === "pending" && o.createdAt >= pendingCutoff)
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (recentPending) {
+        recentPending.requestKeys = [...new Set([...(recentPending.requestKeys || []), idempotencyKey])];
+        saveJSON(ORDERS_FILE, billingOrders);
+        return sendJSON(res, 200, recentPending);
+      }
       const order = {
         id: newOrderId(),
         userId: me.id,
@@ -396,6 +428,7 @@ async function handleBilling(req, res, pathname, method, url) {
         status: "pending",
         paymentMethod: body.method || "mock",
         transactionId: "",
+        idempotencyKey,
         createdAt: Date.now(),
         paidAt: 0,
       };
@@ -409,7 +442,11 @@ async function handleBilling(req, res, pathname, method, url) {
     if (payMatch && method === "POST") {
       const order = billingOrders.find(o => o.id === payMatch[1] && o.userId === me.id);
       if (!order) return sendJSON(res, 404, { error: "订单不存在" });
-      if (order.status === "paid") return sendJSON(res, 400, { error: "订单已支付" });
+      // 支付请求超时后再次点击属于同一个成功结果，直接返回成功，不能让前端误以为失败。
+      if (order.status === "paid") {
+        return sendJSON(res, 200, { success: true, order, user: publicUser(me), alreadyPaid: true });
+      }
+      if (order.status !== "pending") return sendJSON(res, 409, { error: "此订单已关闭，不能继续付款" });
       // v1：mock 支付直接成功；接真实微信/支付宝时在此对接，异步回调里调 completeOrder
       order.status = "paid";
       order.paidAt = Date.now();

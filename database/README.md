@@ -34,6 +34,10 @@
 
 `0017_plan_version_consistency.sql` 给订阅和订单增加套餐与价格版本的复合外键，避免把一个套餐的订单挂到另一个套餐的价格快照。
 
+`0018_asset_share_target_integrity.sql` 检查分享目标类型和目标对象是否真实存在，防止产生指向不存在用户、团队或部门的分享记录。
+
+`0019_payment_idempotency.sql` 为待付款订单、支付尝试和已付款状态增加数据库级去重与金额校验，重复点击、重复回调或金额不一致都会被拒绝。
+
 `migrations/MANIFEST.sha256.json` 和 `scripts/Verify-MigrationManifest.ps1` 用 SHA-256 检查迁移文件是否被改动或漏传。执行数据库更新前先运行校验；已执行的 SQL 不直接修改，变更要新增编号。
 
 `scripts/Run-Migrations.ps1` 先执行清单校验，再按文件编号检查 `app.schema_migrations` 并跳过已执行版本；新版本执行失败会立即停止。连接信息从 `PGHOST`、`PGPORT`、`PGDATABASE` 和 `PGUSER` 读取，密码不写进脚本。

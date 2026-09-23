@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
 import { Check, Zap, Crown, Rocket } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -17,6 +17,9 @@ export default function SubscriptionPage() {
   const { user: billingUser, plans, initFromAuth, refreshMe, refreshPlans } = useBillingStore();
   const [loading, setLoading] = useState("");
   const [msg, setMsg] = useState("");
+  // 每个套餐在本次购买流程中固定一个编号。请求超时后重试会拿到原订单，不会重复创建或重复付款。
+  const checkoutKeysRef = useRef(new Map<string, string>());
+  const checkoutBusyRef = useRef(false);
 
   useEffect(() => {
     if (isLoggedIn && authUser) {
@@ -30,13 +33,23 @@ export default function SubscriptionPage() {
       setMsg(t("pages.subscription.loginFirst"));
       return;
     }
+    if (!authUser || checkoutBusyRef.current) return;
+    checkoutBusyRef.current = true;
     setLoading(plan.id);
     setMsg("");
     try {
-      const order = await billingApi.createOrder(plan.id);
+      const storageKey = `qingyu:checkout:${authUser.id}:${plan.id}`;
+      let idempotencyKey = checkoutKeysRef.current.get(storageKey) || localStorage.getItem(storageKey);
+      if (!idempotencyKey) {
+        idempotencyKey = `checkout_${crypto.randomUUID()}`;
+        localStorage.setItem(storageKey, idempotencyKey);
+      }
+      checkoutKeysRef.current.set(storageKey, idempotencyKey);
+      const order = await billingApi.createOrder(plan.id, idempotencyKey);
       // v1：模拟支付直接成功；接微信/支付宝后这里改为跳转收银台
-      await billingApi.payOrder(order.id);
+      if (order.status !== "paid") await billingApi.payOrder(order.id);
       await refreshMe();
+      // 保留编号，刷新或响应延迟时仍能认出原单；明确续费时应另开购买流程。
       setMsg(`${t("pages.subscription.activated")}：${plan.name}`);
     } catch (e: any) {
       setMsg(e.message || t("pages.subscription.activateFailed"));

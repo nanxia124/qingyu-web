@@ -61,6 +61,7 @@ export interface Order {
   amountCents: number;
   status: "pending" | "paid" | "cancelled";
   paymentMethod: string;
+  idempotencyKey?: string;
   createdAt: number;
   paidAt: number;
 }
@@ -82,7 +83,8 @@ export const billingApi = {
     request("/api/billing/login", { method: "POST", body }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
   plans: () => request<Plan[]>("/api/billing/plans"),
-  createOrder: (planId: string) => request<Order>("/api/billing/orders", { method: "POST", body: { planId } }),
+  createOrder: (planId: string, idempotencyKey: string) =>
+    request<Order>("/api/billing/orders", { method: "POST", body: { planId, idempotencyKey } }),
   payOrder: (orderId: string) =>
     request<{ success: boolean; order: Order; user: BillingUser }>(`/api/billing/orders/${orderId}/pay`, { method: "POST", body: {} }),
   redeem: (code: string) =>

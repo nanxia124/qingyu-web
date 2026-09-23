@@ -6,13 +6,14 @@ import {
   Gift, Coins, Crown, FolderOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 
-const categories = [
-  { id: 'all', label: '全部' },
-  { id: 'ecommerce', label: '电商主图' },
-  { id: 'poster', label: '海报设计' },
-  { id: 'photo', label: '摄影写真' },
-  { id: 'illustration', label: '插画艺术' },
+const categoryIds = [
+  { id: 'all', key: 'catAll' },
+  { id: 'ecommerce', key: 'catEcommerce' },
+  { id: 'poster', key: 'catPoster' },
+  { id: 'photo', key: 'catPhoto' },
+  { id: 'illustration', key: 'catIllustration' },
 ]
 
 const feedItems = [
@@ -39,6 +40,7 @@ const quickTools = [
 ]
 
 export default function WorkbenchPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [activeCat, setActiveCat] = useState('all')
@@ -76,7 +78,7 @@ export default function WorkbenchPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索灵感、作品、教程…"
+              placeholder={t("mainHome.searchPlaceholder")}
               className="h-9 w-full rounded-lg bg-card pl-9 pr-3 text-sm text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
             />
           </div>
@@ -85,22 +87,22 @@ export default function WorkbenchPage() {
           </button>
           {/* 三个快捷入口 */}
           <button
-            onClick={() => showToast('邀请有礼功能即将上线')}
+            onClick={() => showToast(t('mainHome.soon'))}
             className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
           >
-            <Gift className="size-[14px]" /> 邀请有礼
+            <Gift className="size-[14px]" /> {t('mainHome.invite')}
           </button>
           <button
-            onClick={() => showToast('积分超市功能即将上线')}
+            onClick={() => showToast(t('mainHome.soon'))}
             className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
           >
-            <Coins className="size-[14px]" /> 积分超市
+            <Coins className="size-[14px]" /> {t('mainHome.points')}
           </button>
           <button
-            onClick={() => showToast('会员中心即将上线')}
+            onClick={() => showToast(t('mainHome.soon'))}
             className="flex items-center gap-1 rounded-lg bg-[#fef3c7] px-3 py-2 text-xs text-amber-700"
           >
-            <Crown className="size-[14px]" /> 会员中心
+            <Crown className="size-[14px]" /> {t('mainHome.vip')}
           </button>
         </div>
       </div>
@@ -109,10 +111,10 @@ export default function WorkbenchPage() {
       <div className="shrink-0 px-6 pt-5">
         <div className="grid grid-cols-4 gap-3">
           {[
-            { icon: ImageIcon, title: '文生图', desc: '文字生成图片', path: '/image-tools' },
-            { icon: Zap, title: '智能扩图', desc: 'AI 自动补全', path: '/image-tools' },
-            { icon: Sparkles, title: '风格迁移', desc: '一键换风格', path: '/image-tools' },
-            { icon: FolderOpen, title: '我的作品', desc: '历史作品管理', path: '/favorites' },
+            { icon: ImageIcon, title: t('mainHome.text2img'), desc: t('mainHome.text2imgDesc'), path: '/image-tools' },
+            { icon: Zap, title: t('mainHome.expand'), desc: t('mainHome.expandDesc'), path: '/image-tools' },
+            { icon: Sparkles, title: t('mainHome.style'), desc: t('mainHome.styleDesc'), path: '/image-tools' },
+            { icon: FolderOpen, title: t('mainHome.works'), desc: t('mainHome.worksDesc'), path: '/favorites' },
           ].map((item) => (
             <button
               key={item.title}
@@ -132,7 +134,7 @@ export default function WorkbenchPage() {
       {/* ── 分类 Tab ── */}
       <div className="shrink-0 px-6 pt-6 pb-4">
         <div className="flex items-center gap-2">
-          {categories.map((cat) => (
+          {categoryIds.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setActiveCat(cat.id)}
@@ -143,7 +145,7 @@ export default function WorkbenchPage() {
                   : 'text-text-muted hover:bg-secondary hover:text-text',
               )}
             >
-              {cat.label}
+              {t(`mainHome.${cat.key}`)}
             </button>
           ))}
           <div className="ml-auto flex items-center gap-2">
@@ -154,7 +156,7 @@ export default function WorkbenchPage() {
                 activeFilter === 'recommend' ? 'text-accent' : 'text-text-muted',
               )}
             >
-              推荐
+              {t('mainHome.recommend')}
             </button>
             <button
               onClick={() => setActiveFilter('latest')}
@@ -163,7 +165,7 @@ export default function WorkbenchPage() {
                 activeFilter === 'latest' ? 'text-accent' : 'text-text-muted',
               )}
             >
-              最新
+              {t('mainHome.latest')}
             </button>
           </div>
         </div>
@@ -198,7 +200,7 @@ export default function WorkbenchPage() {
 
         {filteredItems.length === 0 && (
           <div className="py-20 text-center text-sm text-text-muted">
-            没有找到匹配的作品
+            {t('mainHome.empty')}
           </div>
         )}
       </div>
@@ -207,7 +209,7 @@ export default function WorkbenchPage() {
       <div className="pointer-events-none fixed bottom-5 inset-x-0 z-20 px-6">
         <div className="pointer-events-auto mx-auto flex max-w-2xl items-center gap-3 rounded-full border border-border bg-card px-3 py-2 shadow-lg">
           <button
-            onClick={() => showToast('附件上传功能即将上线')}
+            onClick={() => showToast(t('mainHome.soon'))}
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-text-muted hover:text-text"
           >
             <Plus className="size-[18px]" />
@@ -216,7 +218,7 @@ export default function WorkbenchPage() {
             value={quickPrompt}
             onChange={(e) => setQuickPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleQuickGenerate() }}
-            placeholder="描述你想创作的内容，AI 帮你生成…"
+            placeholder={t("mainHome.inputPlaceholder")}
             className="h-9 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
           />
           <button

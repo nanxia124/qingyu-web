@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "Auto",
+        low: "Basse",
+        medium: "Moyenne",
+        high: "Élevée",
+      },
+      image: {
+        title: "Paramètres image",
+        quality: "Qualité",
+        size: "Taille",
+        count: "Nombre",
+      },
+      video: {
+        title: "Paramètres vidéo",
+        seconds: "Secondes",
+        duration: "Durée",
+      },
+      model: {
+        select: "Choisir un modèle",
+        refresh: "Actualiser",
+      },
+    },
+    prompts: {
+      title: "Centre de prompts",
+      library: "Bibliothèque",
+      category: "Catégorie",
+      tags: "Tags",
+      search: "Rechercher",
+      use: "Utiliser",
+      empty: "Aucun résultat",
+      loading: "Chargement…",
+    },
+    common: {
+      cancel: "Annuler",
+      save: "Enregistrer",
+      delete: "Supprimer",
+      copy: "Copier",
+      done: "Terminé",
+      upload: "Importer",
+      download: "Télécharger",
+    },
     nav: {
       home: "Accueil",
       chat: "Discussion",

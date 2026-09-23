@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "Tự động",
+        low: "Thấp",
+        medium: "Trung bình",
+        high: "Cao",
+      },
+      image: {
+        title: "Cài đặt ảnh",
+        quality: "Chất lượng",
+        size: "Kích thước",
+        count: "Số lượng",
+      },
+      video: {
+        title: "Cài đặt video",
+        seconds: "Giây",
+        duration: "Thời lượng",
+      },
+      model: {
+        select: "Chọn mô hình",
+        refresh: "Làm mới",
+      },
+    },
+    prompts: {
+      title: "Trung tâm gợi ý",
+      library: "Thư viện",
+      category: "Danh mục",
+      tags: "Thẻ",
+      search: "Tìm kiếm",
+      use: "Dùng",
+      empty: "Không có kết quả",
+      loading: "Đang tải…",
+    },
+    common: {
+      cancel: "Hủy",
+      save: "Lưu",
+      delete: "Xóa",
+      copy: "Sao chép",
+      done: "Xong",
+      upload: "Tải lên",
+      download: "Tải xuống",
+    },
     nav: {
       home: "Trang chủ",
       chat: "Trò chuyện",

@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "ऑटो",
+        low: "कम",
+        medium: "मध्यम",
+        high: "अधिक",
+      },
+      image: {
+        title: "इमेज सेटिंग",
+        quality: "गुणवत्ता",
+        size: "साइज",
+        count: "गिनती",
+      },
+      video: {
+        title: "वीडियो सेटिंग",
+        seconds: "सेकंड",
+        duration: "अवधि",
+      },
+      model: {
+        select: "मॉडल चुनें",
+        refresh: "रिफ्रेश",
+      },
+    },
+    prompts: {
+      title: "प्रॉम्प्ट सेंटर",
+      library: "लाइब्रेरी",
+      category: "श्रेणी",
+      tags: "टैग",
+      search: "खोज",
+      use: "उपयोग",
+      empty: "कोई नहीं",
+      loading: "लोड हो रहा…",
+    },
+    common: {
+      cancel: "रद्द",
+      save: "सहेजें",
+      delete: "हटाएं",
+      copy: "कॉपी",
+      done: "हो गया",
+      upload: "अपलोड",
+      download: "डाउनलोड",
+    },
     nav: {
       home: "होम",
       chat: "चैट",

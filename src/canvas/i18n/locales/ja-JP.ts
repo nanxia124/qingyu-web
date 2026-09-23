@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "自動",
+        low: "低",
+        medium: "中",
+        high: "高",
+      },
+      image: {
+        title: "画像設定",
+        quality: "品質",
+        size: "サイズ",
+        count: "枚数",
+      },
+      video: {
+        title: "動画設定",
+        seconds: "秒",
+        duration: "長さ",
+      },
+      model: {
+        select: "モデルを選択",
+        refresh: "更新",
+      },
+    },
+    prompts: {
+      title: "プロンプトセンター",
+      library: "プロンプトライブラリ",
+      category: "カテゴリ",
+      tags: "タグ",
+      search: "タイトル・内容・タグを検索",
+      use: "このプロンプトを使う",
+      empty: "該当なし",
+      loading: "読み込み中…",
+    },
+    common: {
+      cancel: "キャンセル",
+      save: "保存",
+      delete: "削除",
+      copy: "コピー",
+      done: "完了",
+      upload: "アップロード",
+      download: "ダウンロード",
+    },
     nav: {
       home: "ホーム",
       chat: "チャット",

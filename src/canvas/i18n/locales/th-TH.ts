@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "อัตโนมัต",
+        low: "ต่ำ",
+        medium: "กลาง",
+        high: "สูง",
+      },
+      image: {
+        title: "ตั้งค่าภาพ",
+        quality: "คุณภาพ",
+        size: "ขนาด",
+        count: "จำนวน",
+      },
+      video: {
+        title: "ตั้งค่าวิดีโอ",
+        seconds: "วินาที",
+        duration: "ระยะเวลา",
+      },
+      model: {
+        select: "เลือกโมเดล",
+        refresh: "รีเฟรช",
+      },
+    },
+    prompts: {
+      title: "ศูนย์พร้อมป์",
+      library: "คลัง",
+      category: "หมวดหมู่",
+      tags: "แท็ก",
+      search: "ค้นหา",
+      use: "ใช้",
+      empty: "ไม่พบ",
+      loading: "กำลังโหลด…",
+    },
+    common: {
+      cancel: "ยกเลิก",
+      save: "บันทึก",
+      delete: "ลบ",
+      copy: "คัดลอก",
+      done: "เสร็จแล้ว",
+      upload: "อัปโหลด",
+      download: "ดาวน์โหลด",
+    },
     nav: {
       home: "หน้าแรก",
       chat: "แชท",

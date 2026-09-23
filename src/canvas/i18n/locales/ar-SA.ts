@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "تلقائي",
+        low: "منخفضة",
+        medium: "متوسطة",
+        high: "عالية",
+      },
+      image: {
+        title: "إعدادات الصورة",
+        quality: "الجودة",
+        size: "الحجم",
+        count: "العدد",
+      },
+      video: {
+        title: "إعدادات الفيديو",
+        seconds: "ثوانٍ",
+        duration: "المدة",
+      },
+      model: {
+        select: "اختر النموذج",
+        refresh: "تحديث",
+      },
+    },
+    prompts: {
+      title: "مركز النصوص",
+      library: "المكتبة",
+      category: "الفئة",
+      tags: "العلامات",
+      search: "بحث",
+      use: "استخدام",
+      empty: "لا توجد نتائج",
+      loading: "جارٍ التحميل…",
+    },
+    common: {
+      cancel: "إلغاء",
+      save: "حفظ",
+      delete: "حذف",
+      copy: "نسخ",
+      done: "تم",
+      upload: "رفع",
+      download: "تنزيل",
+    },
     nav: {
       home: "الرئيسية",
       chat: "محادثة",

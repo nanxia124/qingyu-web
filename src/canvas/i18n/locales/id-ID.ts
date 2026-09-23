@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "Otomatis",
+        low: "Rendah",
+        medium: "Sedang",
+        high: "Tinggi",
+      },
+      image: {
+        title: "Pengaturan gambar",
+        quality: "Kualitas",
+        size: "Ukuran",
+        count: "Jumlah",
+      },
+      video: {
+        title: "Pengaturan video",
+        seconds: "Detik",
+        duration: "Durasi",
+      },
+      model: {
+        select: "Pilih model",
+        refresh: "Muat ulang",
+      },
+    },
+    prompts: {
+      title: "Pusat prompt",
+      library: "Pustaka",
+      category: "Kategori",
+      tags: "Tag",
+      search: "Cari",
+      use: "Gunakan",
+      empty: "Tidak ada hasil",
+      loading: "Memuat…",
+    },
+    common: {
+      cancel: "Batal",
+      save: "Simpan",
+      delete: "Hapus",
+      copy: "Salin",
+      done: "Selesai",
+      upload: "Unggah",
+      download: "Unduh",
+    },
     nav: {
       home: "Beranda",
       chat: "Chat",

@@ -2,6 +2,48 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    settingsPanels: {
+      common: {
+        auto: "자동",
+        low: "낮음",
+        medium: "중",
+        high: "높음",
+      },
+      image: {
+        title: "이미지 설정",
+        quality: "품질",
+        size: "크기",
+        count: "개수",
+      },
+      video: {
+        title: "비디오 설정",
+        seconds: "초",
+        duration: "길이",
+      },
+      model: {
+        select: "모델 선택",
+        refresh: "새로고침",
+      },
+    },
+    prompts: {
+      title: "프롬프트 센터",
+      library: "프롬프트 라이브러리",
+      category: "카테고리",
+      tags: "태그",
+      search: "검색",
+      use: "이 프롬프트 사용",
+      empty: "결과 없음",
+      loading: "로딩 중…",
+    },
+    common: {
+      cancel: "취소",
+      save: "저장",
+      delete: "삭제",
+      copy: "복사",
+      done: "완료",
+      upload: "업로드",
+      download: "다운로드",
+    },
     nav: {
       home: "홈",
       chat: "채팅",

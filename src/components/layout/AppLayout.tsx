@@ -112,6 +112,12 @@ export default function AppLayout() {
     return () => { i18n.off('languageChanged', onChange); unsub() }
   }, [])
 
+  useEffect(() => {
+    if (!suggested) return
+    const timer = window.setTimeout(() => setSuggested(null), 4500)
+    return () => window.clearTimeout(timer)
+  }, [suggested])
+
   const pickLocale = (loc: AppLocale) => {
     void changeAppLocale(loc)
     setCurrentLocale(loc)
@@ -443,10 +449,13 @@ export default function AppLayout() {
         />
       )}
 
-      {/* 首次访问语言建议：居中弹窗 + 遮罩，仅询问不自动切换 */}
+      {/* 首次访问语言建议：顶部居中提示，不阻塞页面操作 */}
       {suggested && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-[100] flex justify-center px-4">
+          <div
+            role="status"
+            className="pointer-events-auto w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl animate-[languageToastIn_0.35s_ease-out]"
+          >
             <div className="mb-3 flex items-center gap-2">
               <Globe className="size-[20px] text-accent" />
               <span className="text-[15px] font-semibold text-text">语言检测</span>

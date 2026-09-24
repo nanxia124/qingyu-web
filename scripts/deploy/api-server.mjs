@@ -1383,6 +1383,31 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, modelsCatalog);
     }
 
+
+    // POST /api/admin/models-catalog — 新增单个模型
+    if (pathname === "/api/admin/models-catalog" && req.method === "POST") {
+      const body = await parseBody(req);
+      if (!body.modelId) {
+        return sendJSON(res, 400, { error: "模型 ID 为必填项" });
+      }
+      // 已存在就报错
+      if (modelsCatalog.find(m => m.modelId === body.modelId)) {
+        return sendJSON(res, 400, { error: "该模型已存在" });
+      }
+      const newModel = {
+        id: nextId(),
+        modelId: body.modelId,
+        displayName: body.displayName || body.modelId,
+        provider: body.provider || "unknown",
+        capability: body.capability || "text",
+        visible: body.visible !== false,
+        sortOrder: modelsCatalog.length + 1,
+        createdAt: Date.now(),
+      };
+      modelsCatalog.push(newModel);
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 200, newModel);
+    }
     // POST /api/admin/models-catalog/bulk — 批量添加模型（已存在的跳过）
     if (pathname === "/api/admin/models-catalog/bulk" && req.method === "POST") {
       const body = await parseBody(req);

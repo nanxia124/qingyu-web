@@ -102,6 +102,39 @@ export default function ModelCatalog() {
   const [callStatusFilter, setCallStatusFilter] = useState<"全部" | "成功" | "失败">("全部");
   const [callTimeFilter, setCallTimeFilter] = useState<"今天" | "近7天" | "自定义">("今天");
   const [toast, setToast] = useState<string | null>(null);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [addForm, setAddForm] = useState({ modelId: "", displayName: "", capability: "text" as "text" | "image" | "video" | "audio" });
+  const [adding, setAdding] = useState(false);
+
+  const handleAddModel = async () => {
+    if (!addForm.modelId.trim()) {
+      alert("请输入模型 ID");
+      return;
+    }
+    setAdding(true);
+    try {
+      const res = await fetch("/api/admin/models-catalog", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
+        },
+        body: JSON.stringify(addForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "添加失败");
+        return;
+      }
+      setModels(prev => [...prev, data]);
+      setShowAddDialog(false);
+      setAddForm({ modelId: "", displayName: "", capability: "text" });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const groups = capTab === "全部" ? CAP_ORDER : CAP_ORDER.filter(g => g.label === capTab);
 
@@ -195,27 +228,24 @@ export default function ModelCatalog() {
 
   return (
     <div>
+
       {/* 顶部总览 */}
       <div className="mb-4 grid grid-cols-5 gap-3">
         <div className="rounded-xl bg-card px-4 py-3">
           <div className="text-[10px] text-gray-500">今日总调用</div>
-          <div className="text-xl text-white font-medium">1,248</div>
+          <div className="text-xl text-white font-medium">-</div>
         </div>
         <div className="rounded-xl bg-card px-4 py-3">
           <div className="text-[10px] text-gray-500">今日消耗 Token</div>
-          <div className="text-xl text-white font-medium">2.4M</div>
+          <div className="text-xl text-white font-medium">-</div>
         </div>
         <div className="rounded-xl bg-card px-4 py-3">
           <div className="text-[10px] text-gray-500">今日总费用</div>
-          <div className="text-xl text-emerald-400 font-medium">$48.20</div>
+          <div className="text-xl text-emerald-400 font-medium">-</div>
         </div>
         <div className="rounded-xl bg-card px-4 py-3">
           <div className="text-[10px] text-gray-500">整体成功率</div>
-          <div className="text-xl text-emerald-400 font-medium">98.7%</div>
-        </div>
-        <div className="rounded-xl bg-card px-4 py-3">
-          <div className="text-[10px] text-gray-500">平均响应时间</div>
-          <div className="text-xl text-white font-medium">890ms</div>
+          <div className="text-xl text-white font-medium">-</div>
         </div>
       </div>
 
@@ -538,6 +568,56 @@ export default function ModelCatalog() {
             </div>
           </div>
         </div>
+
+      {/* 添加模型弹窗 */}
+      {showAddDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowAddDialog(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-medium text-text mb-4">添加模型到目录</div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">模型 ID *</label>
+                <input
+                  type="text"
+                  value={addForm.modelId}
+                  onChange={e => setAddForm(prev => ({ ...prev, modelId: e.target.value }))}
+                  placeholder="例如 gpt-4o"
+                  className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-text outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">显示名称</label>
+                <input
+                  type="text"
+                  value={addForm.displayName}
+                  onChange={e => setAddForm(prev => ({ ...prev, displayName: e.target.value }))}
+                  placeholder="默认和模型 ID 一样"
+                  className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-text outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">模型类型</label>
+                <select
+                  value={addForm.capability}
+                  onChange={e => setAddForm(prev => ({ ...prev, capability: e.target.value as any }))}
+                  className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-text outline-none"
+                >
+                  <option value="text">文本</option>
+                  <option value="image">图片</option>
+                  <option value="video">视频</option>
+                  <option value="audio">音频</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowAddDialog(false)} className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-400 hover:bg-border">取消</button>
+              <button onClick={handleAddModel} disabled={adding} className="rounded-lg bg-[#5051F8] px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50">
+                {adding ? "添加中..." : "添加"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       )}
     </div>
   );

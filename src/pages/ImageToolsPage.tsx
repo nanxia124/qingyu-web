@@ -39,6 +39,7 @@ import type { ReferenceImage } from '@canvas/types/image'
 import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
 import { api } from '@/lib/api'
 import { motion } from 'motion/react'
+import { useBillingStore } from '@/stores/useBillingStore'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
@@ -69,6 +70,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const config = useConfigStore((s) => s.config)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
+  const refreshBillingUser = useBillingStore((s) => s.refreshMe)
   const [prompt, setPrompt] = useState('')
   const [ratio, setRatio] = useState('16:9')
   const [quality, setQuality] = useState('1K')
@@ -214,6 +216,13 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const generate = async () => {
     if (!isLoggedIn) { openAuthModal(); return }
     if (!prompt.trim() || generating) return
+    const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
+    await refreshBillingUser()
+    const billingUser = useBillingStore.getState().user
+    if (billingUser && billingUser.memberLevel !== 'free' && billingUser.balance < requestedCount) {
+      showToast(`积分不足，本次需要 ${requestedCount} 积分，当前剩余 ${billingUser.balance} 积分`, 'error')
+      return
+    }
     setGenerating(true)
     try {
       const selectedModel = model || config.imageModel || config.model

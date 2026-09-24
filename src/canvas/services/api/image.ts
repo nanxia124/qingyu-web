@@ -391,6 +391,7 @@ function readAxiosError(error: unknown, fallback: string) {
 function readStatusError(status: number | undefined, fallback: string) {
     if (status === 401 || status === 403) return apiText("authenticationFailed");
     if (status === 429) return apiText("rateLimited");
+    if (status === 402) return "积分不足，请充值或等待免费额度恢复后再试";
     if (status === 404) return apiText("notFound");
     if (status === 502) return apiText("badGateway");
     if (status === 503) return apiText("serviceBusy");

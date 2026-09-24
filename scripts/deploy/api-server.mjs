@@ -367,17 +367,22 @@ function proxyRequest(req, res, targetPath) {
 
     const proxyRequestId = String(req.headers["x-request-id"] || crypto.randomUUID()).slice(0, 160);
     const usageKey = `proxy:${proxyRequestId}`;
+    const requestedQuantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
     if (postgresBilling) {
       try {
         await postgresBilling.recordProviderUsage(proxyIdentity.sub, {
           requestId: proxyRequestId,
           idempotencyKey: usageKey,
+          quantity: requestedQuantity,
           provider: channel.provider,
           model,
           metadata: { targetPath, channelId: channel.id, phase: "started" },
         });
       } catch (error) {
         console.error("[proxy usage] unable to persist request", error.message);
+        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(error.message || ""))) {
+          return sendJSON(res, 402, { error: "积分不足，请充值或等待免费额度恢复后再试" });
+        }
         return sendJSON(res, 503, { error: "当前服务无法记录本次请求，请稍后重试" });
       }
     }

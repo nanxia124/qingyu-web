@@ -189,7 +189,7 @@ export default function ModelCatalog() {
   const startEditName = (m: CatalogModel) => {
     setConfirmDialog({
       title: "修改模型名称",
-                <label className="text-xs text-gray-500 mb-1 block">显示名称 *</label>
+      message: `Confirm rename model "${m.displayName}"?`,
       onConfirm: () => {
         setEditingNameId(m.id);
         setEditingNameValue(m.displayName);

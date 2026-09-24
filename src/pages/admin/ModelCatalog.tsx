@@ -619,7 +619,6 @@ export default function ModelCatalog() {
           </div>
         </div>
       )}
-      )}
     </div>
   );
 }

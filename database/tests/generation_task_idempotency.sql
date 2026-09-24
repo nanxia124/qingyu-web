@@ -1,4 +1,5 @@
--- 0047 生成任务幂等并发保护验收。
+-- 0047 生成任务重复提交验收；并发领取由 test-generation-claim.mjs 单独验证。
+\set ON_ERROR_STOP on
 -- 测试自带临时用户和个人工作空间，避免依赖环境残留；全部操作在事务中回滚。
 BEGIN;
 INSERT INTO app.user_accounts(appwrite_user_id, display_name)
@@ -33,6 +34,21 @@ BEGIN
   SELECT count(*) INTO task_count FROM app.generation_tasks
     WHERE idempotency_key='test-generation-repeat-key';
   IF task_count <> 1 THEN RAISE EXCEPTION '重复幂等键创建了 % 条任务', task_count; END IF;
+  SELECT count(*) INTO task_count FROM app.usage_records
+    WHERE idempotency_key='test-generation-repeat-key';
+  IF task_count <> 1 THEN RAISE EXCEPTION '重复提交产生了 % 条使用记录', task_count; END IF;
+  SELECT count(*) INTO task_count FROM app.daily_usage_reservations
+    WHERE idempotency_key='test-generation-repeat-key:task';
+  IF task_count <> 1 THEN RAISE EXCEPTION '重复提交产生了 % 笔免费额度预占', task_count; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM app.generation_tasks t
+    JOIN app.usage_records u ON u.id=t.usage_record_id AND u.workspace_id=t.workspace_id
+    JOIN app.daily_usage_reservations d ON d.id=t.daily_reservation_id
+      AND d.id=u.daily_reservation_id AND d.workspace_id=t.workspace_id
+    WHERE t.id=first_id AND d.amount=1 AND u.quantity=1
+  ) THEN
+    RAISE EXCEPTION '任务、使用记录与额度预占关联或数量不一致';
+  END IF;
   RAISE NOTICE 'PASS: 重复幂等键复用同一任务且只保留一条任务';
 END $$;
 

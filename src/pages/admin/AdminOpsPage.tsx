@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { AlertTriangle, RefreshCw, ShieldCheck, XCircle, CheckCircle } from "lucide-react";
+import { App } from 'antd';
 
 interface ReconciliationRow {
   workspaceId: string;
@@ -35,6 +36,7 @@ const severityStyle: Record<string, string> = {
 };
 
 export default function AdminOpsPage() {
+  const { message } = App.useApp()
   const [rows, setRows] = useState<ReconciliationRow[]>([]);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,7 +66,7 @@ export default function AdminOpsPage() {
       await api.post(`/admin/billing/alerts/${id}/ack`);
       setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: "ack" } : a));
     } catch (e: any) {
-      alert(e?.message || "确认失败");
+      message.error(e?.message || "确认失败");
     }
   };
 
@@ -106,7 +108,7 @@ export default function AdminOpsPage() {
                 <div className="text-[11px] text-text-muted mt-1">{new Date(a.createdAt).toLocaleString()}</div>
               </div>
               {a.status === "open" ? (
-                <button onClick={() => ackAlert(a.id)} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-90">确认</button>
+                <button onClick={() => ackmessage.error(a.id)} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-90">确认</button>
               ) : (
                 <span className="text-xs text-text-muted flex items-center gap-1"><ShieldCheck size={13} /> 已确认{a.acknowledgedBy ? `: ${a.acknowledgedBy}` : ""}</span>
               )}

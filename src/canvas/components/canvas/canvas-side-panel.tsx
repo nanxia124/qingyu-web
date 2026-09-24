@@ -18,7 +18,6 @@ import { usePromptSourceStore } from "@canvas/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@canvas/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@canvas/types/canvas";
-import { AnimatedThemeToggler } from "@canvas/components/ui/animated-theme-toggler";
 import { changeAppLocale, SUPPORTED_LOCALES, type AppLocale } from "@canvas/i18n";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
@@ -87,7 +86,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
 
     return (
         <motion.div
-            className="absolute z-[60] left-4 top-[72px] flex h-[calc(100vh-180px)] rounded-2xl overflow-hidden shadow-2xl"
+            className="absolute z-[60] left-4 top-[72px] flex h-[calc(100vh-180px)] rounded-2xl overflow-hidden canvas-float"
             style={{ background: theme.node.panel, overflow: "clip", pointerEvents: panelClosing ? "none" : undefined }}
             animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
@@ -239,7 +238,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                                             <ChevronRight className={cn("size-3.5 transition-transform", !collapsedGroups.has(node.id) && "rotate-90")} />
                                         </button>
                                     ) : null}
-                                    <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className={cn("flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 text-left", node.type === CanvasNodeType.Group && hasChildren ? "pl-0" : "pl-2")} title={selectMode ? undefined : t("canvas.sidePanel.focusNode")}>
+                                    <button type="button" onClick={() => (selectMode ? toggleChecked(node.id) : onFocusNode(node.id))} className={cn("flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 text-left", node.type === CanvasNodeType.Group && hasChildren ? "pl-0" : "pl-2")}>
                                         {selectMode ? <CheckMark checked={isChecked} theme={theme} /> : null}
                                         <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-md">
                                             {isImage ? <img src={previewUrlFor(node.metadata?.storageKey) || node.metadata?.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
@@ -252,7 +251,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                                     </button>
                                     {selectMode || !isImage ? null : (
                                         <div className="flex shrink-0 flex-col items-center gap-0.5 pr-1.5">
-                                            <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.preview")} title={t("canvas.sidePanel.preview")}>
+                                            <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.preview")}>
                                                 <Eye className="size-3.5" />
                                             </button>
                                         </div>
@@ -429,13 +428,13 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
 function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; onInsert: () => void; onRemove: () => void }) {
     const { t } = useTranslation();
     return (
-        <div className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5 hover:shadow-lg" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
+        <div className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
             <AssetCover asset={asset} />
             <div className="absolute inset-0 flex items-center justify-center gap-2.5 opacity-0 transition duration-200 group-hover:opacity-100">
                 <button
                     type="button"
                     onClick={onInsert}
-                    className="grid size-8 place-items-center rounded-full bg-white/90 text-zinc-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-zinc-900 dark:bg-black/60 dark:text-zinc-100 dark:hover:bg-black/80"
+                    className="grid size-8 place-items-center rounded-full bg-white/90 text-zinc-700 backdrop-blur transition hover:bg-white hover:text-zinc-900 dark:bg-black/60 dark:text-zinc-100 dark:hover:bg-black/80"
                     aria-label={t("canvas.sidePanel.inserted")}
                 >
                     <Plus className="size-4" />
@@ -443,7 +442,7 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
                 <Popconfirm title={t("canvas.sidePanel.removeAssetTitle")} okText={t("canvas.sidePanel.remove")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={onRemove}>
                     <button
                         type="button"
-                        className="grid size-8 place-items-center rounded-full bg-white/90 text-zinc-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-zinc-100 dark:hover:bg-black/80 dark:hover:text-red-400"
+                        className="grid size-8 place-items-center rounded-full bg-white/90 text-zinc-700 backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-zinc-100 dark:hover:bg-black/80 dark:hover:text-red-400"
                         aria-label={t("canvas.sidePanel.removeAsset")}
                     >
                         <Trash2 className="size-4" />
@@ -594,7 +593,7 @@ function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: Can
                 <div className="mt-0.5 truncate text-xs leading-snug opacity-50">{item.prompt}</div>
             </button>
             <div className="flex shrink-0 flex-col items-center gap-0.5">
-                <button type="button" onClick={onView} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.viewDetails")} title={t("canvas.sidePanel.viewDetails")}>
+                <button type="button" onClick={onView} className="grid size-6 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.viewDetails")}>
                     <Eye className="size-3.5" />
                 </button>
                 <button
@@ -654,8 +653,6 @@ const LOCALE_SHORT_LABELS: Record<AppLocale, string> = {
 
 function SidePanelSettings({ theme }: { theme: CanvasTheme }) {
     const { i18n, t } = useTranslation();
-    const themeMode = useThemeStore((state) => state.theme);
-    const setTheme = useThemeStore((state) => state.setTheme);
     const locale = (i18n.resolvedLanguage as AppLocale) || "zh-CN";
 
     const languageMenuItems = SUPPORTED_LOCALES.map((loc) => ({
@@ -672,10 +669,7 @@ function SidePanelSettings({ theme }: { theme: CanvasTheme }) {
     const buttonClass = "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-black/5 hover:text-zinc-950 dark:hover:bg-white/10 dark:hover:text-white";
 
     return (
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2.5" style={{ borderColor: theme.toolbar.border }}>
-            <Tooltip title={t(themeMode === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} mouseEnterDelay={0.2}>
-                <AnimatedThemeToggler theme={themeMode} onThemeChange={setTheme} className={buttonClass} />
-            </Tooltip>
+        <div className="flex items-center justify-end gap-2 border-t px-3 py-2.5" style={{ borderColor: theme.toolbar.border }}>
             <Dropdown
                 menu={{ items: languageMenuItems }}
                 placement="topRight"

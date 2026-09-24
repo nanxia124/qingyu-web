@@ -173,7 +173,6 @@ export function ProjectListFloat() {
                         maxHeight: "calc(100vh - 140px)",
                         overflowY: "auto",
                         scrollbarWidth: "thin",
-                        boxShadow: c.shadow,
                     }}
                 >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -196,7 +195,7 @@ export function ProjectListFloat() {
                                 </button>
                                 <button onClick={exportSelected} style={toolBtnStyle(false, c.btnText, c.btnBg)}>
                                     <Download size={13} /> 导出
-                                </button>
+                                </button></Tooltip>
                             </>
                         )}
                         <button onClick={() => fileInputRef.current?.click()} style={toolBtnStyle(false, c.btnText, c.btnBg)}>
@@ -309,15 +308,15 @@ export function ProjectListFloat() {
                                         }}
                                         onMouseDown={(e) => e.stopPropagation()}
                                     >
-                                        <button title="重命名" onClick={() => startRename(p.id, p.title)} style={iconBtnStyle(c.btnText, c.btnBg)}>
+                                        <Tooltip title="重命名"><button onClick={() => startRename(p.id, p.title)} style={iconBtnStyle(c.btnText, c.btnBg)}>
                                             <Pencil size={13} />
-                                        </button>
-                                        <button title="导出" onClick={() => void exportCanvasProjects([p], p.title || "画布")} style={iconBtnStyle(c.btnText, c.btnBg)}>
+                                        </button></Tooltip>
+                                        <Tooltip title="导出"><button onClick={() => void exportCanvasProjects([p], p.title || "画布")} style={iconBtnStyle(c.btnText, c.btnBg)}>
                                             <Download size={13} />
-                                        </button>
-                                        <button title="删除" onClick={() => deleteOne(p.id)} style={iconBtnStyle(c.danger, c.btnBg)}>
+                                        </button></Tooltip>
+                                        <Tooltip title="删除"><button onClick={() => deleteOne(p.id)} style={iconBtnStyle(c.danger, c.btnBg)}>
                                             <Trash2 size={13} />
-                                        </button>
+                                        </button></Tooltip>
                                     </div>
                                 )}
                             </div>

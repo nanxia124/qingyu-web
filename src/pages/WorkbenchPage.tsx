@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react'
+﻿import { useState, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { App } from 'antd'
 import {
   Sparkles, Image as ImageIcon,
   Zap, Globe, Wand2, Heart, MoreHorizontal, Plus,
   FolderOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SpeechInputButton } from '@/components/speech-input-button'
 import { useTranslation } from 'react-i18next'
 
 const categoryIds = [
@@ -41,6 +43,7 @@ const quickTools = [
 
 export default function WorkbenchPage() {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const search = new URLSearchParams(location.search).get('q') || ''
@@ -66,7 +69,7 @@ export default function WorkbenchPage() {
   }
 
   const showToast = (msg: string) => {
-    alert(msg)
+    message.info(msg)
   }
 
   return (
@@ -186,6 +189,7 @@ export default function WorkbenchPage() {
             placeholder={t("mainHome.inputPlaceholder")}
             className="h-9 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-muted"
           />
+          <SpeechInputButton onResult={(text) => setQuickPrompt((prev) => prev ? prev + " " + text : text)} />
           <button
             onClick={handleQuickGenerate}
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground hover:bg-accent-hover"

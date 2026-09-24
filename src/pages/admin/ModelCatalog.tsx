@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Pencil, Check, X, Upload, ChevronDown, Plus } from "lucide-react";
+import { App, Tooltip } from 'antd';
 
 interface CatalogModel {
   id: number;
@@ -75,6 +76,7 @@ function getDefaultAvatar(provider: string) {
 }
 
 export default function ModelCatalog() {
+  const { message } = App.useApp()
   const [models, setModels] = useState<CatalogModel[]>([]);
 
   useEffect(() => {
@@ -108,7 +110,7 @@ export default function ModelCatalog() {
 
   const handleAddModel = async () => {
     if (!addForm.displayName.trim()) {
-      alert("请输入显示名称");
+      message.error("请输入显示名称");
       return;
     }
     setAdding(true);
@@ -123,14 +125,14 @@ export default function ModelCatalog() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "添加失败");
+        message.error(data.error || "添加失败");
         return;
       }
       setModels(prev => [...prev, data]);
       setShowAddDialog(false);
       setAddForm({ modelId: "", displayName: "", capability: "text" });
     } catch (e: any) {
-      alert(e.message);
+      message.error(e.message);
     } finally {
       setAdding(false);
     }
@@ -323,7 +325,7 @@ export default function ModelCatalog() {
                             ) : (
                               <div className="flex items-center gap-1.5 group">
                                 <span className="text-sm font-medium text-white">{m.displayName || m.modelId}</span>
-                                <button onClick={(e) => { e.stopPropagation(); startEditName(m); }} className="rounded p-0.5 text-gray-600 opacity-0 group-hover:opacity-100 hover:bg-secondary hover:text-gray-400 transition-opacity" title="修改展示名"><Pencil size={12} /></button>
+                                <Tooltip title="修改展示名"><button onClick={(e) => { e.stopPropagation(); startEditName(m); }} className="rounded p-0.5 text-gray-600 opacity-0 group-hover:opacity-100 hover:bg-secondary hover:text-gray-400 transition-opacity"><Pencil size={12} /></button></Tooltip>
                               </div>
                             )}
                           </div>

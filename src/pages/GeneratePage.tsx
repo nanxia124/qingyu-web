@@ -1,6 +1,7 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { Sparkles, ImagePlus, Loader2, Download, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SpeechInputButton } from '@/components/speech-input-button'
 
 const ratios = ['1:1', '3:4', '4:3', '9:16', '16:9', '2:3', '3:2']
 const qualities = ['标准', '高清', '超清', '4K']
@@ -49,7 +50,7 @@ export default function GeneratePage() {
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-[12px] font-medium text-text-muted">提示词</label>
             </div>
-            <div className="rounded-lg bg-card p-1 transition-colors focus-within:ring-1 focus-within:ring-accent">
+            <div className="relative rounded-lg bg-card p-1 transition-colors focus-within:ring-1 focus-within:ring-accent">
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -57,6 +58,9 @@ export default function GeneratePage() {
                 placeholder="描述你想生成的画面…"
                 className="min-h-[76px] w-full resize-none bg-transparent px-3 py-2 text-[14px] leading-[22px] font-medium text-text outline-none placeholder:text-text-muted"
               />
+              <div className="absolute right-2 top-2">
+                <SpeechInputButton onResult={(text) => setPrompt((prev) => prev ? prev + " " + text : text)} />
+              </div>
             </div>
             {/* 常用提示词 */}
             <div className="mt-2 flex flex-wrap gap-1.5">

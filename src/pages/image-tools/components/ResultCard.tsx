@@ -1,4 +1,5 @@
-import { RefreshCw, Repeat, Download, Trash2, Star, Copy, Share2 } from 'lucide-react'
+import { Tooltip } from 'antd'
+import { RefreshCw, Repeat, Download, Trash2, Star } from 'lucide-react'
 import type { GenerationResult } from '@/stores/useImageToolsStore'
 import { cn } from '@/lib/utils'
 
@@ -81,11 +82,21 @@ export function ResultCard({
           )}
         </div>
         <div className="flex shrink-0 flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button data-tip="重新生成" onClick={() => onRegenerate(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><RefreshCw className="size-[15px]" strokeWidth={1.8} /></button>
-          <button data-tip="复用参数" onClick={() => onReuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-          <button data-tip="收藏" onClick={() => onToggleFavorite(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Star className={cn("size-[15px]", r.favorited && "fill-yellow-400 text-yellow-400")} strokeWidth={1.8} /></button>
-          <button data-tip="下载" className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-          <button data-tip="删除" onClick={() => onDelete(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-danger/70 hover:text-red-400 hover:bg-card-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+          <Tooltip title="重新生成">
+            <button onClick={() => onRegenerate(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><RefreshCw className="size-[15px]" strokeWidth={1.8} /></button>
+          </Tooltip>
+          <Tooltip title="复用参数">
+            <button onClick={() => onReuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
+          </Tooltip>
+          <Tooltip title="收藏">
+            <button onClick={() => onToggleFavorite(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Star className={cn("size-[15px]", r.favorited && "fill-yellow-400 text-yellow-400")} strokeWidth={1.8} /></button>
+          </Tooltip>
+          <Tooltip title="下载">
+            <button className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-card-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
+          </Tooltip>
+          <Tooltip title="删除">
+            <button onClick={() => onDelete(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-danger/70 hover:text-red-400 hover:bg-card-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+          </Tooltip>
         </div>
       </div>
     )
@@ -103,9 +114,15 @@ export function ResultCard({
           onClick={() => onPreview(r.imageUrl!)}
         />
         <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <button data-tip="重新生成" onClick={() => onRegenerate(r)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-black/70"><RefreshCw className="size-[15px]" /></button>
-          <button data-tip="复用参数" onClick={() => onReuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-black/70"><Repeat className="size-[15px]" /></button>
-          <button data-tip="删除" onClick={() => onDelete(r.id)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-red-500/70"><Trash2 className="size-[15px]" /></button>
+          <Tooltip title="重新生成">
+            <button onClick={() => onRegenerate(r)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-black/70"><RefreshCw className="size-[15px]" /></button>
+          </Tooltip>
+          <Tooltip title="复用参数">
+            <button onClick={() => onReuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-black/70"><Repeat className="size-[15px]" /></button>
+          </Tooltip>
+          <Tooltip title="删除">
+            <button onClick={() => onDelete(r.id)} className="flex size-[30px] items-center justify-center rounded-md bg-black/50 text-white hover:bg-red-500/70"><Trash2 className="size-[15px]" /></button>
+          </Tooltip>
         </div>
       </div>
       <div className="p-2.5">

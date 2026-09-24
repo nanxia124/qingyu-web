@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { Tooltip } from 'antd'
 import {
   Settings,
   MessageSquareWarning,
@@ -10,8 +11,6 @@ import {
   Users,
   User,
   CreditCard,
-  Sun,
-  Moon,
   Globe,
   Crown,
   Languages,
@@ -27,8 +26,6 @@ import AuthModal from '@/components/AuthModal'
 import InviteModal from '@/components/InviteModal'
 import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
-import { useThemeStore } from '@canvas/stores/use-theme-store'
-import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
 import i18n, { changeAppLocale, onLanguageSuggestion, type AppLocale } from '@canvas/i18n'
 import {
   SidebarHomeIcon,
@@ -102,15 +99,6 @@ export default function AppLayout() {
       openAuthModal()
     }
   }, [location.pathname, isLoggedIn, openAuthModal])
-
-  // 主题：与画布共用同一个 useThemeStore，同步 <html> 上的 .dark 类
-  const theme = useThemeStore((s) => s.theme)
-  const setTheme = useThemeStore((s) => s.setTheme)
-  useEffect(() => {
-    const dark = theme === 'dark'
-    document.documentElement.classList.toggle('dark', dark)
-    document.documentElement.style.colorScheme = theme
-  }, [theme])
 
 
   // ── 语言 ──
@@ -196,11 +184,11 @@ export default function AppLayout() {
     preload?: () => void,
     requireAuth?: boolean,
   ) => (
+    <Tooltip title={t(tooltip)}>
     <NavLink
       key={to + label}
       to={to}
       end={exact}
-      title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
       className="group relative flex h-[44px] w-full items-center justify-start outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
       style={{ transformOrigin: '50% 50%' }}
@@ -239,6 +227,7 @@ export default function AppLayout() {
         </>
       )}
     </NavLink>
+    </Tooltip>
   )
 
   const renderUtilityItem = (
@@ -248,10 +237,10 @@ export default function AppLayout() {
     Icon: typeof Settings,
     requireAuth?: boolean,
   ) => (
+    <Tooltip title={t(tooltip)}>
     <NavLink
       key={to}
       to={to}
-      title={t(tooltip)}
       onClick={requireAuthClick(requireAuth)}
       className="group relative flex h-[44px] w-full items-center justify-start outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
     >
@@ -288,6 +277,7 @@ export default function AppLayout() {
         </>
       )}
     </NavLink>
+    </Tooltip>
   )
 
   return (
@@ -295,22 +285,24 @@ export default function AppLayout() {
       {/* 全局顶部栏：只放站点级功能，页面内部标签继续留在主内容区 */}
       <header className="relative z-50 flex h-[56px] shrink-0 items-center gap-4 bg-nav-bg px-3">
         <div className="relative flex h-[44px] w-[220px] shrink-0 items-center gap-[10px]">
+          <Tooltip title={expanded ? '收起侧栏' : '展开侧栏'}>
           <button
             onClick={() => { const next = !expanded; setExpanded(next); localStorage.setItem('sidebar-expanded', String(next)) }}
             className="group relative flex size-[34px] shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-nav-hover"
-            title={expanded ? '收起侧栏' : '展开侧栏'}
           >
             <QingyuLogoIcon className="absolute h-[28px] w-[28px] shrink-0 text-text transition-all duration-200 group-hover:opacity-0 group-hover:scale-75" />
             {expanded ? <PanelLeftClose size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" /> : <PanelLeftOpen size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" />}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap rounded-md transition-opacity hover:opacity-80"
-            title="返回首页"
-          >
-            <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
-          </button>
+          </Tooltip>
+          <Tooltip title="返回首页">
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap rounded-md transition-opacity hover:opacity-80"
+            >
+              <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
+            </button>
+          </Tooltip>
           <span className="absolute left-[160px] top-1/2 -translate-y-1/2"><EnvironmentBadge /></span>
         </div>
         {location.pathname === '/' && (
@@ -328,21 +320,22 @@ export default function AppLayout() {
           </div>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text" title="通知"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button>
+          <Tooltip title="通知"><button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button></Tooltip>
           <button onClick={() => (isLoggedIn ? setInviteModalOpen(true) : openAuthModal())} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
           <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
           <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
           {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
           <div className="relative">
+            <Tooltip title={t("nav.my")}>
             <button
               onClick={() => (isLoggedIn ? setAccountMenuOpen((v) => !v) : openAuthModal())}
-              title={t("nav.my")}
               aria-expanded={isLoggedIn ? accountMenuOpen : undefined}
               className="flex items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text"
             >
               <User size={14} />
               <span className="whitespace-nowrap">{t('nav.my')}</span>
             </button>
+            </Tooltip>
             {isLoggedIn && accountMenuOpen && (
               <div className="absolute right-0 top-full mt-2 z-50 w-[160px] rounded-xl bg-card p-1 shadow-xl">
                 {[
@@ -393,39 +386,16 @@ export default function AppLayout() {
           </div>
         </nav>
 
-        {/* 底部：主题切换 + 语言切换 */}
+        {/* 底部：语言切换 */}
         <div className="shrink-0 border-t border-border px-2 py-2">
-          {/* 浅色 / 深色 切换 */}
-          <AnimatedThemeToggler
-            theme={theme}
-            onThemeChange={setTheme}
-            title={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
-            aria-label={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
-            className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
-          >
-            <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
-            <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
-              {theme === 'dark' ? (
-                <Sun className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
-              ) : (
-                <Moon className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
-              )}
-            </span>
-            {expanded && (
-              <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
-                {theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
-              </span>
-            )}
-          </AnimatedThemeToggler>
-
           {/* 语言切换：点击按钮展开/收起，点击外部关闭 */}
           <div
             ref={langMenuRef}
             className="relative"
           >
+            <Tooltip title={t("nav.language")}>
             <button
               onClick={() => setLangMenuOpen((v) => !v)}
-              title={t("nav.language")}
               aria-expanded={langMenuOpen}
               className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
             >
@@ -439,6 +409,7 @@ export default function AppLayout() {
                 </span>
               )}
             </button>
+            </Tooltip>
             {langMenuOpen && (
               <div className="absolute left-0 bottom-full z-50 w-[168px] pb-2">
                 <div className="rounded-xl bg-card p-1 shadow-xl">

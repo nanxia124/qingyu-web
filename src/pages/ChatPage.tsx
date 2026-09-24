@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { Send, Plus, Copy } from 'lucide-react'
+import { App, Tooltip } from 'antd'
 import { cn } from '@/lib/utils'
+import { SpeechInputButton } from '@/components/speech-input-button'
 import { useTranslation } from 'react-i18next'
 
 interface ChatMessage {
@@ -11,6 +13,7 @@ interface ChatMessage {
 
 export default function ChatPage() {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -51,7 +54,7 @@ export default function ChatPage() {
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 1200)
     } catch {
-      alert(t('chat.copyFailed'))
+      message.error(t('chat.copyFailed'))
     }
   }
 
@@ -103,10 +106,10 @@ export default function ChatPage() {
                     {/* meta + 复制 */}
                     <div className="mt-3 flex items-center gap-3">
                       <span className="text-[12px] leading-[18px] text-text-muted">{t('chat.justNow')}</span>
+                      <Tooltip title={t('chat.copy')}>
                       <button
                         onClick={() => copyMessage(m.id, m.content)}
                         className="flex size-7 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-surface-hover hover:text-text-active"
-                        title={t('chat.copy')}
                       >
                         {copiedId === m.id ? (
                           <span className="text-[10px] text-success">{t('chat.copied')}</span>
@@ -114,6 +117,7 @@ export default function ChatPage() {
                           <Copy className="size-[14px]" />
                         )}
                       </button>
+                      </Tooltip>
                     </div>
                   </div>
                 )}
@@ -134,13 +138,14 @@ export default function ChatPage() {
         <div className="mx-auto w-[600px] max-w-full">
           <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-card px-2 py-2 transition-colors hover:bg-surface-hover">
             {/* 附件按钮 */}
-            <button
-              onClick={() => alert(t('chat.attachSoon'))}
-              className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-active"
-              title={t('chat.addAttachment')}
-            >
-              <Plus className="size-[18px]" />
-            </button>
+            <Tooltip title={t('chat.addAttachment')}>
+              <button
+                onClick={() => message.info(t('chat.attachSoon'))}
+                className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-active"
+              >
+                <Plus className="size-[18px]" />
+              </button>
+            </Tooltip>
             {/* 输入框 */}
             <textarea
               ref={textareaRef}
@@ -156,20 +161,23 @@ export default function ChatPage() {
               placeholder={t('chat.placeholder')}
               className="chat-input max-h-40 flex-1 resize-none bg-transparent text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
             />
+            {/* 语音输入按钮 */}
+            <SpeechInputButton onResult={(text) => setInput((prev) => prev ? prev + " " + text : text)} />
             {/* 发送按钮 */}
-            <button
-              onClick={send}
-              disabled={!input.trim() || sending}
-              className={cn(
-                'flex size-[34px] shrink-0 items-center justify-center rounded-full transition-colors',
-                input.trim()
-                  ? 'bg-accent text-accent-foreground hover:bg-accent-hover'
-                  : 'bg-secondary text-text-muted',
-              )}
-              title={t('chat.send')}
-            >
-              <Send className="size-[16px]" />
-            </button>
+            <Tooltip title={t('chat.send')}>
+              <button
+                onClick={send}
+                disabled={!input.trim() || sending}
+                className={cn(
+                  'flex size-[34px] shrink-0 items-center justify-center rounded-full transition-colors',
+                  input.trim()
+                    ? 'bg-accent text-accent-foreground hover:bg-accent-hover'
+                    : 'bg-secondary text-text-muted',
+                )}
+              >
+                <Send className="size-[16px]" />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </div>

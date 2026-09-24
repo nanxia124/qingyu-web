@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography , Tooltip} from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -441,14 +441,12 @@ export default function VideoPage() {
                                 <button
                                     onClick={() => setPromptDialogOpen(true)}
                                     className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-muted"
-                                    title={t("videoWorkbench.promptTemplate")}
                                 >
                                     <BookOpen className="size-[13px]" />
                                 </button>
                                 <button
                                     onClick={() => setAssetPickerOpen(true)}
                                     className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-muted"
-                                    title={t("videoWorkbench.fromAssets")}
                                 >
                                     <FolderPlus className="size-[13px]" />
                                 </button>
@@ -605,7 +603,6 @@ export default function VideoPage() {
                                             onClick={() => setReferences((value) => moveListItem(value, index, -1))}
                                             disabled={index <= 0}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-white"
-                                            title={t("videoWorkbench.moveUp")}
                                         >
                                             <ArrowLeft className="size-4" />
                                         </button>
@@ -613,7 +610,6 @@ export default function VideoPage() {
                                             onClick={() => setReferences((value) => moveListItem(value, index, 1))}
                                             disabled={index >= references.length - 1}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-white"
-                                            title={t("videoWorkbench.moveDown")}
                                         >
                                             <ArrowRight className="size-4" />
                                         </button>
@@ -621,7 +617,6 @@ export default function VideoPage() {
                                         <button
                                             onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
                                             className="flex items-center justify-center bg-black/40 text-white hover:text-red-400"
-                                            title={t("videoWorkbench.delete")}
                                         >
                                             <Trash2 className="size-4" />
                                         </button>
@@ -644,14 +639,12 @@ export default function VideoPage() {
                                         <button
                                             onClick={() => fileInputRef.current?.click()}
                                             className="flex flex-col items-center justify-end pb-2 text-muted-foreground hover:text-accent"
-                                            title={t("videoWorkbench.uploadImage")}
                                         >
                                             <Upload className="size-4" />
                                         </button>
                                         <button
                                             onClick={() => void addReferencesFromClipboard()}
                                             className="flex flex-col items-center justify-start pt-2 text-muted-foreground hover:text-accent"
-                                            title={t("videoWorkbench.pasteImage")}
                                         >
                                             <ClipboardPaste className="size-4" />
                                         </button>
@@ -1045,8 +1038,8 @@ function ReferenceOrderButtons({ index, total, onMove }: { index: number; total:
     if (total <= 1) return null;
     return (
         <div className="absolute inset-x-1 bottom-1 flex justify-between">
-            <Button size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !bg-white/85 !p-0 !shadow-sm" icon={<ArrowLeft className="size-3" />} disabled={index <= 0} onClick={() => onMove(-1)} />
-            <Button size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !bg-white/85 !p-0 !shadow-sm" icon={<ArrowRight className="size-3" />} disabled={index >= total - 1} onClick={() => onMove(1)} />
+            <Button size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !bg-white/85 !p-0" icon={<ArrowLeft className="size-3" />} disabled={index <= 0} onClick={() => onMove(-1)} />
+            <Button size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !bg-white/85 !p-0" icon={<ArrowRight className="size-3" />} disabled={index >= total - 1} onClick={() => onMove(1)} />
         </div>
     );
 }

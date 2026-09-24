@@ -1,4 +1,5 @@
 ﻿import { useRef, useState } from 'react'
+import { SpeechInputButton } from '@/components/speech-input-button'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   Image as ImageIcon,
@@ -108,6 +109,7 @@ export function CanvasNodeView({
             )}
           </div>
           <div className="flex items-center gap-2 px-3 pb-3">
+            <SpeechInputButton onResult={(text) => setTextDraft((prev) => (prev || '') + " " + text)} />
             <button onPointerDown={(e) => e.stopPropagation()} className="flex size-7 items-center justify-center rounded-lg text-[#888] hover:bg-[#2a2a2a]"><Maximize2 className="size-3.5" /></button>
             <button onPointerDown={(e) => e.stopPropagation()} className="flex size-7 items-center justify-center rounded-lg text-[#888] hover:bg-[#2a2a2a]"><Copy className="size-3.5" /></button>
             <button onPointerDown={(e) => e.stopPropagation()} className="flex h-7 items-center gap-1.5 rounded-full bg-[#2a2a2a] px-3 text-[12px] text-[#ccc] hover:bg-[#333]"><Sparkles className="size-3.5" />{node.config?.model || '暂未获取到模型'}</button>

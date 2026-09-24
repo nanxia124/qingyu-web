@@ -1499,6 +1499,10 @@ const server = http.createServer(async (req, res) => {
         const session = await postgresBilling.registerSession(uid, { clientType: "dev-login" });
         const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
         const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
+        // JSON 模式：供前端 /dev-login 页面用 fetch 拿 token，避免临时 HTML 页跳转丢登录态
+        if (url.searchParams.get("format") === "json" || (req.headers.accept || "").includes("application/json")) {
+          return sendJSON(res, 200, { token, uid, email: user.email });
+}
         // 返回一个自动写 localStorage 并跳转的 HTML 页
         // zustand persist 的 auth-store 也要写，否则 checkSession 会强制查 Appwrite 把登录态清掉。
         const authStoreState = {

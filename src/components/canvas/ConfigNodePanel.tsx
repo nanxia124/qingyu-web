@@ -1,3 +1,4 @@
+import { Tooltip } from 'antd'
 import { useRef } from 'react'
 import { ArrowUp, Copy, Maximize2, X } from 'lucide-react'
 import type { CanvasNode, NodeConfig } from './types'
@@ -33,15 +34,16 @@ export function ConfigNodePanel({
         <span className="text-[13px] font-semibold text-[#bebebe]">
           {isImage ? '图片节点' : '生成配置'}
         </span>
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onClose}
-          className="flex size-6 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
-          title="关闭"
-        >
-          <X className="size-4" />
-        </button>
+        <Tooltip title="关闭">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+            className="flex size-6 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
+          >
+            <X className="size-4" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* 图片节点：上传占位块 + 文件 input */}
@@ -72,26 +74,28 @@ export function ConfigNodePanel({
       {/* 模型下拉 + 可选操作 + 生成按钮 */}
       <div className="flex items-center gap-2">
         {onZoomToNode && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => onZoomToNode(node)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
-            title="放大到节点"
-          >
-            <Maximize2 className="size-4" />
-          </button>
+          <Tooltip title="放大到节点">
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => onZoomToNode(node)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
+            >
+              <Maximize2 className="size-4" />
+            </button>
+          </Tooltip>
         )}
         {onCopy && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => onCopy(node)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
-            title="复制节点"
-          >
-            <Copy className="size-4" />
-          </button>
+          <Tooltip title="复制节点">
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => onCopy(node)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#9e9e99] hover:bg-[#303030]"
+            >
+              <Copy className="size-4" />
+            </button>
+          </Tooltip>
         )}
         <select
           value={model}
@@ -101,15 +105,16 @@ export function ConfigNodePanel({
         >
           {model ? <option value={model}>{model}</option> : <option value="">暂未获取到模型</option>}
         </select>
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => onGenerate(node)}
-          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e0e0e0] text-[#1c1c1c] hover:bg-white"
-          title="生成"
-        >
-          <ArrowUp className="size-5" />
-        </button>
+        <Tooltip title="生成">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onGenerate(node)}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e0e0e0] text-[#1c1c1c] hover:bg-white"
+          >
+            <ArrowUp className="size-5" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* 比例 / 质量 / 数量信息 */}

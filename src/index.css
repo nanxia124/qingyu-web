@@ -34,7 +34,7 @@ html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
 
 @theme {
   /* 浅色主题 */
-  --color-bg: #ffffff;
+  --color-bg: #fafafa;
   --color-surface: #ffffff;
   --color-surface-hover: #ececef;
   --color-card: #ffffff;
@@ -91,7 +91,7 @@ html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
   --color-brand-hover: #3f40e6;
   --color-brand-foreground: #ffffff;
   --color-panel: #ffffff;
-  --color-line: #e2e2e8;
+  --color-line: #ececf0;
 
   --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
 }
@@ -160,7 +160,7 @@ html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
  */
 .dark {
   color-scheme: dark;
-  --color-bg: #151515;
+  --color-bg: #09090b;
   --color-surface: #181818;
   --color-surface-hover: #282828;
   --color-card: #202020;
@@ -209,7 +209,7 @@ html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
   --color-brand-hover: #6366ff;
   --color-brand-foreground: #f0f0f0;
   --color-panel: #202020;
-  --color-line: #383838;
+  --color-line: #2a2a2a;
 
   --background: #151515;
   --foreground: #bebebe;
@@ -304,38 +304,15 @@ button.ant-btn,
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 自定义 Tooltip — 替代原生 title，立即显示 */
-[data-tip] {
-  position: relative;
-}
-[data-tip]:hover::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  background: #ffffff;
-  color: #1d1d1f;
+/* 全局统一 Tooltip 样式 */
+.ant-tooltip .ant-tooltip-inner {
   font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
+  font-weight: 400;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-  z-index: 100;
-  pointer-events: none;
+  padding: 5px 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
-[data-tip]:hover::before {
-  content: '';
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  border: 4px solid transparent;
-  border-top-color: #ffffff;
-  z-index: 100;
-  pointer-events: none;
-}
+
 @keyframes flowDash {
   to { stroke-dashoffset: -1160; }
 }
@@ -343,20 +320,12 @@ button.ant-btn,
   animation: flowDash 20s linear infinite;
 }
 
-/* 深色模式下的滚动条与 Tooltip */
+/* 深色模式下的滚动条 */
 .dark ::-webkit-scrollbar-thumb {
   background: #3a3a3a;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #4a4a4a;
-}
-.dark [data-tip]:hover::after {
-  background: #2a2a2a;
-  color: #bebebe;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-.dark [data-tip]:hover::before {
-  border-top-color: #2a2a2a;
 }
 
 

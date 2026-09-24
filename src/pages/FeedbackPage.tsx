@@ -1,7 +1,8 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Send, MessageCircle, Bug, Lightbulb } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SpeechInputButton } from '@/components/speech-input-button'
 
 const types = [
   { id: 'suggestion', label: 'pages.feedback.suggestion', icon: Lightbulb },
@@ -86,6 +87,7 @@ export default function FeedbackPage() {
         placeholder={t("pages.feedback.placeholder")}
         className="mt-4 w-full resize-none rounded-xl bg-input px-4 py-3 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
       />
+      <div style={{ marginTop: '8px' }}><SpeechInputButton onResult={(text) => setContent((prev) => prev ? prev + ' ' + text : text)} /></div>
       <input
         value={contact}
         onChange={(e) => setContact(e.target.value)}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from "lucide-react";
 import ModelCatalog from "./ModelCatalog";
+import { App } from 'antd';
 
 const API = import.meta.env.VITE_API_URL || "";
 // 与后端 KEY_MAX_CONCURRENCY 默认值保持一致
@@ -173,7 +174,7 @@ function PromptConfig() {
                 setIsEditing(false)
                 setTimeout(() => setSaved(false), 2000)
             })
-            .catch(() => alert('保存失败'))
+            .catch(() => message.error('保存失败'))
             .finally(() => setSaving(false))
     }
 
@@ -230,6 +231,7 @@ function PromptConfig() {
 
 export default function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [activeTab, setActiveTab] = useState<"channels" | "catalog" | "prompts">("channels");
     const [keys, setKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
@@ -309,7 +311,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         // 新增模式：前端先校验必填项
         if (!editId) {
             if (!payload.name || !payload.base_url || !payload.api_key) {
-                alert(t("pages.admin.dashboard.fillRequired"));
+                message.error(t("pages.admin.dashboard.fillRequired"));
                 return;
             }
         } else if (!payload.api_key) {
@@ -329,7 +331,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             const data = await res.json().catch(() => ({}));
             // 关键：HTTP 4xx/5xx 时 fetch 不会抛异常，必须显式检查 res.ok
             if (!res.ok) {
-                alert(t("pages.admin.dashboard.saveFailed") + (data.error || `HTTP ${res.status}`));
+                message.error(t("pages.admin.dashboard.saveFailed") + (data.error || `HTTP ${res.status}`));
                 return; // 保留弹窗，方便用户改完重存
             }
             // 只有成功才关闭并刷新列表
@@ -340,7 +342,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             setModels([]);
             fetchKeys();
         } catch (err: any) {
-            alert(t("pages.admin.dashboard.saveFailed") + (err.message || err));
+            message.error(t("pages.admin.dashboard.saveFailed") + (err.message || err));
         }
     };
 
@@ -364,7 +366,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
     const fetchModels = async () => {
         if (!form.base_url) {
-            alert(t("pages.admin.dashboard.apiUrlFirst"));
+            message.error(t("pages.admin.dashboard.apiUrlFirst"));
             return;
         }
         setLoadingModels(true);
@@ -379,7 +381,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                 apiKey = data.api_key;
             }
             if (!apiKey) {
-                alert(t("pages.admin.dashboard.apiKeyFirst"));
+                message.error(t("pages.admin.dashboard.apiKeyFirst"));
                 return;
             }
             // 通过后端代理拉取供应商 /models（服务端请求，规避浏览器跨域）
@@ -390,16 +392,16 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                alert(t("pages.admin.dashboard.pullFailed") + (data.error || `HTTP ${res.status}`));
+                message.error(t("pages.admin.dashboard.pullFailed") + (data.error || `HTTP ${res.status}`));
                 return;
             }
             if (data.data) {
                 setModels(data.data.map((m: any) => m.id));
             } else {
-                alert(t("pages.admin.dashboard.pullFailed") + (data.error?.message || t("pages.admin.dashboard.unknownErr")));
+                message.error(t("pages.admin.dashboard.pullFailed") + (data.error?.message || t("pages.admin.dashboard.unknownErr")));
             }
         } catch (err: any) {
-            alert(t("pages.admin.dashboard.pullFailed") + err.message);
+            message.error(t("pages.admin.dashboard.pullFailed") + err.message);
         } finally {
             setLoadingModels(false);
         }
@@ -708,7 +710,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                 {headLogo}
                                                                 <span className="text-base font-semibold text-gray-100">{b}</span>
                                                                 <span className="rounded-full bg-[#5051F8]/20 px-1.5 text-xs text-accent-soft-text">{list.length}</span>
-                                                                <button type="button" onClick={() => toggleBrand(list)} title={allIn ? t("pages.admin.dashboard.removeAll") : t("pages.admin.dashboard.addAll")}
+                                                                <button type="button" onClick={() => toggleBrand(list)}
                                                                     className={`ml-auto flex h-4 w-4 items-center justify-center rounded-full transition-all ${allIn ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover:opacity-100"}`}>
                                                                     {allIn ? (
                                                                         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -739,7 +741,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                         <div key={m} className="group/row flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 hover:bg-surface-hover">
                                                                                             {rowLogo}
                                                                                             <span className="truncate text-sm text-gray-600">{prettyModel(m)}</span>
-                                                                                            <button type="button" onClick={() => toggleModel(m)} title={sel ? t("pages.admin.dashboard.remove") : t("pages.admin.dashboard.add")}
+                                                                                            <button type="button" onClick={() => toggleModel(m)}
                                                                                                 className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-all ${sel ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover/row:opacity-100"}`}>
                                                                                                 {sel ? (
                                                                                                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>

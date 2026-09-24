@@ -250,7 +250,7 @@ function MentionMenu({ rect, references, activeIndex, theme, onSelect }: { rect:
     return createPortal(
         <div
             data-canvas-resource-mention-menu="true"
-            className="fixed z-[1100] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
+            className="fixed z-[1100] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 backdrop-blur-md canvas-float"
             style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onPointerDown={stopCanvasInteraction}
             onMouseDown={stopCanvasInteraction}

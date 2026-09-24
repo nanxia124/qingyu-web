@@ -1,4 +1,5 @@
-﻿import {
+﻿import { Tooltip } from 'antd'
+import {
   MousePointer2,
   Hand,
   Type,
@@ -45,55 +46,73 @@ export function TopToolbar({
 }: TopToolbarProps) {
   return (
     <div className="flex items-center gap-1 rounded-xl bg-[#1c1c1c] p-1.5 ring-1 ring-[#383838]">
-      <button
-        type="button"
-        onClick={() => onToolChange('select')}
-        className={cn(btn, tool === 'select' && activeBtn)}
-        data-tip="选择"
-      >
-        <MousePointer2 className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => onToolChange('pan')}
-        className={cn(btn, tool === 'pan' && activeBtn)}
-        data-tip="平移"
-      >
-        <Hand className="size-4" />
-      </button>
+      <Tooltip title="选择">
+        <button
+          type="button"
+          onClick={() => onToolChange('select')}
+          className={cn(btn, tool === 'select' && activeBtn)}
+        >
+          <MousePointer2 className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="平移">
+        <button
+          type="button"
+          onClick={() => onToolChange('pan')}
+          className={cn(btn, tool === 'pan' && activeBtn)}
+        >
+          <Hand className="size-4" />
+        </button>
+      </Tooltip>
 
       <div className={divider} />
 
-      <button type="button" onClick={() => onAddNode('text')} className={btn} data-tip="文本节点">
-        <Type className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAddNode('image')} className={btn} data-tip="图片节点">
-        <Image className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAddNode('config')} className={btn} data-tip="生成配置">
-        <Settings2 className="size-4" />
-      </button>
+      <Tooltip title="文本节点">
+        <button type="button" onClick={() => onAddNode('text')} className={btn}>
+          <Type className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="图片节点">
+        <button type="button" onClick={() => onAddNode('image')} className={btn}>
+          <Image className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="生成配置">
+        <button type="button" onClick={() => onAddNode('config')} className={btn}>
+          <Settings2 className="size-4" />
+        </button>
+      </Tooltip>
 
       <div className={divider} />
 
-      <button type="button" onClick={onCopy} className={btn} data-tip="复制">
-        <Copy className="size-4" />
-      </button>
-      <button type="button" onClick={onPaste} className={btn} data-tip="粘贴">
-        <ClipboardPaste className="size-4" />
-      </button>
-      <button type="button" onClick={onDelete} className={cn(btn, 'hover:text-red-400')} data-tip="删除">
-        <Trash2 className="size-4" />
-      </button>
+      <Tooltip title="复制">
+        <button type="button" onClick={onCopy} className={btn}>
+          <Copy className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="粘贴">
+        <button type="button" onClick={onPaste} className={btn}>
+          <ClipboardPaste className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="删除">
+        <button type="button" onClick={onDelete} className={cn(btn, 'hover:text-red-400')}>
+          <Trash2 className="size-4" />
+        </button>
+      </Tooltip>
 
       <div className={divider} />
 
-      <button type="button" onClick={onUndo} disabled={!canUndo} className={btn} data-tip="撤销">
-        <Undo2 className="size-4" />
-      </button>
-      <button type="button" onClick={onRedo} disabled={!canRedo} className={btn} data-tip="重做">
-        <Redo2 className="size-4" />
-      </button>
+      <Tooltip title="撤销">
+        <button type="button" onClick={onUndo} disabled={!canUndo} className={btn}>
+          <Undo2 className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="重做">
+        <button type="button" onClick={onRedo} disabled={!canRedo} className={btn}>
+          <Redo2 className="size-4" />
+        </button>
+      </Tooltip>
     </div>
   )
 }

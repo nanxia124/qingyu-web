@@ -9,6 +9,7 @@ import { RouteSkeleton, type SkeletonVariant } from '@/components/states/RouteSk
 
 // 所有页面按需加载，减少首屏体积
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'))
+const DevLoginPage = lazy(() => import('@/pages/DevLoginPage'))
 const WorkbenchPage = lazy(() => import('@/pages/WorkbenchPage'))
 const ChatPage = lazy(() => import('@/pages/ChatPage'))
 const TranslatePage = lazy(() => import('@/pages/TranslatePage'))
@@ -47,6 +48,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/reset-password" element={lazyPage(<ResetPasswordPage />)} />
+        {/* 本地开发一键登录（生产构建页面自行禁用） */}
+        <Route path="/dev-login" element={lazyPage(<DevLoginPage />, 'workspace')} />
         <Route path="/admin-secret-8f3k2x7z" element={<AdminRoute>{lazyPage(<AdminPage />)}</AdminRoute>} />
         <Route path="/admin" element={<Navigate to="/admin-secret-8f3k2x7z" replace />} />
         {/* 旧后台地址保留兼容，但统一回到同一个登录和导航入口 */}

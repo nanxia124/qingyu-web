@@ -34,7 +34,7 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
     return (
         <button
             type="button"
-            className="group relative cursor-pointer overflow-hidden rounded-lg border border-zinc-200 bg-white text-left transition hover:border-zinc-400 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500"
+            className="group relative cursor-pointer overflow-hidden rounded-lg border border-zinc-200 bg-white text-left transition hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500"
             onClick={onClick}
         >
             {cover ? (

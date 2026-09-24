@@ -147,7 +147,7 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
                 </SelectTrigger>
                 <SelectContent
                     data-canvas-no-zoom
-                    className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl !bg-panel p-1 text-text shadow-xl ring-0 border-0"
+                    className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl !bg-panel p-1 text-text ring-0 border-0 canvas-float"
                     position="popper"
                     align="start"
                     side="bottom"

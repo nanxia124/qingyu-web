@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { FolderOpen, Search, Upload, MoreVertical, Heart, MessageCircle } from 'lucide-react'
+import { App, Tooltip } from 'antd'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
@@ -20,6 +21,7 @@ type AssetComment = { id: string; content: string; authorEmail?: string; created
 
 export default function AssetsPage() {
   const { t } = useTranslation()
+  const { message } = App.useApp()
   const [tab, setTab] = useState<AssetType>('all')
   const [keyword, setKeyword] = useState('')
   const [assets, setAssets] = useState<Asset[]>([])
@@ -112,7 +114,7 @@ export default function AssetsPage() {
       const result = await (liked ? api.put('/assets/' + encodeURIComponent(asset.id) + '/like') : api.delete('/assets/' + encodeURIComponent(asset.id) + '/like'))
       setAssets((items) => items.map((item) => item.id === asset.id ? { ...item, liked: result.liked, likeCount: result.likeCount } : item))
     } catch {
-      window.alert('点赞操作失败，请稍后重试')
+      message.error('点赞操作失败，请稍后重试')
     }
   }
 
@@ -124,7 +126,7 @@ export default function AssetsPage() {
       const result = await api.get<AssetComment[]>('/assets/' + encodeURIComponent(asset.id) + '/comments')
       setComments(result)
     } catch {
-      window.alert('评论读取失败，请稍后重试')
+      message.error('评论读取失败，请稍后重试')
     } finally {
       setCommentsLoading(false)
     }
@@ -138,7 +140,7 @@ export default function AssetsPage() {
       setComments((items) => [...items, created])
       setCommentDraft('')
     } catch {
-      window.alert('评论发布失败，请稍后重试')
+      message.error('评论发布失败，请稍后重试')
     } finally {
       setCommentSubmitting(false)
     }
@@ -177,10 +179,12 @@ export default function AssetsPage() {
             className="w-56 rounded-lg bg-input py-2 pl-9 pr-3 text-[14px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
           />
         </div>
-        <label title="上传到当前个人空间" className={cn('flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover', uploading && 'pointer-events-none opacity-50')}>
-          <Upload className="size-4" /> {t('pages.assets.upload')}
-          <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+        <Tooltip title="上传到当前个人空间">
+          <label className={cn('flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover', uploading && 'pointer-events-none opacity-50')}>
+            <Upload className="size-4" /> {t('pages.assets.upload')}
+            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+        </Tooltip>
       </div>
 
       {/* 网格 */}
@@ -196,12 +200,16 @@ export default function AssetsPage() {
                 {a.type} · {new Date(a.createdAt).toLocaleDateString()}
               </div>
               <div className="mt-3 flex items-center gap-2 text-[12px] text-text-muted">
-                <button onClick={() => void handleLike(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover" title="点赞">
-                  <Heart className={cn('size-3.5', a.liked && 'fill-red-400 text-red-400')} /> {a.likeCount || 0}
-                </button>
-                <button onClick={() => void openComments(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover" title="评论">
-                  <MessageCircle className="size-3.5" /> {a.commentCount || 0}
-                </button>
+                <Tooltip title="点赞">
+                  <button onClick={() => void handleLike(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover">
+                    <Heart className={cn('size-3.5', a.liked && 'fill-red-400 text-red-400')} /> {a.likeCount || 0}
+                  </button>
+                </Tooltip>
+                <Tooltip title="评论">
+                  <button onClick={() => void openComments(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover">
+                    <MessageCircle className="size-3.5" /> {a.commentCount || 0}
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <button className="absolute right-2 top-2 hidden size-7 items-center justify-center rounded-lg bg-black/50 text-white backdrop-blur group-hover:flex">

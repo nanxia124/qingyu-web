@@ -16,6 +16,7 @@ import { CanvasTextSettingsPopover } from "./canvas-text-settings-popover";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@canvas/types/canvas";
 import type { CanvasResourceReference } from "@canvas/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { SpeechInputButton } from "@/components/speech-input-button";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -75,7 +76,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     return (
         <div
             data-canvas-no-zoom
-            className="rounded-md border p-3 shadow-2xl backdrop-blur"
+            className="rounded-md border p-3 backdrop-blur canvas-float"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -99,6 +100,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-md !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
                     </Tooltip>
                     <CanvasPromptLibrary onSelect={updatePrompt} />
+                    <SpeechInputButton onResult={(text) => updatePrompt((prev: string) => prev ? prev + " " + text : text)} />
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />

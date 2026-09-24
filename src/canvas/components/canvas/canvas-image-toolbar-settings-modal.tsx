@@ -162,7 +162,7 @@ export function ImageToolSettingsModal({
                     <div
                         ref={previewToolbarRef}
                         className="hide-scrollbar absolute left-2 right-2 top-3 z-10 flex h-12 items-center overflow-x-auto rounded-[18px] border px-1 text-[13px]"
-                        style={{ background: token.colorBgElevated, borderColor: token.colorBorderSecondary, boxShadow: token.boxShadowSecondary, color: token.colorText }}
+                        style={{ background: token.colorBgElevated, borderColor: token.colorBorderSecondary, color: token.colorText }}
                         onScroll={syncPreviewScroll}
                     >
                         {previewTools.map((tool) => (

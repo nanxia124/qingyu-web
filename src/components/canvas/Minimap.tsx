@@ -1,4 +1,5 @@
-﻿import { useCallback, useMemo, useRef, useState } from 'react'
+﻿import { Tooltip } from 'antd'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { CanvasNode, NodeType, Viewport, ViewportSize } from './types'
 
 const WIDTH = 240
@@ -102,16 +103,17 @@ export function Minimap({
 
   if (!expanded) {
     return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="flex size-10 items-center justify-center rounded-lg bg-[#1c1c1c] text-[#9e9e99] ring-1 ring-[#383838] hover:bg-[#272727]"
-        data-tip="小地图"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" />
-          <rect x="4" y="4" width="4" height="3" rx="0.5" fill="currentColor" opacity="0.5" />
-        </svg>
-      </button>
+      <Tooltip title="小地图">
+        <button
+          onClick={() => setExpanded(true)}
+          className="flex size-10 items-center justify-center rounded-lg bg-[#1c1c1c] text-[#9e9e99] ring-1 ring-[#383838] hover:bg-[#272727]"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" />
+            <rect x="4" y="4" width="4" height="3" rx="0.5" fill="currentColor" opacity="0.5" />
+          </svg>
+        </button>
+      </Tooltip>
     )
   }
   return (

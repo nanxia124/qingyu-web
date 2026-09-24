@@ -1,3 +1,4 @@
+import { Tooltip } from 'antd'
 import {
   Copy,
   Trash2,
@@ -34,33 +35,51 @@ export function SelectionToolbar({ x, y, count, onCopy, onDelete, onAlign, onGro
       style={{ left: x, top: y }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <button type="button" onClick={onCopy} className={btn} data-tip="复制">
-        <Copy className="size-4" />
-      </button>
-      <button type="button" onClick={onDelete} className={`${btn} text-red-400`} data-tip="删除">
-        <Trash2 className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('left')} className={btn} data-tip="左对齐">
-        <AlignStartVertical className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('hcenter')} className={btn} data-tip="水平居中">
-        <AlignCenterVertical className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('right')} className={btn} data-tip="右对齐">
-        <AlignEndVertical className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('top')} className={btn} data-tip="顶对齐">
-        <AlignStartHorizontal className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('vcenter')} className={btn} data-tip="垂直居中">
-        <AlignCenterHorizontal className="size-4" />
-      </button>
-      <button type="button" onClick={() => onAlign('bottom')} className={btn} data-tip="底对齐">
-        <AlignEndHorizontal className="size-4" />
-      </button>
-      <button type="button" onClick={onGroup} className={btn} data-tip="分组">
-        <Maximize2 className="size-4" />
-      </button>
+      <Tooltip title="复制">
+        <button type="button" onClick={onCopy} className={btn}>
+          <Copy className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="删除">
+        <button type="button" onClick={onDelete} className={`${btn} text-red-400`}>
+          <Trash2 className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="左对齐">
+        <button type="button" onClick={() => onAlign('left')} className={btn}>
+          <AlignStartVertical className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="水平居中">
+        <button type="button" onClick={() => onAlign('hcenter')} className={btn}>
+          <AlignCenterVertical className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="右对齐">
+        <button type="button" onClick={() => onAlign('right')} className={btn}>
+          <AlignEndVertical className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="顶对齐">
+        <button type="button" onClick={() => onAlign('top')} className={btn}>
+          <AlignStartHorizontal className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="垂直居中">
+        <button type="button" onClick={() => onAlign('vcenter')} className={btn}>
+          <AlignCenterHorizontal className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="底对齐">
+        <button type="button" onClick={() => onAlign('bottom')} className={btn}>
+          <AlignEndHorizontal className="size-4" />
+        </button>
+      </Tooltip>
+      <Tooltip title="分组">
+        <button type="button" onClick={onGroup} className={btn}>
+          <Maximize2 className="size-4" />
+        </button>
+      </Tooltip>
     </div>
   )
 }

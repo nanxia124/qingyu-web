@@ -117,7 +117,7 @@ export function CanvasConfigComposer({ nodeId, nodes, value, inputs, connectedNo
     return (
         <div
             data-canvas-no-zoom
-            className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
+            className="rounded-2xl border p-3 backdrop-blur canvas-float"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={stopCanvasInteraction}
             onPointerDown={stopCanvasInteraction}
@@ -205,7 +205,7 @@ function MentionMenu({ inputs, allInputs, activeIndex, theme, onSelect }: { inpu
     };
 
     return (
-        <div className="absolute left-2 top-[calc(100%+6px)] z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
+        <div className="absolute left-2 top-[calc(100%+6px)] z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 canvas-float" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
             {inputs.map((input, index) => (
                 <button
                     key={input.nodeId}

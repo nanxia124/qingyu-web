@@ -152,18 +152,17 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onR
                                 {onRegenerate ? (
                                     <button
                                         type="button"
-                                        className="grid size-7 place-items-center rounded-lg border shadow-sm transition hover:opacity-100"
+                                        className="grid size-7 place-items-center rounded-lg border transition hover:opacity-100"
                                         style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.muted }}
                                         onClick={onRegenerate}
                                         aria-label="重新生成"
-                                        title="重新生成"
                                     >
                                         <RefreshCw className="size-3.5" />
                                     </button>
                                 ) : null}
                                 <button
                                     type="button"
-                                    className="grid size-7 place-items-center rounded-lg border shadow-sm transition hover:opacity-100"
+                                    className="grid size-7 place-items-center rounded-lg border transition hover:opacity-100"
                                     style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.muted }}
                                     onClick={() => copyText(item.text, tr("copied"))}
                                     aria-label={tr("copy")}

@@ -123,7 +123,6 @@ export function CanvasTopBar({
                                 type="button"
                                 className="max-w-[280px] truncate border-b border-dashed border-transparent text-left text-lg font-semibold tracking-normal transition hover:border-current"
                                 onDoubleClick={onStartTitleEditing}
-                                title={t("canvas.renameHint")}
                             >
                                 {title}
                             </button>

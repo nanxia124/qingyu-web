@@ -1,4 +1,6 @@
 ﻿import { useRef, useState, useEffect } from 'react'
+import { Tooltip } from 'antd'
+import { SpeechInputButton } from '@/components/speech-input-button'
 import { ModelPicker } from '@canvas/components/model-picker'
 import { useConfigStore } from '@canvas/stores/use-config-store'
 import { createPortal } from 'react-dom'
@@ -465,14 +467,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                 className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-secondary"
               />
               <div className="absolute bottom-2 right-2 flex gap-1">
-                
-                <button data-tip={t("imageTools.clear")} onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast(t('imageTools.toasts.cleared'), 'success', { label: t('imageTools.undo'), onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><Trash2 className="size-[13px]" /></button>
-                <button data-tip={t("imageTools.tipFormat")} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button>
+                <SpeechInputButton onResult={(text) => setPrompt((prev) => prev ? prev + " " + text : text)} />
+                <Tooltip title={t("imageTools.clear")}><button  onClick={() => { setUndoPrompt(prompt); setPrompt(''); if (promptRef.current) promptRef.current.style.height = 'auto'; showToast(t('imageTools.toasts.cleared'), 'success', { label: t('imageTools.undo'), onClick: () => { setPrompt(undoPrompt); setUndoPrompt('') } }, 'input') }} className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><Trash2 className="size-[13px]" /></button></Tooltip>
+                <Tooltip title={t("imageTools.tipFormat")}><button  className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button></Tooltip>
               </div>
             </div>
             <div className="mt-2 flex items-center gap-2">
               <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
-              <button data-tip={t("imageTools.tipAddCommon")} onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
+              <Tooltip title={t("imageTools.tipAddCommon")}><button  onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button></Tooltip>
             </div>
           </div>
 
@@ -535,18 +537,18 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                   <img src={img} alt="" className="h-full w-full rounded-lg object-cover" />
                   {/* hover 4格操作 */}
                   <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 rounded-lg opacity-0 transition-opacity group-hover:opacity-100">
-                    <button data-tip={t("imageTools.replace")} onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    <Tooltip title={t("imageTools.replace")}><button  onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <RefreshCw className="size-4" />
-                    </button>
-                    <button data-tip={t("imageTools.zoom")} onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    </button></Tooltip>
+                    <Tooltip title={t("imageTools.zoom")}><button  onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ZoomIn className="size-4" />
-                    </button>
-                    <button data-tip={t("imageTools.pasteReplace")} onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    </button></Tooltip>
+                    <Tooltip title={t("imageTools.pasteReplace")}><button  onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ClipboardPaste className="size-4" />
-                    </button>
-                    <button data-tip={t("imageTools.delete")} onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-white hover:text-red-400">
+                    </button></Tooltip>
+                    <Tooltip title={t("imageTools.delete")}><button  onClick={() => setRefImages((xs) => xs.filter((_, j) => j !== i))} className="flex items-center justify-center bg-black/40 text-white hover:text-red-400">
                       <TrashIcon className="size-4" />
-                    </button>
+                    </button></Tooltip>
                   </div>
                 </div>
               ))}
@@ -559,20 +561,22 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                 </div>
                 {/* hover 分两半 */}
                 <div className="absolute inset-0 grid grid-rows-2 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    onClick={() => refInputRef.current?.click()}
-                    className="flex flex-col items-center justify-end pb-2 text-text-muted hover:text-accent"
-                    data-tip={t("imageTools.uploadImageShort")}
-                  >
-                    <Upload className="size-4" />
-                  </button>
-                  <button
-                    onClick={() => pasteImage()}
-                    className="flex flex-col items-center justify-start pt-2 text-text-muted hover:text-accent"
-                    data-tip={t("imageTools.pasteImageShortcut")}
-                  >
-                    <ClipboardPaste className="size-4" />
-                  </button>
+                  <Tooltip title={t("imageTools.uploadImageShort")}>
+                    <button
+                      onClick={() => refInputRef.current?.click()}
+                      className="flex flex-col items-center justify-end pb-2 text-text-muted hover:text-accent"
+                    >
+                      <Upload className="size-4" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip title={t("imageTools.pasteImageShortcut")}>
+                    <button
+                      onClick={() => pasteImage()}
+                      className="flex flex-col items-center justify-start pt-2 text-text-muted hover:text-accent"
+                    >
+                      <ClipboardPaste className="size-4" />
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             </div>
@@ -730,9 +734,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               </div>
             )}
           </div>
-          <button onClick={openHistory} data-tip={t('imageTools.toasts.history')} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
+          <Tooltip title={t('imageTools.toasts.history')}><button onClick={openHistory}  className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <History className="size-[14px]" />
-          </button>
+          </button></Tooltip>
           <button onClick={() => showToast(t('imageTools.toasts.search'))} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
           </button>
@@ -804,15 +808,15 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       )}
                     </div>
                     <div className="mt-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                      <button data-tip={t("imageTools.tipReuse")} onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipCopyPrompt")} onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipCopyImage")} onClick={() => showToast(t('imageTools.toasts.copiedImage'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipQuote")} onClick={() => showToast(t('imageTools.toasts.quoted'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipTeamShare")} onClick={() => showToast(t('imageTools.toasts.shared'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipDownload")} onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipFolder")} onClick={() => showToast(t('imageTools.toasts.openedInFolder'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.delete")} onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipCopyImage")}><button  onClick={() => showToast(t('imageTools.toasts.copiedImage'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipQuote")}><button  onClick={() => showToast(t('imageTools.toasts.quoted'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipTeamShare")}><button  onClick={() => showToast(t('imageTools.toasts.shared'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')}><button  onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipFolder")}><button  onClick={() => showToast(t('imageTools.toasts.openedInFolder'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                     </div>
                   </div>
                 </div>
@@ -856,11 +860,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <button data-tip={t("imageTools.tipReuse")} onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipCopyPrompt")} onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')} onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.tipDownload")} onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button>
-                      <button data-tip={t("imageTools.delete")} onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button>
+                      <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')}><button  onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                     </div>
                   </div>
                 </div>
@@ -872,13 +876,12 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       )}
 
       {/* 右栏折叠/展开按钮 */}
-      <button
-        data-tip={resultsCollapsed ? t('imageTools.expandResult') : t('imageTools.collapseResult')}
+      <Tooltip title={resultsCollapsed ? t('imageTools.expandResult') : t('imageTools.collapseResult')}><button 
         onClick={() => setResultsCollapsed((v) => !v)}
         className="fixed right-3 top-1/2 z-30 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-secondary text-text-muted shadow-lg ring-1 ring-border hover:bg-surface-hover hover:text-text"
       >
         {resultsCollapsed ? <PanelRightOpen className="size-[14px]" strokeWidth={1.8} /> : <PanelRightClose className="size-[14px]" strokeWidth={1.8} />}
-      </button>
+      </button></Tooltip>
 
       {/* Toast — 顶部居中，成功绿色/失败红色 */}
       {/* 常用提示词弹窗 */}
@@ -1151,14 +1154,18 @@ function BlendPanel({ connectTopLeft = false }: { connectTopLeft?: boolean }) {
                   <span className="truncate text-[12px] text-text-secondary">{imageName}</span>
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 hover:opacity-100">
-                  <button onClick={(e) => { e.stopPropagation(); clearImage() }}
-                    className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text" data-tip="clear">
-                    <X className="size-[16px]" />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); fileRef.current?.click() }}
-                    className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text" data-tip="replace">
-                    <RefreshCw className="size-[16px]" />
-                  </button>
+                  <Tooltip title="clear">
+                    <button onClick={(e) => { e.stopPropagation(); clearImage() }}
+                      className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text">
+                      <X className="size-[16px]" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip title="replace">
+                    <button onClick={(e) => { e.stopPropagation(); fileRef.current?.click() }}
+                      className="flex size-9 items-center justify-center rounded-full bg-card text-text-secondary hover:text-text">
+                      <RefreshCw className="size-[16px]" />
+                    </button>
+                  </Tooltip>
                 </div>
               </>
             )}

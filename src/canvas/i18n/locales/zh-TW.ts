@@ -1,4 +1,4 @@
-﻿export default {
+export default {
     meta: {
         title: "無限畫布",
         description: "一個無限畫布創作工具",
@@ -562,7 +562,7 @@
         nodeTypes: { image: "圖片", text: "文字", config: "生成設定", video: "影片", audio: "音訊", group: "群組" },
         toolbar: {
             select: "選擇", pan: "移動", text: "文字", image: "圖片", video: "影片", audio: "音訊", config: "生成設定", group: "群組", extensions: "擴充功能節點", upload: "上傳資產", appearance: "畫布外觀", clear: "清空畫布",
-            themeMode: "主題模式", light: "淺色", dark: "深色", gridStyle: "網格樣式", dots: "點", lines: "線", blank: "空白", imageInfo: "圖片資訊",
+            themeMode: "主題模式", light: "淺色", dark: "深色", auto: "跟隨系統", gridStyle: "網格樣式", dots: "點", lines: "線", blank: "空白", imageInfo: "圖片資訊",
         },
         project: {
             untitled: "未命名畫布", imported: "匯入畫布",

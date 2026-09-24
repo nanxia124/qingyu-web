@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 轻域AI API 后端服务
  * 功能：API 密钥管理、公开模型配置、AI 请求代理（服务端注入密钥）
  * 零依赖，仅用 Node.js 内置模块
@@ -7,6 +7,7 @@
 import http from "node:http";
 import https from "node:https";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,8 @@ const PLANS_FILE = path.join(DATA_DIR, "billing_plans.json");       // 会员套
 const SETTINGS_FILE = path.join(DATA_DIR, "billing_settings.json"); // 系统设置（支付开关等）
 const MODELS_CATALOG_FILE = path.join(DATA_DIR, "models_catalog.json"); // 模型目录
 const PORT = process.env.PORT || 3001;
+// 只有隔离测试环境显式设置 PAYMENT_MODE=mock 才允许模拟支付；生产默认关闭。
+const PAYMENT_MODE = String(process.env.PAYMENT_MODE || '').trim().toLowerCase();
 let postgresBilling = null;
 
 // ---------- 数据存储 ----------
@@ -100,6 +103,8 @@ let modelsCatalog = loadJSON(MODELS_CATALOG_FILE, []);       // 模型目录数�
 if (process.env.BILLING_STORE === "postgres") {
   const { createPostgresBillingStore } = await import("./postgres-billing-store.mjs");
   postgresBilling = await createPostgresBillingStore();
+  // 管理员凭据进入 PostgreSQL；首次迁移时只复制哈希，不再把密码当作业务数据写入前端。
+  await postgresBilling.ensureAdminAccount(admin.username, admin.password);
   // PostgreSQL 是正式来源；首次切换时把旧 keys.json 迁入数据库，避免已有渠道丢失。
   const storedApiKeys = await postgresBilling.listPlatformApiKeys();
   if (storedApiKeys.length === 0 && keys.length > 0) {
@@ -125,7 +130,7 @@ const DEFAULT_PLANS = [
 if (!billingSettings) {
   billingSettings = {
     currency: "CNY",
-    payEnabled: { mock: true, epay: false, wechat: false, alipay: false },
+    payEnabled: { mock: PAYMENT_MODE === 'mock', epay: false, wechat: false, alipay: false },
     inviteRewardCents: 0,          // 邀请人奖励（分），0 关闭
     inviteRewardQuota: 500,        // 邀请人奖励积分
     registeredBonusQuota: 100,     // 新注册赠送积分
@@ -684,7 +689,13 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/billing/me
     if (pathname === "/api/billing/me" && method === "GET") {
-      if (postgresBilling) return sendJSON(res, 200, { user: me, settings: { currency: "CNY", inviteCode: me.inviteCode, inviteRewardQuota: 0 } });
+      if (postgresBilling) {
+        const userOut = { ...me };
+        if (me.memberLevel === "free") {
+          try { const du = await postgresBilling.getFreeDailyUsage(identity.sub); userOut.dailyUsed = du.used; userOut.dailyLimit = du.limit; } catch {}
+        }
+        return sendJSON(res, 200, { user: userOut, settings: { currency: "CNY", inviteCode: me.inviteCode, inviteRewardQuota: 0 } });
+      }
       return sendJSON(res, 200, { user: publicUser(me), settings: {
         currency: billingSettings.currency,
         inviteCode: me.inviteCode,
@@ -768,6 +779,7 @@ async function handleBilling(req, res, pathname, method, url) {
         try { const result = await postgresBilling.payOrder(identity.sub, payMatch[1]); return sendJSON(res, 200, { success: true, ...result }); }
         catch (error) { return sendJSON(res, error.message.includes("不存在") ? 404 : 409, { error: error.message }); }
       }
+      if (PAYMENT_MODE !== 'mock') return sendJSON(res, 503, { error: "支付渠道尚未配置，订单已创建但不能确认付款" });
       const order = billingOrders.find(o => o.id === payMatch[1] && o.userId === me.id);
       if (!order) return sendJSON(res, 404, { error: "订单不存在" });
       // 支付请求超时后再次点击属于同一个成功结果，直接返回成功，不能让前端误以为失败。
@@ -1458,12 +1470,39 @@ const server = http.createServer(async (req, res) => {
     // POST /api/admin/login — 管理员登录
     if (pathname === "/api/admin/login" && req.method === "POST") {
       const body = await parseBody(req);
-      if (body.username === admin.username && hashPassword(body.password || "") === admin.password) {
+      const account = postgresBilling
+        ? await postgresBilling.getAdminAccount(body.username)
+        : (body.username === admin.username ? admin : null);
+      const accountPasswordHash = account?.password_hash || account?.password;
+      if (account && (account.status || "active") === "active" && hashPassword(body.password || "") === accountPasswordHash) {
+        if (postgresBilling) await postgresBilling.touchAdminLogin(account.username);
         const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60; // 24h
-        const token = signJWT({ sub: admin.username, role: "admin", iat: Math.floor(Date.now() / 1000), exp });
+        const token = signJWT({ sub: account.username, role: "admin", iat: Math.floor(Date.now() / 1000), exp });
         return sendJSON(res, 200, { token });
       }
       return sendJSON(res, 401, { error: "用户名或密码错误" });
+    }
+
+    // GET /api/admin/monitor/metrics — 管理端读取当前服务实际指标，禁止返回演示数据。
+    if (pathname === "/api/admin/monitor/metrics" && req.method === "GET") {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "admin") return sendJSON(res, 403, { error: "无管理员权限" });
+      let disk = null;
+      try {
+        const stat = fs.statfsSync(DATA_DIR);
+        const total = Number(stat.blocks) * Number(stat.bsize);
+        const available = Number(stat.bavail) * Number(stat.bsize);
+        disk = { totalBytes: total, usedBytes: Math.max(0, total - available), availableBytes: available };
+      } catch { /* 某些系统不支持 statfs 时保留为空，不伪造磁盘数值。 */ }
+      const memory = process.memoryUsage();
+      return sendJSON(res, 200, {
+        sampledAt: new Date().toISOString(),
+        uptimeSeconds: Math.floor(process.uptime()),
+        cpu: { load1: os.loadavg()[0] ?? null, cores: os.cpus().length },
+        memory: { rssBytes: memory.rss, heapUsedBytes: memory.heapUsed, heapTotalBytes: memory.heapTotal },
+        disk,
+        database: { billingStore: postgresBilling ? "postgres" : "disabled" },
+      });
     }
 
     // 新版业务 Token 带数据库会话编号；会话被撤销后立即拒绝后续请求。
@@ -1816,17 +1855,22 @@ const server = http.createServer(async (req, res) => {
     // POST /api/admin/change-password — 修改密码
     if (pathname === "/api/admin/change-password" && req.method === "POST") {
       const body = await parseBody(req);
-      if (hashPassword(body.oldPassword || "") !== admin.password) {
-        return sendJSON(res, 400, { error: "原密码错误" });
-      }
       if (!body.newPassword || body.newPassword.length < 6) {
         return sendJSON(res, 400, { error: "新密码至少 6 位" });
       }
       if (body.newPassword !== body.confirmPassword) {
         return sendJSON(res, 400, { error: "两次输入的新密码不一致" });
       }
-      admin.password = hashPassword(body.newPassword);
-      saveJSON(ADMIN_FILE, admin);
+      const oldHash = hashPassword(body.oldPassword || "");
+      const newHash = hashPassword(body.newPassword);
+      if (postgresBilling) {
+        const changed = await postgresBilling.changeAdminPassword(requestIdentity?.sub || "", oldHash, newHash);
+        if (!changed) return sendJSON(res, 400, { error: "原密码错误" });
+      } else {
+        if (oldHash !== admin.password) return sendJSON(res, 400, { error: "原密码错误" });
+        admin.password = newHash;
+        saveJSON(ADMIN_FILE, admin);
+      }
       return sendJSON(res, 200, { success: true });
     }
 

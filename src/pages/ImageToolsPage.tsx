@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+﻿import { useRef, useState, useEffect } from 'react'
 import { ModelPicker } from '@canvas/components/model-picker'
 import { useConfigStore } from '@canvas/stores/use-config-store'
 import { createPortal } from 'react-dom'
@@ -317,6 +317,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       showToast(t('imageTools.insufficient', { need: requestedCount, balance: latestBillingUser.balance }), 'error')
       return
     }
+    if (latestBillingUser.memberLevel === 'free' && (latestBillingUser.dailyUsed ?? 0) >= (latestBillingUser.dailyLimit ?? 20)) {
+      showToast('今日免费次数已用完，请明天再来或升级会员', 'error')
+      return
+    }
     setGenerating(true)
     try {
       const selectedModel = model || config.imageModel || config.model
@@ -404,6 +408,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
   const isFreeUser = !billingUser || billingUser.memberLevel === 'free'
   const insufficientBalance = !isFreeUser && billingUser.balance < requestedCount
+  const freeDailyUsed = billingUser?.dailyUsed ?? 0
+  const freeDailyLimit = billingUser?.dailyLimit ?? 20
+  const freeQuotaExhausted = isFreeUser && freeDailyUsed >= freeDailyLimit
+  const quotaExhausted = insufficientBalance || freeQuotaExhausted
 
   return (
     <div className="flex h-full gap-2">
@@ -644,10 +652,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
         {/* 生成按钮 */}
         <div className="shrink-0 px-5 pb-4 pt-1">
-          <button onClick={generate} disabled={!prompt.trim() || generating || insufficientBalance}
-            title={insufficientBalance ? t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 }) : undefined}
+          <button onClick={generate} disabled={!prompt.trim() || generating || quotaExhausted}
+            title={quotaExhausted ? (freeQuotaExhausted ? `今日免费次数已用完（${freeDailyUsed}/${freeDailyLimit}）` : t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 })) : undefined}
             className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45">
-            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : insufficientBalance ? t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 }) : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
+            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : quotaExhausted ? (freeQuotaExhausted ? `今日免费次数已用完（${freeDailyUsed}/${freeDailyLimit}）` : t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 })) : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
           </button>
         </div>
       </div>

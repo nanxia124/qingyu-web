@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 计费系统 API 客户端
  * 客户接口用 billing_token，管理端接口用 admin_token
  */
@@ -53,6 +53,8 @@ export interface BillingUser {
   totalSpent: number;
   workspaceId?: string;
   createdAt: number;
+  dailyUsed?: number;
+  dailyLimit?: number;
 }
 export interface Plan {
   id: string;

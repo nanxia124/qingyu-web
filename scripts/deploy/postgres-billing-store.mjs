@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+﻿import { Pool } from "pg";
 import crypto from "node:crypto";
 
 const DEFAULT_PLANS = [
@@ -85,7 +85,34 @@ export async function createPostgresBillingStore() {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
   });
+  // 生产环境默认不允许“模拟支付”。只有明确把 PAYMENT_MODE 设为 mock
+  // 的隔离测试环境，才可以直接把订单标记为已支付。
+  const paymentMode = String(process.env.PAYMENT_MODE || '').trim().toLowerCase();
   await pool.query("select 1");
+
+  async function ensureAdminAccount(username, passwordHash) {
+    const cleanUsername = String(username || '').trim().slice(0, 64);
+    const cleanHash = String(passwordHash || '').trim();
+    if (!cleanUsername || !/^[a-f0-9]{64}$/i.test(cleanHash)) throw new Error('管理员账号初始化参数无效');
+    await pool.query(`insert into app.admin_accounts(username,password_hash)
+      values($1,$2) on conflict(username) do nothing`, [cleanUsername, cleanHash]);
+    return getAdminAccount(cleanUsername);
+  }
+
+  async function getAdminAccount(username) {
+    const result = await pool.query(`select username,password_hash,status,last_login_at from app.admin_accounts where username=$1`, [String(username || '').trim().slice(0, 64)]);
+    return result.rows[0] || null;
+  }
+
+  async function touchAdminLogin(username) {
+    const result = await pool.query(`update app.admin_accounts set last_login_at=now(),updated_at=now() where username=$1 and status='active' returning username,password_hash,status,last_login_at`, [String(username || '').trim().slice(0, 64)]);
+    return result.rows[0] || null;
+  }
+
+  async function changeAdminPassword(username, oldPasswordHash, newPasswordHash) {
+    const result = await pool.query(`update app.admin_accounts set password_hash=$3,updated_at=now() where username=$1 and password_hash=$2 and status='active' returning username`, [String(username || '').trim().slice(0, 64), String(oldPasswordHash || ''), String(newPasswordHash || '')]);
+    return result.rowCount === 1;
+  }
 
   async function seedPlans(client) {
     for (const p of DEFAULT_PLANS) {
@@ -185,7 +212,7 @@ export async function createPostgresBillingStore() {
     const r = await pool.query(`select s.id,s.created_at,s.last_seen_at,s.expires_at,s.admission_status,s.is_online,s.revoked_at,s.revoked_reason,d.id device_id,d.display_name,d.client_type,d.os_family,d.browser_family
       from app.user_sessions s join app.user_accounts u on u.id=s.user_id join app.user_devices d on d.id=s.device_id
       where u.appwrite_user_id=$1 order by s.created_at desc limit 50`, [appwriteUserId]);
-    return r.rows.map(x => ({ id: x.id, deviceId: x.device_id, displayName: x.display_name, clientType: x.client_type, osFamily: x.os_family, browserFamily: x.browser_family, status: x.admission_status, online: x.is_online === true, createdAt: new Date(x.created_at).toISOString(), lastSeenAt: x.last_seen_at ? new Date(x.last_seen_at).toISOString() : null, expiresAt: new Date(x.expires_at).toISOString(), revokedAt: x.revoked_at ? new Date(x.revoked_at).toISOString() : null, revokedReason: x.revoked_reason || null }));
+    return r.rows.map(x => ({ id: x.id, deviceId: x.device_id, displayName: x.display_name, clientType: x.client_type, osFamily: x.os_family, browserFamily: x.browser_family, status: x.admission_status, online: x.is_online === true && x.admission_status === 'active' && new Date(x.expires_at).getTime() > Date.now(), createdAt: new Date(x.created_at).toISOString(), lastSeenAt: x.last_seen_at ? new Date(x.last_seen_at).toISOString() : null, expiresAt: new Date(x.expires_at).toISOString(), revokedAt: x.revoked_at ? new Date(x.revoked_at).toISOString() : null, revokedReason: x.revoked_reason || null }));
   }
 
   async function isSessionActive(appwriteUserId, sessionId) {
@@ -219,6 +246,20 @@ export async function createPostgresBillingStore() {
       left join app.subscriptions s on s.workspace_id=w.id and s.status in ('trialing','active','past_due')
       left join app.plans p on p.id=s.plan_id where u.appwrite_user_id=$1`, [appwriteUserId]);
     return result.rows[0] || null;
+  }
+
+
+  // 免费用户今日已用次数（每日 20 次上限）
+  async function getFreeDailyUsage(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) return { used: 0, limit: 20 };
+    const r = await pool.query(
+      `select coalesce(sum(quantity),0)::int as used from app.usage_records
+       where user_id=$1 and feature_code='ai_proxy' and daily_reservation_id is not null
+         and result <> 'failed' and occurred_at >= date_trunc('day', now()),
+      [me.internal_user_id]
+    );
+    return { used: r.rows[0]?.used || 0, limit: 20 };
   }
 
   async function createFeedback(input = {}) {
@@ -302,7 +343,12 @@ export async function createPostgresBillingStore() {
       } else if (row.daily_reservation_id && result === 'failed') {
         await client.query(`select app.release_free_daily_usage($1,$2)`, [row.daily_reservation_id, `${idempotencyKey}:release`]);
       }
-      const updated = await client.query(`update app.usage_records set result=$1,metadata=coalesce(metadata,'{}'::jsonb)||$2::jsonb where id=$3 returning id`, [result, JSON.stringify(metadata), row.id]);
+      const updated = await client.query(`update app.usage_records
+        set result=$1,
+            completed_at=now(),
+            latency_ms=greatest(0, floor(extract(epoch from (now()-occurred_at))*1000))::int,
+            metadata=coalesce(metadata,'{}'::jsonb)||$2::jsonb
+        where id=$3 returning id`, [result, JSON.stringify(metadata), row.id]);
       await client.query('commit');
       return updated.rowCount === 1;
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -325,12 +371,14 @@ export async function createPostgresBillingStore() {
       const current = await client.query('select * from app.plans where code=$1 for update', [code]);
       if (!current.rowCount) throw new Error('套餐不存在');
       const old = current.rows[0];
+      const oldFeatures = await client.query('select feature_code from app.plan_features where plan_id=$1 order by feature_code', [old.id]);
+      const oldQuota = await client.query("select amount from app.plan_quotas where plan_id=$1 and quota_code='monthly'", [old.id]);
       const price = Number.isSafeInteger(Number(body.priceCents)) ? Math.max(0, Number(body.priceCents)) : Number(old.price_minor);
-      const days = Number(body.durationDays);
+      const days = body.durationDays === undefined ? (old.billing_interval === 'year' ? 365 : old.billing_interval === 'month' ? 30 : 0) : Number(body.durationDays);
       const interval = days >= 365 ? 'year' : days > 0 ? 'month' : 'none';
-      const quota = Number.isFinite(Number(body.monthlyQuota)) ? Math.max(0, Number(body.monthlyQuota)) : 0;
+      const quota = body.monthlyQuota === undefined ? Number(oldQuota.rows[0]?.amount || 0) : Number.isFinite(Number(body.monthlyQuota)) ? Math.max(0, Number(body.monthlyQuota)) : 0;
       const nextVersion = Number(old.version || 1) + 1;
-      const features = Array.isArray(body.features) ? body.features.map(x => String(x).slice(0, 120)).filter(Boolean) : [];
+      const features = Array.isArray(body.features) ? body.features.map(x => String(x).slice(0, 120)).filter(Boolean) : oldFeatures.rows.map(x => x.feature_code);
       await client.query(`update app.plans set name=$2,description=$3,price_minor=$4,billing_interval=$5,version=$6,updated_at=now() where id=$1`, [old.id, String(body.name || old.name).slice(0, 120), String(body.description || old.description || ''), price, interval, nextVersion]);
       await client.query(`insert into app.plan_versions(plan_id,version,currency,price_minor,billing_interval,feature_snapshot,quota_snapshot,effective_at)
         values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,now())`, [old.id, nextVersion, old.currency, price, interval, JSON.stringify(features), JSON.stringify({ monthly: quota })]);
@@ -400,6 +448,7 @@ export async function createPostgresBillingStore() {
   }
 
   async function payOrder(appwriteUserId, orderId) {
+    if (paymentMode !== 'mock') throw new Error('支付渠道尚未配置，订单已创建但不能确认付款');
     const client = await pool.connect();
     try {
       await client.query("begin");
@@ -918,6 +967,55 @@ export async function createPostgresBillingStore() {
     const r = await pool.query(`select api_key,api_key_ciphertext from app.platform_api_keys where id=$1`, [id]);
     if (!r.rowCount) throw new Error('密钥不存在');
     return { api_key: r.rows[0].api_key_ciphertext ? decryptApiKey(r.rows[0].api_key_ciphertext) : String(r.rows[0].api_key || '') };
+  }
+
+  async function listPlatformApiKeyStats() {
+    const [keysResult, usageResult] = await Promise.all([
+      pool.query('select id,max_concurrency from app.platform_api_keys'),
+      pool.query(`select metadata->>'channelId' channel_id,
+        count(*) filter(where result='committed')::int success,
+        count(*) filter(where result in ('failed','unknown'))::int failure,
+        count(*) filter(where result='reserved')::int in_flight
+        from app.usage_records where metadata ? 'channelId' group by metadata->>'channelId'`),
+    ]);
+    const result = {};
+    for (const row of keysResult.rows) {
+      const usage = usageResult.rows.find(item => String(item.channel_id) === String(row.id));
+      result[row.id] = { success: usage?.success || 0, failure: usage?.failure || 0, inFlight: usage?.in_flight || 0, maxConcurrency: row.max_concurrency === null ? null : Number(row.max_concurrency) };
+    }
+    return result;
+  }
+
+  async function listPlatformApiKeyHistory() {
+    const result = {};
+    const keysResult = await pool.query('select id from app.platform_api_keys');
+    for (const key of keysResult.rows) {
+      const item = { d1: {}, d7: {}, d30: {} };
+      for (const [windowKey, days] of [['d1', 1], ['d7', 7], ['d30', 30]]) {
+        const rows = await pool.query(`select case when coalesce(metadata->>'targetPath','') like '%video%' then '视频' when coalesce(metadata->>'targetPath','') like '%image%' then '图片' else '文本' end capability,
+          count(*)::int calls, count(*) filter(where result='committed')::int success, count(*) filter(where result in ('failed','unknown'))::int failure,
+          round(avg(latency_ms))::int avg_latency_ms
+          from app.usage_records where metadata->>'channelId'=$1 and occurred_at >= now() - make_interval(days=>$2) group by 1`, [String(key.id), days]);
+        const all = { calls: 0, successRate: null, failRate: null, connRate: null, avgConnRate: null, avgLatencyMs: null };
+        for (const row of rows.rows) {
+          const calls = Number(row.calls); const success = Number(row.success); const failure = Number(row.failure);
+          const avgLatencyMs = row.avg_latency_ms === null ? null : Number(row.avg_latency_ms);
+          const summary = { calls, successRate: calls ? Math.round(success * 100 / calls) : null, failRate: calls ? Math.round(failure * 100 / calls) : null, connRate: calls ? Math.round((success + failure) * 100 / calls) : null, avgConnRate: null, avgLatencyMs };
+          item[windowKey][row.capability] = summary; all.calls += calls;
+          if (avgLatencyMs !== null) all._latencyTotal = (all._latencyTotal || 0) + avgLatencyMs * calls;
+        }
+        const totalSuccess = rows.rows.reduce((n, row) => n + Number(row.success), 0);
+        const totalFailure = rows.rows.reduce((n, row) => n + Number(row.failure), 0);
+        all.successRate = all.calls ? Math.round(totalSuccess * 100 / all.calls) : null;
+        all.failRate = all.calls ? Math.round(totalFailure * 100 / all.calls) : null;
+        all.connRate = all.calls ? Math.round((totalSuccess + totalFailure) * 100 / all.calls) : null;
+        all.avgLatencyMs = all._latencyTotal ? Math.round(all._latencyTotal / all.calls) : null;
+        delete all._latencyTotal;
+        item[windowKey]._all = all;
+      }
+      result[key.id] = item;
+    }
+    return result;
   }
 
   function modelCatalogView(row) {
@@ -1503,5 +1601,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

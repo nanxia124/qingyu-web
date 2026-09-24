@@ -111,6 +111,9 @@ export default function ModelCatalog() {
       alert("请输入显示名称");
       return;
     }
+    setAdding(true);
+    try {
+      const res = await fetch("/api/admin/models-catalog", {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,

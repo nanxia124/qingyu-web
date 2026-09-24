@@ -563,6 +563,25 @@ export async function createPostgresBillingStore() {
     return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: Number(x.today_revenue_minor), totalBalance: Number(x.total_balance), unusedCodes: Number(x.unused_codes) };
   }
 
+  // 只读核对账户数字与不可变额度流水；发现差异时只报告，不自动覆盖余额。
+  async function adminQuotaAudit() {
+    const r = await pool.query(`
+      select q.id,q.workspace_id,q.quota_code,q.granted,q.reserved,q.consumed,q.available,
+        coalesce(sum(case when l.entry_type in ('grant','refund') then l.amount
+          when l.entry_type='adjustment' and (l.metadata->>'delta') ~ '^-?[0-9]+([.][0-9]+)?$' and (l.metadata->>'delta')::numeric > 0 then (l.metadata->>'delta')::numeric else 0 end),0) ledger_granted,
+        coalesce(sum(case when l.entry_type='reserve' then l.amount when l.entry_type in ('commit','release','expire') then -l.amount else 0 end),0) ledger_reserved,
+        coalesce(sum(case when l.entry_type='commit' then l.amount when l.entry_type='adjustment' and (l.metadata->>'delta') ~ '^-?[0-9]+([.][0-9]+)?$' and (l.metadata->>'delta')::numeric < 0 then abs((l.metadata->>'delta')::numeric) else 0 end),0) ledger_consumed
+      from app.quota_accounts q left join app.quota_ledger l on l.account_id=q.id and l.workspace_id=q.workspace_id
+      group by q.id,q.workspace_id,q.quota_code,q.granted,q.reserved,q.consumed,q.available
+      order by q.updated_at desc`);
+    return r.rows.map(x => {
+      const current = { granted: Number(x.granted), reserved: Number(x.reserved), consumed: Number(x.consumed), available: Number(x.available) };
+      const ledger = { granted: Number(x.ledger_granted), reserved: Number(x.ledger_reserved), consumed: Number(x.ledger_consumed) };
+      const differences = { granted: current.granted - ledger.granted, reserved: current.reserved - ledger.reserved, consumed: current.consumed - ledger.consumed };
+      return { accountId: x.id, workspaceId: x.workspace_id, quotaCode: x.quota_code, current, ledger, differences, consistent: Object.values(differences).every(value => Math.abs(value) < 0.000001) && Math.abs(current.available - (current.granted - current.reserved - current.consumed)) < 0.000001 };
+    });
+  }
+
   async function recordPaymentEvent(provider, input = {}) {
     const providerEventId = String(input.eventId || input.id || '').trim().slice(0, 200);
     const eventType = String(input.type || input.eventType || '').trim().slice(0, 120);
@@ -1169,5 +1188,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

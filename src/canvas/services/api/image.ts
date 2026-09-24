@@ -72,7 +72,7 @@ type ResponseApiPayload = {
 type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
 
 type ImageApiResponse = {
-    data?: Array<Record<string, unknown>>;
+    data?: Array<Record<string, unknown> | string>;
     error?: { message?: string };
     code?: number;
     msg?: string;
@@ -242,12 +242,34 @@ function supportsGeminiImageSize(model: string) {
     return value.includes("gemini-3") || value.includes("3.1") || value.includes("3-pro");
 }
 
-function resolveImageSource(item: Record<string, unknown>) {
+function resolveImageSource(item: Record<string, unknown> | string) {
+    // Some OpenAI-compatible gateways put the URL / data URL directly as the array item.
+    if (typeof item === "string") {
+        return item;
+    }
     if (typeof item.b64_json === "string" && item.b64_json) {
         return `data:image/png;base64,${item.b64_json}`;
     }
     if (typeof item.url === "string" && item.url) {
         return item.url;
+    }
+    // image_url may be a plain string or a { url } object (chat-completions style).
+    const imageUrl = item.image_url;
+    if (typeof imageUrl === "string" && imageUrl) {
+        return imageUrl;
+    }
+    if (imageUrl && typeof imageUrl === "object") {
+        const nestedUrl = (imageUrl as Record<string, unknown>).url;
+        if (typeof nestedUrl === "string" && nestedUrl) {
+            return nestedUrl;
+        }
+    }
+    // Some gateways return raw base64 under b64 / base64 instead of b64_json.
+    for (const key of ["b64", "base64"] as const) {
+        const value = item[key];
+        if (typeof value === "string" && value) {
+            return value.startsWith("data:") || /^https?:\/\//.test(value) ? value : `data:image/png;base64,${value}`;
+        }
     }
     return null;
 }
@@ -256,10 +278,16 @@ function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || apiText("requestFailed"));
     }
+    // Some gateways answer HTTP 200 but carry the real failure under `error` with an empty data array.
+    const upstreamError = readApiErrorMessage(payload.error);
+    if (upstreamError) {
+        throw new Error(upstreamError);
+    }
     // Support data, images, and results response fields used by different APIs.
-    const imageList = payload.data
-        || (payload as Record<string, unknown>).images as Array<Record<string, unknown>> | undefined
-        || (payload as Record<string, unknown>).results as Array<Record<string, unknown>> | undefined
+    const imageList =
+        (Array.isArray(payload.data) ? payload.data : undefined)
+        || (Array.isArray((payload as Record<string, unknown>).images) ? (payload as Record<string, unknown>).images as Array<Record<string, unknown> | string> : undefined)
+        || (Array.isArray((payload as Record<string, unknown>).results) ? (payload as Record<string, unknown>).results as Array<Record<string, unknown> | string> : undefined)
         || [];
     const images = imageList
         .map(resolveImageSource)
@@ -267,6 +295,12 @@ function parseImagePayload(payload: ImageApiResponse) {
         .map((dataUrl) => ({ id: nanoid(), dataUrl }));
 
     if (images.length === 0) {
+        // Surface what the gateway actually returned so the format mismatch is debuggable from the browser console.
+        console.warn("[image] unrecognized generation payload", {
+            topLevelKeys: Object.keys(payload),
+            dataLength: Array.isArray(payload.data) ? payload.data.length : "n/a",
+            firstItem: imageList[0] ?? null,
+        });
         // Check whether the response contains data in an unrecognized format.
         const rawKeys = Object.keys(payload).filter((k) => k !== "code" && k !== "msg" && k !== "error");
         throw new Error(rawKeys.length > 0

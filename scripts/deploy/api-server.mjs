@@ -709,6 +709,9 @@ async function handleBilling(req, res, pathname, method, url) {
       if (pathname === "/api/admin/billing/stats" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminStats());
       }
+      if (pathname === "/api/admin/billing/quota/audit" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminQuotaAudit());
+      }
       if (pathname === "/api/admin/billing/users" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminUsers());
       }

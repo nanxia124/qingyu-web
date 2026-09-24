@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "تم رفض المحتوى وفق إرشادات الأمان، يرجى تعديل المطالبة",
+      imageRequestFailed: "فشل التعديل، يرجى المحاولة مرة أخرى",
+    },
     topNav: {
       switchLanguage: "التبديل إلى {{language}}",
       shortcuts: "اختصارات لوحة المفاتيح",
@@ -24,6 +28,22 @@ const override={
       mode: "الوضع",
       clear: "مسح",
       upload: "رفع",
+      historyTitle: "توليداتي",
+      historyEmpty: "لا توجد توليدات بعد",
+      historyLoading: "جارٍ التحميل…",
+      statusRunning: "قيد التوليد",
+      statusDone: "مكتمل",
+      statusFailed: "فشل",
+      statusRefunded: "تم الاسترداد",
+      submitFailed: "فشل الإرسال، يرجى المحاولة لاحقًا",
+      taskQueryFailed: "فشل الاستعلام، يرجى المحاولة مرة أخرى",
+      historyQueryFailed: "تعذر تحميل السجل، يرجى المحاولة مرة أخرى",
+      pollTimeout: "يستغرق هذا بعض الوقت؛ ستظهر النتيجة لاحقًا في السجل",
+      toasts: {
+        history: "توليداتي",
+        timeoutRefunded: "انتهت مهلة التوليد، تم استرداد الأرصدة",
+        failedRefunded: "فشل التوليد، تم استرداد الأرصدة",
+      },
       generate: "إنشاء",
       results: "النتائج",
       download: "تنزيل",
@@ -303,16 +323,6 @@ const override={
         video: "الفيديوهات",
         upload: "رفع",
       },
-    },
-    imageTools: {
-      generate: "إنشاء",
-      blend: "دمج",
-      translate: "ترجمة",
-      clear: "مسح",
-      upload: "رفع",
-      cancel: "إلغاء",
-      save: "حفظ",
-      generating: "جارٍ الإنشاء…",
     },
 };
 export default dm(enUS,override);

@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Konten ditolak berdasarkan pedoman keamanan, silakan ubah prompt Anda",
+      imageRequestFailed: "Gagal mengedit, silakan coba lagi",
+    },
     topNav: {
       switchLanguage: "Beralih ke {{language}}",
       shortcuts: "Pintasan keyboard",
@@ -24,6 +28,22 @@ const override={
       mode: "Mode",
       clear: "Bersihkan",
       upload: "Unggah",
+      historyTitle: "Generasi Saya",
+      historyEmpty: "Belum ada generasi",
+      historyLoading: "Memuat…",
+      statusRunning: "Membuat",
+      statusDone: "Selesai",
+      statusFailed: "Gagal",
+      statusRefunded: "Dana dikembalikan",
+      submitFailed: "Gagal mengirim, silakan coba lagi nanti",
+      taskQueryFailed: "Gagal memuat, silakan coba lagi",
+      historyQueryFailed: "Gagal memuat riwayat, silakan coba lagi",
+      pollTimeout: "Ini butuh waktu; hasil akan muncul di riwayat Anda nanti",
+      toasts: {
+        history: "Generasi Saya",
+        timeoutRefunded: "Pembuatan melebihi waktu, kredit dikembalikan",
+        failedRefunded: "Pembuatan gagal, kredit dikembalikan",
+      },
       generate: "Buat",
       results: "Hasil",
       download: "Unduh",
@@ -303,16 +323,6 @@ const override={
         video: "Video",
         upload: "Unggah",
       },
-    },
-    imageTools: {
-      generate: "Buat",
-      blend: "Gabung",
-      translate: "Terjemahkan",
-      clear: "Bersihkan",
-      upload: "Unggah",
-      cancel: "Batal",
-      save: "Simpan",
-      generating: "Sedang membuat…",
     },
 };
 export default dm(enUS,override);

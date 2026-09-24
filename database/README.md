@@ -18,9 +18,11 @@
 
 `0045_quota_idempotency_scope_guard.sql` 要求额度预占和每日免费额度的幂等键同时匹配工作空间、用户、功能、额度类型和金额；范围不一致的重试会被数据库拒绝。
 
-`0046_async_generation_tasks.sql` 把生图请求拆成可追踪的 pending/running/succeeded/failed/refunded 状态；创建任务时原子预占额度，成功结算，失败和超时自动释放。成功任务必须绑定且只能绑定一种已经结算的额度预占；管理员审计日志只允许追加，告警和额度对账均保留数据库记录。0046 已通过空库重放，执行线上迁移前必须先备份并完成恢复演练；0046、0047 已完成线上执行和迁移后恢复演练。
+`0046_async_generation_tasks.sql` 把生图请求拆成可追踪的 pending/running/succeeded/failed/refunded 状态；创建任务时原子预占额度，成功结算，失败和超时自动释放。成功任务必须绑定且只能绑定一种已经结算的额度预占；管理员审计日志只允许追加，告警和额度对账均保留数据库记录。0046 已通过空库重放，执行线上迁移前必须先备份并完成恢复演练；0046 至 0049 已完成线上执行和迁移后恢复演练。
 
 `0047_generation_task_idempotency_lock.sql` 为生成任务的幂等键增加事务级并发锁，并要求客户端把同一个幂等编号带到服务器；重复点击会复用原任务，不会重复预扣额度。
+
+`0048_database_role_schema_usage.sql` 把业务角色使用 `app` schema 的权限纳入迁移，保证空库重建、托管 PostgreSQL 和现有服务器的权限一致；它不增加普通角色直接修改敏感表的权限。
 
 `0006_row_level_security.sql` 为业务表开启 PostgreSQL 行级安全。服务端完成身份校验后在事务内用 `SET LOCAL app.user_id` 设置内部用户 ID，连接池复用时不会残留；数据库再根据个人空间所有者或团队有效成员关系过滤读写。`tests/rls_isolation.sql` 已验证 A 用户只能看到 A 空间，直接写入 B 空间会被拒绝。
 
@@ -59,6 +61,8 @@
 首次执行时脚本会先判断 `app.schema_migrations` 是否存在：空库从 `0001_foundation.sql` 开始；已有库包括第一版在内全部按版本检查，不会重复执行第一版。迁移目录必须同时包含匹配的 `MANIFEST.sha256.json`。
 
 `scripts/Verify-EmptyReplay.ps1` 会启动一次隔离的 PostgreSQL 16 容器，从零执行全部迁移并在结束后自动删除容器；它用于验证迁移能否在新服务器或托管数据库上重建，不会连接正式数据库。
+
+`scripts/Verify-DatabaseTestSuite.ps1` 会在空库重放全部迁移后逐个执行 `database/tests` 下的事务回滚测试，验证跨空间、RLS、会话、额度、支付、备份和任务幂等规则；测试结束自动删除容器。
 
 `scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量、迁移版本和必需的最新迁移后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
 

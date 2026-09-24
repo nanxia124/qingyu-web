@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Contenu refusé par les règles de sécurité, veuillez modifier votre prompt",
+      imageRequestFailed: "Échec de la modification, veuillez réessayer",
+    },
     topNav: {
       switchLanguage: "Passer en {{language}}",
       shortcuts: "Raccourcis clavier",
@@ -24,6 +28,22 @@ const override={
       mode: "Mode",
       clear: "Effacer",
       upload: "Importer",
+      historyTitle: "Mes générations",
+      historyEmpty: "Aucune génération pour le moment",
+      historyLoading: "Chargement…",
+      statusRunning: "Génération",
+      statusDone: "Terminé",
+      statusFailed: "Échec",
+      statusRefunded: "Remboursé",
+      submitFailed: "Échec de l'envoi, veuillez réessayer plus tard",
+      taskQueryFailed: "Échec de la requête, veuillez réessayer",
+      historyQueryFailed: "Impossible de charger l'historique, veuillez réessayer",
+      pollTimeout: "Cela prend un peu de temps ; le résultat apparaîtra plus tard dans votre historique",
+      toasts: {
+        history: "Mes générations",
+        timeoutRefunded: "Génération expirée, crédits remboursés",
+        failedRefunded: "Échec de la génération, crédits remboursés",
+      },
       generate: "Générer",
       results: "Résultats",
       download: "Télécharger",
@@ -303,16 +323,6 @@ const override={
         video: "Vidéos",
         upload: "Importer",
       },
-    },
-    imageTools: {
-      generate: "Générer",
-      blend: "Fusionner",
-      translate: "Traduire",
-      clear: "Effacer",
-      upload: "Téléverser",
-      cancel: "Annuler",
-      save: "Enregistrer",
-      generating: "Génération…",
     },
 };
 export default dm(enUS,override);

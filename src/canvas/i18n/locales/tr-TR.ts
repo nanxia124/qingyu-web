@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Güvenlik kuralları gereği içerik reddedildi, lütfen isteminizi düzeltin",
+      imageRequestFailed: "Düzenleme başarısız, lütfen tekrar deneyin",
+    },
     topNav: {
       switchLanguage: "{{language}} diline geç",
       shortcuts: "Klavye kısayolları",
@@ -24,6 +28,22 @@ const override={
       mode: "Mod",
       clear: "Temizle",
       upload: "Yükle",
+      historyTitle: "Üretimlerim",
+      historyEmpty: "Henüz üretim yok",
+      historyLoading: "Yükleniyor…",
+      statusRunning: "Üretiliyor",
+      statusDone: "Tamamlandı",
+      statusFailed: "Başarısız",
+      statusRefunded: "İade edildi",
+      submitFailed: "Gönderme başarısız, lütfen daha sonra tekrar deneyin",
+      taskQueryFailed: "Sorgu başarısız, lütfen tekrar deneyin",
+      historyQueryFailed: "Geçmiş yüklenemedi, lütfen tekrar deneyin",
+      pollTimeout: "Biraz zaman alıyor; sonuç daha sonra geçmişinizde görünecek",
+      toasts: {
+        history: "Üretimlerim",
+        timeoutRefunded: "Üretim zaman aşımına uğradı, krediler iade edildi",
+        failedRefunded: "Üretim başarısız oldu, krediler iade edildi",
+      },
       generate: "Üret",
       results: "Sonuçlar",
       download: "İndir",
@@ -303,16 +323,6 @@ const override={
         video: "Videolar",
         upload: "Yükle",
       },
-    },
-    imageTools: {
-      generate: "Üret",
-      blend: "Karıştır",
-      translate: "Çevir",
-      clear: "Temizle",
-      upload: "Yükle",
-      cancel: "İptal",
-      save: "Kaydet",
-      generating: "Üretiliyor…",
     },
 };
 export default dm(enUS,override);

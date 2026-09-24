@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "安全ガイドラインによりコンテンツが拒否されました。プロンプトを修正してください",
+      imageRequestFailed: "編集に失敗しました。もう一度お試しください",
+    },
     topNav: {
       switchLanguage: "{{language}}に切替",
       shortcuts: "キーボードショートカット",
@@ -24,6 +28,22 @@ const override={
       mode: "モード",
       clear: "クリア",
       upload: "アップロード",
+      historyTitle: "マイ生成",
+      historyEmpty: "まだ生成履歴はありません",
+      historyLoading: "読み込み中…",
+      statusRunning: "生成中",
+      statusDone: "完了",
+      statusFailed: "失敗",
+      statusRefunded: "返金済み",
+      submitFailed: "送信に失敗しました。しばらくしてからお試しください",
+      taskQueryFailed: "取得に失敗しました。もう一度お試しください",
+      historyQueryFailed: "履歴の取得に失敗しました。もう一度お試しください",
+      pollTimeout: "生成に時間がかかっています。結果は後ほど履歴に表示されます",
+      toasts: {
+        history: "マイ生成",
+        timeoutRefunded: "生成がタイムアウトしました。クレジットを返金しました",
+        failedRefunded: "生成に失敗しました。クレジットを返金しました",
+      },
       generate: "生成",
       results: "結果",
       download: "ダウンロード",
@@ -303,16 +323,6 @@ const override={
         video: "動画",
         upload: "アップロード",
       },
-    },
-    imageTools: {
-      generate: "生成",
-      blend: "ブレンド",
-      translate: "翻訳",
-      clear: "クリア",
-      upload: "アップロード",
-      cancel: "キャンセル",
-      save: "保存",
-      generating: "生成中…",
     },
 };
 export default dm(enUS,override);

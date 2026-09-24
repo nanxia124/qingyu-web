@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "เนื้อหาถูกปฏิเสธตามหลักเกณฑ์ความปลอดภัย โปรดแก้ไขพร้อมต์",
+      imageRequestFailed: "การแก้ไขล้มเหลว โปรดลองอีกครั้ง",
+    },
     topNav: {
       switchLanguage: "เปลี่ยนเป็น {{language}}",
       shortcuts: "แป้นพิมพ์ลัด",
@@ -24,6 +28,22 @@ const override={
       mode: "โหมด",
       clear: "ล้าง",
       upload: "อัปโหลด",
+      historyTitle: "งานสร้างของฉัน",
+      historyEmpty: "ยังไม่มีงานสร้าง",
+      historyLoading: "กำลังโหลด…",
+      statusRunning: "กำลังสร้าง",
+      statusDone: "เสร็จสิ้น",
+      statusFailed: "ล้มเหลว",
+      statusRefunded: "คืนเงินแล้ว",
+      submitFailed: "ส่งล้มเหลว โปรดลองอีกครั้งในภายหลัง",
+      taskQueryFailed: "สอบถามล้มเหลว โปรดลองอีกครั้ง",
+      historyQueryFailed: "โหลดประวัติไม่สำเร็จ โปรดลองอีกครั้ง",
+      pollTimeout: "กำลังใช้เวลาสักครู่ ผลลัพธ์จะปรากฏในประวัติภายหลัง",
+      toasts: {
+        history: "งานสร้างของฉัน",
+        timeoutRefunded: "การสร้างหมดเวลา คืนเครดิตแล้ว",
+        failedRefunded: "การสร้างล้มเหลว คืนเครดิตแล้ว",
+      },
       generate: "สร้าง",
       results: "ผลลัพธ์",
       download: "ดาวน์โหลด",
@@ -303,16 +323,6 @@ const override={
         video: "วิดีโอ",
         upload: "อัปโหลด",
       },
-    },
-    imageTools: {
-      generate: "สร้าง",
-      blend: "ผสม",
-      translate: "แปล",
-      clear: "ล้าง",
-      upload: "อัปโหลด",
-      cancel: "ยกเลิก",
-      save: "บันทึก",
-      generating: "กำลังสร้าง…",
     },
 };
 export default dm(enUS,override);

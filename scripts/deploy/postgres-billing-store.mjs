@@ -1307,6 +1307,18 @@ export async function createPostgresBillingStore() {
     return r.rows[0]?.result || {};
   }
 
+  // 启动恢复：找出本进程重启前残留的 pending 任务（尚未被任何 worker 领取且未超时），
+  // 重新派发后台执行；否则这些任务要等到 timeout_at 才会被 reaper 退款，白白占额度。
+  async function listRecoverableTasks(limit = 20) {
+    const r = await pool.query(`select gt.*, u.appwrite_user_id
+      from app.generation_tasks gt
+      join app.user_accounts u on u.id = gt.created_by
+      where gt.status = 'pending' and gt.timeout_at > now()
+      order by gt.created_at asc limit $1`, [Math.min(100, Math.max(1, Number(limit) || 20))]);
+    return r.rows.map(row => ({ task: apiTask(row), appwriteUserId: row.appwrite_user_id }));
+  }
+
+
   // 管理员审计、对账、告警
   async function writeAdminAudit({ actor, action, workspaceId = null, targetType = null, targetId = null, summary = '', metadata = {}, ip = null }) {
     const r = await pool.query(
@@ -1316,6 +1328,18 @@ export async function createPostgresBillingStore() {
        String(summary || '').slice(0, 2000), JSON.stringify(metadata || {}), ip]
     );
     return r.rows[0]?.id;
+  }
+  async function listAdminAuditLogs({ limit = 200, search = null } = {}) {
+    const r = await pool.query(
+      `select * from app.list_admin_audit_logs($1,$2)`,
+      [Number(limit) || 200, search ? String(search) : null]
+    );
+    return r.rows.map(x => ({
+      id: x.id, workspaceId: x.workspace_id, actor: x.actor, action: x.action,
+      targetType: x.target_type, targetId: x.target_id, summary: x.summary || '',
+      metadata: x.metadata || {}, ip: x.ip ? String(x.ip) : null,
+      createdAt: new Date(x.created_at).toISOString(),
+    }));
   }
   async function adminReconciliation() {
     const r = await pool.query(
@@ -1351,5 +1375,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, writeAdminAudit, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

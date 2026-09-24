@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Inhalt gemäß Sicherheitsrichtlinien abgelehnt, bitte Prompt überarbeiten",
+      imageRequestFailed: "Bearbeitung fehlgeschlagen, bitte erneut versuchen",
+    },
     topNav: {
       switchLanguage: "Zu {{language}} wechseln",
       shortcuts: "Tastenkombinationen",
@@ -24,6 +28,22 @@ const override={
       mode: "Modus",
       clear: "Löschen",
       upload: "Hochladen",
+      historyTitle: "Meine Generierungen",
+      historyEmpty: "Noch keine Generierungen",
+      historyLoading: "Lädt…",
+      statusRunning: "Wird generiert",
+      statusDone: "Abgeschlossen",
+      statusFailed: "Fehlgeschlagen",
+      statusRefunded: "Erstattet",
+      submitFailed: "Senden fehlgeschlagen, bitte später erneut versuchen",
+      taskQueryFailed: "Abfrage fehlgeschlagen, bitte erneut versuchen",
+      historyQueryFailed: "Verlauf konnte nicht geladen werden, bitte erneut versuchen",
+      pollTimeout: "Es dauert etwas länger; das Ergebnis erscheint später in deinem Verlauf",
+      toasts: {
+        history: "Meine Generierungen",
+        timeoutRefunded: "Zeitüberschreitung bei der Generierung, Guthaben erstattet",
+        failedRefunded: "Generierung fehlgeschlagen, Guthaben erstattet",
+      },
       generate: "Generieren",
       results: "Ergebnisse",
       download: "Herunterladen",
@@ -303,16 +323,6 @@ const override={
         video: "Videos",
         upload: "Hochladen",
       },
-    },
-    imageTools: {
-      generate: "Generieren",
-      blend: "Mischen",
-      translate: "Übersetzen",
-      clear: "Löschen",
-      upload: "Hochladen",
-      cancel: "Abbrechen",
-      save: "Speichern",
-      generating: "Generierung…",
     },
 };
 export default dm(enUS,override);

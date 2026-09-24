@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "안전 가이드라인에 따라 콘텐츠가 거부되었습니다. 프롬프트를 수정해 주세요",
+      imageRequestFailed: "편집에 실패했습니다. 다시 시도해 주세요",
+    },
     topNav: {
       switchLanguage: "{{language}}(으)로 전환",
       shortcuts: "단축키",
@@ -24,6 +28,22 @@ const override={
       mode: "모드",
       clear: "지우기",
       upload: "업로드",
+      historyTitle: "내 생성",
+      historyEmpty: "아직 생성 기록이 없습니다",
+      historyLoading: "불러오는 중…",
+      statusRunning: "생성 중",
+      statusDone: "완료",
+      statusFailed: "실패",
+      statusRefunded: "환불됨",
+      submitFailed: "제출에 실패했습니다. 나중에 다시 시도해 주세요",
+      taskQueryFailed: "조회에 실패했습니다. 다시 시도해 주세요",
+      historyQueryFailed: "기록을 불러오지 못했습니다. 다시 시도해 주세요",
+      pollTimeout: "생성에 시간이 걸리고 있습니다. 결과는 나중에 기록에서 확인할 수 있습니다",
+      toasts: {
+        history: "내 생성",
+        timeoutRefunded: "생성 시간이 초과되어 크레딧을 환불했습니다",
+        failedRefunded: "생성에 실패하여 크레딧을 환불했습니다",
+      },
       generate: "생성",
       results: "결과",
       download: "다운로드",
@@ -303,16 +323,6 @@ const override={
         video: "비디오",
         upload: "업로드",
       },
-    },
-    imageTools: {
-      generate: "생성",
-      blend: "블렌드",
-      translate: "번역",
-      clear: "지우기",
-      upload: "업로드",
-      cancel: "취소",
-      save: "저장",
-      generating: "생성 중…",
     },
 };
 export default dm(enUS,override);

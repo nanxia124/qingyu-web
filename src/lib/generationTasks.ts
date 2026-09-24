@@ -5,6 +5,8 @@
  * 目的：避免同步长连接在请求超时后状态不确定；失败/超时由后端自动 refunded 并释放预扣额度。
  */
 
+import i18n from '@canvas/i18n';
+
 const API = import.meta.env.VITE_API_URL || '';
 
 export type GenTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'refunded';
@@ -67,7 +69,7 @@ export async function submitImageTask(body: Record<string, unknown>): Promise<{ 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(
-      typeof data?.error === 'string' ? data.error : data?.error?.message || `提交失败 (${res.status})`,
+      typeof data?.error === 'string' ? data.error : data?.error?.message || i18n.t('imageTools.submitFailed'),
     );
   }
   return data;
@@ -78,7 +80,7 @@ export async function fetchTask(taskId: string): Promise<GenTask> {
     headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : `查询任务失败 (${res.status})`);
+  if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : i18n.t('imageTools.taskQueryFailed'));
   return data as GenTask;
 }
 
@@ -88,7 +90,7 @@ export async function listImageTasks(limit = 50): Promise<GenTask[]> {
     headers: authHeaders(),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "查询历史失败");
+  if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : i18n.t('imageTools.historyQueryFailed'));
   return (Array.isArray(data) ? data : data.tasks || []) as GenTask[];
 }
 
@@ -103,7 +105,7 @@ export async function pollImageTask(
     const task = await fetchTask(taskId);
     options.onTick?.(task);
     if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'refunded') return task;
-    if (Date.now() > deadline) throw new Error('生成时间较长，结果稍后会出现在历史记录中');
+    if (Date.now() > deadline) throw new Error(i18n.t('imageTools.pollTimeout'));
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
@@ -111,6 +113,6 @@ export async function pollImageTask(
 /** 把任务输出转成可直接渲染的 dataUrl 列表 */
 export function taskOutputToDataUrls(task: GenTask): string[] {
   return (task.outputs || [])
-    .filter((o) => !!o.b64_json)
-    .map((o) => `data:image/png;base64,${o.b64_json}`);
+    .filter((o) => o.b64_json || o.url)
+    .map((o) => o.b64_json ? `data:image/png;base64,${o.b64_json}` : (o.url as string));
 }

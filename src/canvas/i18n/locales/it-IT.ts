@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Contenuto rifiutato dalle linee guida di sicurezza, modifica il prompt",
+      imageRequestFailed: "Modifica fallita, riprova",
+    },
     topNav: {
       switchLanguage: "Passa a {{language}}",
       shortcuts: "Scorciatoie da tastiera",
@@ -24,6 +28,22 @@ const override={
       mode: "Modalità",
       clear: "Pulisci",
       upload: "Carica",
+      historyTitle: "Le mie generazioni",
+      historyEmpty: "Nessuna generazione ancora",
+      historyLoading: "Caricamento…",
+      statusRunning: "Generazione",
+      statusDone: "Completato",
+      statusFailed: "Fallito",
+      statusRefunded: "Rimborsato",
+      submitFailed: "Invio fallito, riprova più tardi",
+      taskQueryFailed: "Richiesta fallita, riprova",
+      historyQueryFailed: "Impossibile caricare la cronologia, riprova",
+      pollTimeout: "Il risultato sta impiegando un po' di tempo; apparirà più tardi nella cronologia",
+      toasts: {
+        history: "Le mie generazioni",
+        timeoutRefunded: "Generazione scaduta, crediti rimborsati",
+        failedRefunded: "Generazione fallita, crediti rimborsati",
+      },
       generate: "Genera",
       results: "Risultati",
       download: "Scarica",
@@ -303,16 +323,6 @@ const override={
         video: "Video",
         upload: "Carica",
       },
-    },
-    imageTools: {
-      generate: "Genera",
-      blend: "Fondi",
-      translate: "Traduci",
-      clear: "Pulisci",
-      upload: "Carica",
-      cancel: "Annulla",
-      save: "Salva",
-      generating: "Generazione…",
     },
 };
 export default dm(enUS,override);

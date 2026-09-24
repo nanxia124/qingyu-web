@@ -376,8 +376,15 @@ SELECT a.id AS quota_account_id, a.workspace_id, a.quota_code,
        COALESCE((SELECT sum(amount) FROM app.quota_ledger l WHERE l.account_id=a.id AND l.entry_type='commit'),0)   AS ledger_committed,
        COALESCE((SELECT sum(amount) FROM app.quota_ledger l WHERE l.entry_type IN ('release','expire') AND l.account_id=a.id),0) AS ledger_released,
        (a.granted - a.reserved - a.consumed
-        - COALESCE((SELECT sum(CASE l.entry_type WHEN 'reserve' THEN l.amount WHEN 'commit' THEN l.amount
-                  WHEN 'release' THEN -l.amount WHEN 'expire' THEN -l.amount ELSE 0 END)
+        - COALESCE((SELECT sum(CASE l.entry_type
+                  WHEN 'grant' THEN l.amount
+                  WHEN 'reserve' THEN -l.amount
+                  WHEN 'commit' THEN 0
+                  WHEN 'release' THEN l.amount
+                  WHEN 'expire' THEN l.amount
+                  WHEN 'refund' THEN l.amount
+                  WHEN 'adjustment' THEN l.amount
+                  ELSE 0 END)
               FROM app.quota_ledger l WHERE l.account_id=a.id),0)) AS drift
   FROM app.quota_accounts a;
 

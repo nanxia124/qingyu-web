@@ -6,11 +6,11 @@ import { Shield, Search } from "lucide-react";
 interface AuditLog {
   id: string;
   action: string;
-  resource: string;
-  userId: string;
-  userName: string;
-  detail: string;
-  ip: string;
+  targetType: string;
+  targetId: string;
+  actor: string;
+  summary: string;
+  ip: string | null;
   createdAt: string;
 }
 
@@ -66,16 +66,16 @@ export default function AdminAuditsPage() {
                   <Shield size={16} className="text-text-muted" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-text">{log.userName}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-text">{log.actor}</span>
                     <span className="text-text-muted">{t("pages.admin.audits.did")}</span>
                     <span className="font-medium text-text">{log.action}</span>
-                    <span className="text-text-muted">{log.resource}</span>
+                    {log.targetType ? <span className="text-xs text-text-muted bg-secondary px-2 py-0.5 rounded">{log.targetType}{log.targetId ? ':'+log.targetId : ''}</span> : null}
                   </div>
-                  <p className="text-sm text-text-muted mt-1">{log.detail}</p>
+                  <p className="text-sm text-text-muted mt-1">{log.summary}</p>
                   <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
                     <span>{new Date(log.createdAt).toLocaleString()}</span>
-                    <span>IP: {log.ip}</span>
+                    <span>IP: {log.ip || '-'}</span>
                   </div>
                 </div>
               </div>

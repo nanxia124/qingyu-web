@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Nội dung bị từ chối theo quy tắc an toàn, vui lòng chỉnh prompt",
+      imageRequestFailed: "Chỉnh sửa thất bại, vui lòng thử lại",
+    },
     topNav: {
       switchLanguage: "Chuyển sang {{language}}",
       shortcuts: "Phím tắt",
@@ -24,6 +28,22 @@ const override={
       mode: "Chế độ",
       clear: "Xóa",
       upload: "Tải lên",
+      historyTitle: "Bản tạo của tôi",
+      historyEmpty: "Chưa có bản tạo nào",
+      historyLoading: "Đang tải…",
+      statusRunning: "Đang tạo",
+      statusDone: "Hoàn tất",
+      statusFailed: "Thất bại",
+      statusRefunded: "Đã hoàn tiền",
+      submitFailed: "Gửi thất bại, vui lòng thử lại sau",
+      taskQueryFailed: "Truy vấn thất bại, vui lòng thử lại",
+      historyQueryFailed: "Không tải được lịch sử, vui lòng thử lại",
+      pollTimeout: "Việc này hơi mất thời gian; kết quả sẽ xuất hiện trong lịch sử sau",
+      toasts: {
+        history: "Bản tạo của tôi",
+        timeoutRefunded: "Tạo quá thời gian, đã hoàn lại tín dụng",
+        failedRefunded: "Tạo thất bại, đã hoàn lại tín dụng",
+      },
       generate: "Tạo",
       results: "Kết quả",
       download: "Tải xuống",
@@ -303,16 +323,6 @@ const override={
         video: "Video",
         upload: "Tải lên",
       },
-    },
-    imageTools: {
-      generate: "Tạo",
-      blend: "Trộn",
-      translate: "Dịch",
-      clear: "Xóa",
-      upload: "Tải lên",
-      cancel: "Hủy",
-      save: "Lưu",
-      generating: "Đang tạo…",
     },
 };
 export default dm(enUS,override);

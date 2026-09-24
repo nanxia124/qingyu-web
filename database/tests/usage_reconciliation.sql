@@ -1,13 +1,13 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$
-DECLARE u uuid; w uuid; other_w uuid; account_id uuid; reservation_id uuid; usage_id uuid;
+DECLARE u uuid; w uuid; other_user uuid; other_w uuid; account_id uuid; reservation_id uuid; usage_id uuid;
     audit_id uuid; repeated uuid; decision text; kind text; balance record;
 BEGIN
     INSERT INTO app.user_accounts(appwrite_user_id) VALUES ('reconciliation-test-'||gen_random_uuid()) RETURNING id INTO u;
     INSERT INTO app.workspaces(type,owner_user_id,name) VALUES ('personal',u,'核对测试') RETURNING id INTO w;
-    INSERT INTO app.user_accounts(appwrite_user_id) VALUES ('reconciliation-other-'||gen_random_uuid()) RETURNING id INTO other_w;
-    INSERT INTO app.workspaces(type,owner_user_id,name) VALUES ('personal',other_w,'隔离测试') RETURNING id INTO other_w;
+    INSERT INTO app.user_accounts(appwrite_user_id) VALUES ('reconciliation-other-'||gen_random_uuid()) RETURNING id INTO other_user;
+    INSERT INTO app.workspaces(type,owner_user_id,name) VALUES ('personal',other_user,'隔离测试') RETURNING id INTO other_w;
     INSERT INTO app.quota_accounts(workspace_id,quota_code,granted) VALUES(w,'monthly',10) RETURNING id INTO account_id;
     IF has_function_privilege('qingyu_app','app.reconcile_provider_usage(uuid,text,text,text,text)','EXECUTE') THEN
         RAISE EXCEPTION '普通角色拥有核对权限';
@@ -49,16 +49,19 @@ BEGIN
     END LOOP;
     SELECT granted,reserved,consumed INTO balance FROM app.quota_accounts WHERE id=account_id;
     IF balance.granted<>10 OR balance.reserved<>0 OR balance.consumed<>1 THEN RAISE EXCEPTION '核对后额度不守恒'; END IF;
-    SELECT app.reserve_quota(w,'monthly',1,gen_random_uuid()::text,now()+interval '1 minute') INTO reservation_id;
-    INSERT INTO app.usage_records(workspace_id,user_id,feature_code,quantity,unit,result,idempotency_key,quota_reservation_id)
-      VALUES(other_w,u,'ai_proxy',1,'request','unknown',gen_random_uuid()::text,reservation_id) RETURNING id INTO usage_id;
+    INSERT INTO app.quota_accounts(workspace_id,quota_code,granted)
+      VALUES(other_w,'monthly',10);
+    PERFORM set_config('app.user_id',other_user::text,true);
+    SELECT app.reserve_quota(other_w,'monthly',1,gen_random_uuid()::text,now()+interval '1 minute') INTO reservation_id;
+    PERFORM set_config('app.user_id',u::text,true);
     BEGIN
-      PERFORM app.reconcile_provider_usage(usage_id,'test-admin','released','跨空间测试','test-reference');
-      RAISE EXCEPTION '错误允许跨空间';
-    EXCEPTION WHEN raise_exception THEN
-      IF SQLERRM<>'额度预占归属或状态异常' THEN RAISE; END IF;
+      INSERT INTO app.usage_records(workspace_id,user_id,feature_code,quantity,unit,result,idempotency_key,quota_reservation_id)
+        VALUES(w,u,'ai_proxy',1,'request','unknown',gen_random_uuid()::text,reservation_id) RETURNING id INTO usage_id;
+      RAISE EXCEPTION '错误允许跨空间额度预占关联';
+    EXCEPTION WHEN foreign_key_violation THEN
+      IF SQLERRM NOT LIKE '%usage_records_quota_reservation_scope_fk%' THEN RAISE; END IF;
+      RAISE NOTICE 'PASS: 跨空间额度预占在写入 usage_records 时被拒绝';
     END;
-    IF EXISTS(SELECT 1 FROM app.usage_reconciliations WHERE usage_record_id=usage_id) THEN RAISE EXCEPTION '失败留下审计记录'; END IF;
     RAISE NOTICE 'PASS: 过期预占核对、两类额度结算释放、幂等、相反结论拒绝、审计不可变、跨空间拒绝及额度守恒';
 END $$;
 ROLLBACK;

@@ -349,6 +349,10 @@ function proxyRequest(req, res, targetPath) {
     if (postgresBilling && proxyIdentity.sid && !(await postgresBilling.isSessionActive(proxyIdentity.sub, proxyIdentity.sid))) {
       return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录后再使用 AI 服务" });
     }
+    // 计费数据库是 AI 代理的硬前置：未启用 PostgreSQL 时禁止转发，避免无计费消耗上游额度。
+    if (!postgresBilling) {
+      return sendJSON(res, 503, { error: "计费服务未启用，AI 调用暂不可用" });
+    }
     const rawBody = Buffer.concat(bodyChunks).toString("utf-8");
     let bodyObj = {};
     try { bodyObj = rawBody ? JSON.parse(rawBody) : {}; } catch { bodyObj = {}; }
@@ -479,6 +483,31 @@ async function callUpstreamImage(channel, bodyObj) {
   });
 }
 
+// 上游只回 URL 不回 b64_json 时，后端把图片下载并转成 base64，
+// 与"response_format=b64_json"的成功产物统一，前端无需再区分两种形态。
+async function fetchUrlAsBase64(imageUrl) {
+  return await new Promise((resolve, reject) => {
+    let target;
+    try { target = new URL(imageUrl); } catch { return reject(new Error("无效图片 URL")); }
+    const lib = target.protocol === "https:" ? https : http;
+    const req = lib.request({
+      hostname: target.hostname,
+      port: target.port || (target.protocol === "https:" ? 443 : 80),
+      path: target.pathname + target.search,
+      method: "GET",
+      timeout: 30000,
+    }, (upstreamRes) => {
+      if (upstreamRes.statusCode >= 300) { upstreamRes.resume(); return reject(new Error("图片下载失败: " + upstreamRes.statusCode)); }
+      const chunks = [];
+      upstreamRes.on("data", c => chunks.push(c));
+      upstreamRes.on("end", () => resolve(Buffer.concat(chunks).toString("base64")));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("图片下载超时")); });
+    req.end();
+  });
+}
+
 async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
   let claimed = false;
   try {
@@ -488,11 +517,31 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
     let payload = {};
     try { payload = JSON.parse(text); } catch { payload = {}; }
     if (status >= 200 && status < 300 && Array.isArray(payload.data)) {
-      const outputs = payload.data.map((d, i) => ({
+      // 先筛出至少带一种可用图片引用的条目；一个都没有则视为"没出图"，必须退款，不能结算。
+      const raw = payload.data.map((d, i) => ({
         type: "image", index: i,
         b64_json: d.b64_json || null, url: d.url || null,
         revisedPrompt: d.revised_prompt || null,
       })).filter(o => o.b64_json || o.url);
+      if (raw.length === 0) {
+        await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游返回成功但未包含任何图片", true);
+        return;
+      }
+      // 统一成 base64：缺 b64_json 的条目从 URL 下载补齐。单张下载失败不影响其他图。
+      const outputs = [];
+      for (const o of raw) {
+        if (o.b64_json) { outputs.push(o); continue; }
+        try {
+          const b64 = await fetchUrlAsBase64(o.url);
+          outputs.push({ ...o, b64_json: b64 });
+        } catch (dlErr) {
+          console.error("[task worker] image url download failed", task.id, dlErr.message);
+        }
+      }
+      if (outputs.length === 0) {
+        await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游图片 URL 均下载失败", true);
+        return;
+      }
       await postgresBilling.settleTaskSuccess(identity.sub, task.id, outputs, payload.id || null);
     } else {
       const msg = (payload && payload.error && payload.error.message) || `上游返回状态 ${status}`;
@@ -795,7 +844,9 @@ async function handleBilling(req, res, pathname, method, url) {
       if (invoiceUpdateMatch && method === "POST") {
         const body = await parseBody(req);
         try {
-          return sendJSON(res, 200, await postgresBilling.adminUpdateInvoiceRequest(invoiceUpdateMatch[1], { status: invoiceUpdateMatch[2], pdfUrl: body.pdfUrl, rejectReason: body.rejectReason }));
+          const result = await postgresBilling.adminUpdateInvoiceRequest(invoiceUpdateMatch[1], { status: invoiceUpdateMatch[2], pdfUrl: body.pdfUrl, rejectReason: body.rejectReason });
+          void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "invoice.update", targetType: "invoice_request", targetId: invoiceUpdateMatch[1], summary: `发票状态更新为 ${invoiceUpdateMatch[2]}`, metadata: { status: invoiceUpdateMatch[2] }, ip: req.socket.remoteAddress }).catch(()=>{});
+          return sendJSON(res, 200, result);
         } catch (error) { return sendJSON(res, 400, { error: error.message }); }
       }
       if (pathname === "/api/admin/billing/refunds" && method === "GET") {
@@ -804,14 +855,23 @@ async function handleBilling(req, res, pathname, method, url) {
       const refundUpdateMatch = pathname.match(/^\/api\/admin\/billing\/refunds\/([^/]+)\/(processing|succeeded|failed|unknown)$/);
       if (refundUpdateMatch && method === "POST") {
         const body = await parseBody(req);
-        try { return sendJSON(res, 200, await postgresBilling.adminUpdateRefund(refundUpdateMatch[1], { status: refundUpdateMatch[2], providerRefundId: body.providerRefundId, note: body.note })); }
+        try {
+          const result = await postgresBilling.adminUpdateRefund(refundUpdateMatch[1], { status: refundUpdateMatch[2], providerRefundId: body.providerRefundId, note: body.note });
+          void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "refund.update", targetType: "refund", targetId: refundUpdateMatch[1], summary: `退款状态更新为 ${refundUpdateMatch[2]}`, metadata: { status: refundUpdateMatch[2] }, ip: req.socket.remoteAddress }).catch(()=>{});
+          return sendJSON(res, 200, result);
+        }
         catch (error) { return sendJSON(res, 400, { error: error.message || "退款处理失败" }); }
       }
       if (pathname === "/api/admin/billing/codes" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminListCodes());
       }
       if (pathname === "/api/admin/billing/codes" && method === "POST") {
-        try { return sendJSON(res, 200, await postgresBilling.adminCreateCodes(await parseBody(req))); }
+        try {
+          const body = await parseBody(req);
+          const result = await postgresBilling.adminCreateCodes(body);
+          void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "code.create", targetType: "redeem_code", summary: `批量生成 ${body.count||0} 张兑换码（面额 ${body.denomination||0}）`, metadata: { count: body.count, denomination: body.denomination }, ip: req.socket.remoteAddress }).catch(()=>{});
+          return sendJSON(res, 200, result);
+        }
         catch (error) { return sendJSON(res, 400, { error: error.message || "兑换码生成失败" }); }
       }
     }
@@ -1393,7 +1453,10 @@ const server = http.createServer(async (req, res) => {
     const alertAckMatch = pathname.match(/^\/api\/admin\/billing\/alerts\/([^/]+)\/ack$/);
     if (postgresBilling && alertAckMatch && req.method === "POST") {
       await postgresBilling.ackAlert(alertAckMatch[1], (requestIdentity && requestIdentity.sub) || "admin");
-      return sendJSON(res, 200, { success: true });
+      await postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "alert.ack", targetType: "platform_alert", targetId: alertAckMatch[1], summary: "管理员确认异常告警", ip: req.socket.remoteAddress });
+    }
+    if (postgresBilling && pathname === "/api/admin/audits" && req.method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listAdminAuditLogs({ limit: Number(url.searchParams.get("limit")) || 200, search: url.searchParams.get("search") || null }));
     }
 
     // PostgreSQL 模式下，管理后台密钥也必须走业务库，不能退回服务器 JSON 文件。
@@ -1402,7 +1465,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (postgresBilling && pathname === "/api/admin/api-keys" && req.method === "POST") {
       const body = await parseBody(req);
-      return sendJSON(res, 200, publicApiKey(await postgresBilling.createPlatformApiKey(body)));
+      const created = await postgresBilling.createPlatformApiKey(body);
+      void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.create", targetType: "platform_key", targetId: String(created.id), summary: `新增渠道密钥：${created.name||""}`, metadata: { name: created.name, base_url: created.base_url }, ip: req.socket.remoteAddress }).catch(()=>{});
+      return sendJSON(res, 200, publicApiKey(created));
     }
     const pgPutKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
     if (postgresBilling && pgPutKey && req.method === "PUT") {
@@ -1410,16 +1475,19 @@ const server = http.createServer(async (req, res) => {
       keys = await postgresBilling.listPlatformApiKeys();
       const updated = await postgresBilling.updatePlatformApiKey(pgPutKey[1], body);
       keys = await postgresBilling.listPlatformApiKeys();
+      void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.update", targetType: "platform_key", targetId: pgPutKey[1], summary: `修改渠道密钥：${updated.name||""}`, metadata: { fields: Object.keys(body) }, ip: req.socket.remoteAddress }).catch(()=>{});
       return sendJSON(res, 200, publicApiKey(updated));
     }
     const pgDeleteKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
     if (postgresBilling && pgDeleteKey && req.method === "DELETE") {
       const result = await postgresBilling.deletePlatformApiKey(pgDeleteKey[1]);
       keys = await postgresBilling.listPlatformApiKeys();
+      void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.delete", targetType: "platform_key", targetId: pgDeleteKey[1], summary: "删除渠道密钥", ip: req.socket.remoteAddress }).catch(()=>{});
       return sendJSON(res, 200, result);
     }
     const pgFullKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)\/full$/);
     if (postgresBilling && pgFullKey && req.method === "GET") {
+      void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.view_secret", targetType: "platform_key", targetId: pgFullKey[1], summary: "查看渠道密钥明文", ip: req.socket.remoteAddress }).catch(()=>{});
       return sendJSON(res, 200, await postgresBilling.getPlatformApiKeySecret(pgFullKey[1]));
     }
 
@@ -1656,6 +1724,23 @@ server.listen(PORT, () => {
         .then(r => { if ((r.refunded_tasks||0) > 0 || (r.expired_quota_reservations||0) > 0) console.log("[reaper]", JSON.stringify(r)); })
         .catch(e => console.error("[reaper] failed", e.message));
     }, 30000).unref?.();
+
+    // 启动恢复：上次进程崩溃/重启时还在 pending 的任务，重新派发给 worker，
+    // 不要让它们干等到 timeout_at 才被 reaper 退款。
+    (async () => {
+      try {
+        const recoverable = await postgresBilling.listRecoverableTasks(50);
+        for (const { task, appwriteUserId } of recoverable) {
+          const match = findChannel(task.model || "");
+          if (!match) { console.error("[recover] no channel for task", task.id, task.model); continue; }
+          const bodyObj = task.parameters && typeof task.parameters === "object" ? task.parameters : {};
+          const identity = { sub: appwriteUserId, role: "customer" };
+          // 串行派发，避免启动瞬间打满上游；每个任务内部独立 try/catch。
+          setImmediate(() => runGenerationTaskWorker(identity, task, match.channel, bodyObj));
+        }
+        if (recoverable.length) console.log("[recover] resumed", recoverable.length, "pending tasks");
+      } catch (e) { console.error("[recover] failed", e.message); }
+    })();
   }
 
   console.log(`[qingyu-api] 服务已启动，端口 ${PORT}`);

@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "सुरक्षा दिशानिर्देशों के कारण सामग्री अस्वीकृत, कृपया प्रॉम्प्ट संशोधित करें",
+      imageRequestFailed: "संपादन विफल, कृपया पुनः प्रयास करें",
+    },
     topNav: {
       switchLanguage: "{{language}} में बदलें",
       shortcuts: "कीबोर्ड शॉर्टकट",
@@ -24,6 +28,22 @@ const override={
       mode: "मोड",
       clear: "साफ़",
       upload: "अपलोड",
+      historyTitle: "मेरी जनरेशन",
+      historyEmpty: "अभी तक कोई जनरेशन नहीं",
+      historyLoading: "लोड हो रहा है…",
+      statusRunning: "जनरेट हो रहा है",
+      statusDone: "पूर्ण",
+      statusFailed: "विफल",
+      statusRefunded: "रिफंड किया गया",
+      submitFailed: "सबमिट विफल, कृपया बाद में पुनः प्रयास करें",
+      taskQueryFailed: "क्वेरी विफल, कृपया पुनः प्रयास करें",
+      historyQueryFailed: "इतिहास लोड नहीं हो सका, कृपया पुनः प्रयास करें",
+      pollTimeout: "इसमें समय लग रहा है; परिणाम बाद में इतिहास में दिखाई देगा",
+      toasts: {
+        history: "मेरी जनरेशन",
+        timeoutRefunded: "जनरेशन का समय समाप्त, क्रेडिट वापस कर दिए गए",
+        failedRefunded: "जनरेशन विफल, क्रेडिट वापस कर दिए गए",
+      },
       generate: "जनरेट",
       results: "परिणाम",
       download: "डाउनलोड",
@@ -303,16 +323,6 @@ const override={
         video: "वीडियो",
         upload: "अपलोड",
       },
-    },
-    imageTools: {
-      generate: "जनरेट",
-      blend: "मिलाएं",
-      translate: "अनुवाद",
-      clear: "साफ़",
-      upload: "अपलोड",
-      cancel: "रद्द",
-      save: "सहेजें",
-      generating: "जनरेट हो रहा…",
     },
 };
 export default dm(enUS,override);

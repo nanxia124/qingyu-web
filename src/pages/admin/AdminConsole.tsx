@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, BookOpen, Database, KeyRound, LogOut, Receipt, ShieldCheck, Users, Building2, Menu, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, BookOpen, Database, KeyRound, LogOut, Receipt, ShieldCheck, Users, Building2, Menu, X } from "lucide-react";
 import AdminDashboard from "./AdminDashboard";
 import AdminUsersPage from "./AdminUsersPage";
 import AdminTenantsPage from "./AdminTenantsPage";
 import AdminAuditsPage from "./AdminAuditsPage";
+import AdminOpsPage from "./AdminOpsPage";
 import AdminBillingPage from "./AdminBillingPage";
 import MonitorPage from "../MonitorPage";
 import OpenSourceDataPage from "./OpenSourceDataPage";
 
-type Section = "api" | "open-source" | "users" | "tenants" | "billing" | "audits" | "monitor";
+type Section = "api" | "open-source" | "users" | "tenants" | "billing" | "audits" | "ops" | "monitor";
 const nav = [
   { id: "api" as const, label: "API 与模型", icon: KeyRound, group: "核心配置" },
   { id: "open-source" as const, label: "开源项目与数据", icon: BookOpen, group: "核心配置" },
@@ -17,6 +18,7 @@ const nav = [
   { id: "tenants" as const, label: "团队与租户", icon: Building2, group: "用户与运营" },
   { id: "billing" as const, label: "计费管理", icon: Receipt, group: "用户与运营" },
   { id: "audits" as const, label: "审计日志", icon: ShieldCheck, group: "系统" },
+  { id: "ops" as const, label: "对账与告警", icon: AlertTriangle, group: "系统" },
   { id: "monitor" as const, label: "运行监控", icon: Activity, group: "系统" },
 ];
 
@@ -26,7 +28,7 @@ export default function AdminConsole({ token, onLogout }: { token: string; onLog
   const [section, setSection] = useState<Section>(nav.some((item) => item.id === initialSection) ? initialSection : "api");
   const [mobileOpen, setMobileOpen] = useState(false);
   const current = nav.find((item) => item.id === section)!;
-  const content = { api: <AdminDashboard token={token} onLogout={onLogout} />, "open-source": <OpenSourceDataPage />, users: <AdminUsersPage />, tenants: <AdminTenantsPage />, billing: <AdminBillingPage />, audits: <AdminAuditsPage />, monitor: <MonitorPage /> }[section];
+  const content = { api: <AdminDashboard token={token} onLogout={onLogout} />, "open-source": <OpenSourceDataPage />, users: <AdminUsersPage />, tenants: <AdminTenantsPage />, billing: <AdminBillingPage />, audits: <AdminAuditsPage />, ops: <AdminOpsPage />, monitor: <MonitorPage /> }[section];
   const select = (id: Section) => { setSection(id); setSearchParams(id === "api" ? {} : { section: id }); setMobileOpen(false); };
   return <div className="min-h-screen bg-bg text-text">
     <header className="flex h-16 items-center justify-between bg-card px-5 shadow-sm md:px-7">

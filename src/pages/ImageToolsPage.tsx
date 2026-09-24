@@ -47,16 +47,24 @@ import { useBillingStore } from '@/stores/useBillingStore'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
+type ServerImageAsset = {
+  id: string
+  name: string
+  type: string
+  createdAt: string
+  favorited: boolean
+  metadata?: Record<string, unknown>
+}
 
 const tabs: { id?: TabId; label: string; translation?: boolean; width: string }[] = [
   { id: 'generate', label: 'imageTools.generate', translation: true, width: 'w-[64px]' },
   { id: 'blend', label: 'imageTools.blend', translation: true, width: 'w-[64px]' },
   { id: 'translate', label: 'imageTools.translate', translation: true, width: 'w-[80px]' },
-  { label: '局部重绘', width: 'w-[80px]' },
-  { label: '扩图', width: 'w-[64px]' },
-  { label: '抠图', width: 'w-[64px]' },
-  { label: '超分辨率', width: 'w-[96px]' },
-  { label: '修复', width: 'w-[64px]' },
+  { label: 'imageTools.tabInpaint', translation: true, width: 'w-[80px]' },
+  { label: 'imageTools.tabExpand', translation: true, width: 'w-[64px]' },
+  { label: 'imageTools.tabCutout', translation: true, width: 'w-[64px]' },
+  { label: 'imageTools.tabSuperRes', translation: true, width: 'w-[96px]' },
+  { label: 'imageTools.tabRepair', translation: true, width: 'w-[64px]' },
 ]
 
 /* ── 生图 Tab ── */
@@ -111,6 +119,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [storagePath, setStoragePath] = useState('')
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+  const loadedResultUrlsRef = useRef<string[]>([])
 
   const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
@@ -137,7 +146,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     try {
       setHistoryTasks(await listImageTasks(50))
     } catch (error) {
-      showToast(error instanceof Error ? error.message : '查询历史失败', 'error')
+      showToast(error instanceof Error ? error.message : t('imageTools.historyQueryFailed'), 'error')
     } finally {
       setHistoryLoading(false)
     }
@@ -155,7 +164,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         if (item.favorited) await api.delete(`/favorites/${item.assetId}`)
         else await api.put(`/favorites/${item.assetId}`)
       } catch {
-        showToast('收藏同步失败，请稍后重试', 'error')
+        showToast(t('imageTools.favoriteSyncFailed'), 'error')
         return
       }
     }
@@ -191,6 +200,59 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   useEffect(() => {
     if (config.imageModel) setModel(config.imageModel)
   }, [config.imageModel])
+
+  // 结果以服务器资产库为准，刷新页面或换设备后仍能恢复历史记录。
+  useEffect(() => {
+    if (!isLoggedIn) return
+    let cancelled = false
+    const loadServerResults = async () => {
+      try {
+        const assets = await api.get<ServerImageAsset[]>('/assets', { type: 'image' })
+        if (cancelled) return
+        const nextUrls: string[] = []
+        // 首屏只读取最近 24 张缩略图，避免一次刷新给服务器发起大量文件请求。
+        const nextResults = await Promise.all(assets.slice(0, 24).map(async (asset, index) => {
+          const metadata = asset.metadata || {}
+          let imageUrl: string | undefined
+          try {
+            const blob = await api.fetchAssetBlob(asset.id)
+            imageUrl = URL.createObjectURL(blob)
+            nextUrls.push(imageUrl)
+          } catch {
+            // 单个文件读取失败时保留历史条目，避免整页结果消失。
+          }
+          const createdAt = Date.parse(asset.createdAt) || Date.now()
+          return {
+            id: createdAt + index,
+            assetId: asset.id,
+            model: String(metadata.model || '—'),
+            size: String(metadata.size || '—'),
+            fileSize: metadata.sizeBytes ? `${Math.round(Number(metadata.sizeBytes) / 1024)} KB` : '—',
+            quality: String(metadata.quality || '—'),
+            time: asset.createdAt.slice(0, 16).replace('T', ' '),
+            prompt: String(metadata.prompt || asset.name || ''),
+            favorited: Boolean(asset.favorited),
+            imageUrl,
+          }
+        }))
+        if (cancelled) {
+          nextUrls.forEach((url) => URL.revokeObjectURL(url))
+          return
+        }
+        loadedResultUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+        loadedResultUrlsRef.current = nextUrls
+        setResults(nextResults)
+      } catch {
+        // 历史读取失败不影响当前生成功能，下一次进入页面会继续尝试。
+      }
+    }
+    void loadServerResults()
+    return () => {
+      cancelled = true
+      loadedResultUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+      loadedResultUrlsRef.current = []
+    }
+  }, [isLoggedIn])
 
   useEffect(() => {
     const handler = (e: ClipboardEvent) => {
@@ -239,7 +301,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     await refreshBillingUser()
     const billingUser = useBillingStore.getState().user
     if (billingUser && billingUser.memberLevel !== 'free' && billingUser.balance < requestedCount) {
-      showToast(`积分不足，本次需要 ${requestedCount} 积分，当前剩余 ${billingUser.balance} 积分`, 'error')
+      showToast(t('imageTools.insufficient', { need: requestedCount, balance: billingUser.balance }), 'error')
       return
     }
     setGenerating(true)
@@ -289,7 +351,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         try {
           const response = await fetch(image.dataUrl)
           const blob = await response.blob()
-          const file = new File([blob], `生成结果-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
+          const file = new File([blob], `${t('imageTools.resultFilePrefix')}-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
           return await api.uploadAsset<{ id: string }>(file, {
             source: 'image_generation',
             ...(sourceGenerationTaskId ? { sourceGenerationTaskId } : {}),
@@ -717,9 +779,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
-                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">复制</button>
+                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{t('imageTools.copy')}</button>
                       <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
-                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">删</button>
+                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">{t('imageTools.deleteShort')}</button>
                     </div>
                   </div>
                 </div>
@@ -1057,13 +1119,13 @@ function BlendPanel({ connectTopLeft = false }: { connectTopLeft?: boolean }) {
 
           {/* 补充要求（用户可选） */}
           <div className="mb-6">
-            <label className="mb-2 block text-[14px] text-text">补充要求（可选）</label>
+            <label className="mb-2 block text-[14px] text-text">{t('imageTools.extraRequirement')}</label>
             <div className="relative prompt-box rounded-xl border border-border bg-input dark:border-0 dark:bg-secondary">
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 rows={3}
-                placeholder="在这里添加额外要求…"
+                placeholder={t('imageTools.extraRequirementPlaceholder')}
                 className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
               />
             </div>
@@ -1222,8 +1284,8 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
             className="flex h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
             onClick={() => fileRef.current?.click()}>
             <Upload className="mb-2 size-5 text-text-muted" />
-            <div className="text-[13px] font-medium text-text">点击上传需要翻译的图片</div>
-            <div className="mt-1 text-[11px] text-text-muted">PNG / JPG / WebP，单张 ≤ 10MB，可多选</div>
+            <div className="text-[13px] font-medium text-text">{t('imageTools.uploadToTranslate')}</div>
+            <div className="mt-1 text-[11px] text-text-muted">{t('imageTools.translateFormats')}</div>
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
             onChange={(e) => onUpload(e.target.files)} />
@@ -1234,7 +1296,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
         {items.length === 0 ? (
           <div className="flex h-[300px] flex-col items-center justify-center text-text-muted">
             <Languages className="mb-3 size-12" />
-            <span className="text-[14px]">上传图片后开始翻译</span>
+            <span className="text-[14px]">{t('imageTools.startAfterUpload')}</span>
           </div>
         ) : (
           <div className="space-y-6">
@@ -1255,7 +1317,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                     {idx + 1}
                   </div>
                   <textarea
-                    placeholder="输入要改成的文案…"
+                    placeholder={t('imageTools.editTextPlaceholder')}
                     value={it.prompt}
                     onChange={(e) => updateItem(it.id, 'prompt', e.target.value)}
                     rows={9}
@@ -1267,14 +1329,14 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                 {/* 译后图 */}
                 <div className="text-center">
                   <div className="mb-2 text-[13px] text-text-muted">
-                    {it.status === 'done' ? '翻译结果' : '等待翻译'}
+                    {it.status === 'done' ? t('imageTools.translatedResult') : t('imageTools.waitingTranslate')}
                   </div>
                   <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary overflow-hidden">
                     {it.translatedUrl ? (
-                      <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.translatedUrl!, name: it.name + " (翻译后)" }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
+                      <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.translatedUrl!, name: it.name + t('imageTools.translatedSuffix') }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
                     ) : (
                       <span className="text-[13px] text-text-muted">
-                        {it.status === 'translating' ? '翻译中…' : '上传后点击开始翻译'}
+                        {it.status === 'translating' ? t('imageTools.translatingStatus') : t('imageTools.clickStartAfterUpload')}
                       </span>
                     )}
                   </div>
@@ -1302,7 +1364,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
               className="flex h-[100px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
               onClick={() => fileRef.current?.click()}>
               <Plus className="mb-1 size-6 text-text-muted" />
-              <div className="text-[13px] text-text-muted">继续添加</div>
+              <div className="text-[13px] text-text-muted">{t('imageTools.continueAdd')}</div>
             </div>
           </div>
         )}
@@ -1312,7 +1374,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
         <button onClick={startTranslate} disabled={items.length === 0 || translating}
           className="flex h-[58px] w-full items-center justify-center gap-2 rounded-lg bg-accent text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-40">
           {translating ? <Loader2 className="size-4 animate-spin" /> : <Languages className="size-4" />}
-          {translating ? '翻译中…' : '开始翻译'}
+          {translating ? t('imageTools.translatingStatus') : t('imageTools.startTranslate')}
         </button>
       </div>
     </div>
@@ -1335,7 +1397,7 @@ export default function ImageToolsPage() {
             key={tab.id ?? tab.label}
             type="button"
             disabled={!tab.id}
-            title={!tab.id ? '正在开发' : undefined}
+            title={!tab.id ? t('imageTools.inDevelopment') : undefined}
             onClick={() => {
               if (!tab.id) return
               setActiveTab(tab.id)

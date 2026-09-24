@@ -8,7 +8,7 @@ DB_USER="${PGUSER:-user}"
 BACKUP_FILE="${BACKUP_FILE:?请设置 BACKUP_FILE，例如 /home/ubuntu/backups/qingyu/qingyu_business_20260923T000000Z.dump}"
 DRILL_DB="${DRILL_DB:-qingyu_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)}"
 ENVIRONMENT="${RESTORE_DRILL_ENVIRONMENT:-isolated_server}"
-REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0047_generation_task_idempotency_lock}"
+REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0049_reconciliation_drift_and_audit_query}"
 
 test -r "$BACKUP_FILE"
 sha256sum -c "${BACKUP_FILE}.sha256"

@@ -2,6 +2,10 @@
 import enUS from "@canvas/i18n/locales/en-US";
 function dm(a,b){const o={...a};for(const k in b){if(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k]))o[k]=dm(a[k]||{},b[k]);else o[k]=b[k];}return o;}
 const override={
+    apiErrors: {
+      contentRejected: "Контент отклонён по правилам безопасности, измените запрос",
+      imageRequestFailed: "Не удалось изменить, попробуйте снова",
+    },
     topNav: {
       switchLanguage: "Переключить на {{language}}",
       shortcuts: "Горячие клавиши",
@@ -24,6 +28,22 @@ const override={
       mode: "Режим",
       clear: "Очистить",
       upload: "Загрузить",
+      historyTitle: "Мои генерации",
+      historyEmpty: "Пока нет генераций",
+      historyLoading: "Загрузка…",
+      statusRunning: "Генерация",
+      statusDone: "Завершено",
+      statusFailed: "Ошибка",
+      statusRefunded: "Возвращено",
+      submitFailed: "Не удалось отправить, попробуйте позже",
+      taskQueryFailed: "Не удалось выполнить запрос, попробуйте снова",
+      historyQueryFailed: "Не удалось загрузить историю, попробуйте снова",
+      pollTimeout: "Это занимает время; результат позже появится в истории",
+      toasts: {
+        history: "Мои генерации",
+        timeoutRefunded: "Время генерации истекло, кредиты возвращены",
+        failedRefunded: "Не удалось сгенерировать, кредиты возвращены",
+      },
       generate: "Создать",
       results: "Результаты",
       download: "Скачать",
@@ -303,16 +323,6 @@ const override={
         video: "Видео",
         upload: "Загрузить",
       },
-    },
-    imageTools: {
-      generate: "Создать",
-      blend: "Смешать",
-      translate: "Перевод",
-      clear: "Очистить",
-      upload: "Загрузить",
-      cancel: "Отмена",
-      save: "Сохранить",
-      generating: "Создание…",
     },
 };
 export default dm(enUS,override);

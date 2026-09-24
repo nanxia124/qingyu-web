@@ -45,17 +45,72 @@ function authHeaders(): Record<string, string> {
 }
 
 /** 把生图页的 ratio/quality 转换成 OpenAI images/generations 认识的取值 */
+// 各比例在 1K 档位下的标准像素值（nano-banana 系列仅支持 1K）
+const RATIO_SIZE_1K: Record<string, string> = {
+  '1:1': '1024x1024',
+  '16:9': '1672x941',
+  '9:16': '941x1672',
+  '4:3': '1443x1090',
+  '3:4': '1090x1443',
+  '3:2': '1536x1024',
+  '2:3': '1024x1536',
+  '5:4': '1408x1120',
+  '4:5': '1120x1408',
+  '21:9': '1920x832',
+};
+// gpt-image-2-vip / official 支持 2K/4K
+const RATIO_SIZE_2K: Record<string, string> = {
+  '1:1': '2048x2048',
+  '16:9': '2048x1152',
+  '9:16': '1152x2048',
+  '4:3': '2304x1728',
+  '3:4': '1728x2304',
+  '3:2': '2048x1360',
+  '2:3': '1360x2048',
+  '5:4': '2240x1792',
+  '4:5': '1792x2240',
+  '21:9': '2912x1248',
+};
+const RATIO_SIZE_4K: Record<string, string> = {
+  '1:1': '2880x2880',
+  '16:9': '3840x2160',
+  '9:16': '2160x3840',
+  '4:3': '3264x2448',
+  '3:4': '2448x3264',
+  '3:2': '3504x2336',
+  '2:3': '2336x3504',
+  '5:4': '3200x2560',
+  '4:5': '2560x3200',
+  '21:9': '3840x1648',
+};
+
 export function resolveOpenImageParams(opts: {
   ratio?: string;
   quality?: string;
-}): { size?: string; quality?: string } {
-  const out: { size?: string; quality?: string } = {};
+  model?: string;
+}): { size?: string; quality?: string; resolution?: string } {
+  const out: { size?: string; quality?: string; resolution?: string } = {};
   const ratio = (opts.ratio || '').toLowerCase();
-  if (ratio === '16:9' || ratio === '3:2' || ratio === '4:3') out.size = '1536x1024';
-  else if (ratio === '9:16' || ratio === '2:3' || ratio === '3:4') out.size = '1024x1536';
-  else out.size = '1024x1024';
+  const model = (opts.model || '').toLowerCase();
+  const isVip = model.includes('gpt-image-2-vip') || model.includes('gpt-image-2-official');
   const q = (opts.quality || '').toLowerCase();
-  if (q === '2k' || q === '4k' || q === 'high' || q === 'hd') out.quality = 'hd';
+
+  // nano-banana 系列只支持 1K，忽略画质选择
+  if (model.includes('nano-banana')) {
+    out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
+    return out;
+  }
+
+  // gpt-image-2-vip/official 支持 2K/4K
+  if (isVip) {
+    if (q === '4k') out.size = RATIO_SIZE_4K[ratio] || RATIO_SIZE_1K[ratio] || '1024x1024';
+    else if (q === '2k') out.size = RATIO_SIZE_2K[ratio] || RATIO_SIZE_1K[ratio] || '1024x1024';
+    else out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
+    return out;
+  }
+
+  // 默认：1K
+  out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
   return out;
 }
 

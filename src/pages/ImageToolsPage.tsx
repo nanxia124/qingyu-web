@@ -336,7 +336,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         ? await requestEdit(requestConfig, prompt.trim(), references)
         : await (async () => {
             // 0046 生图改异步任务：提交即返回 taskId，后台生成，前端轮询。
-            const imgParams = resolveOpenImageParams({ ratio, quality })
+            const imgParams = resolveOpenImageParams({ ratio, quality, model: selectedModel })
             const { taskId } = await submitImageTask({
               model: selectedModel,
               prompt: prompt.trim(),

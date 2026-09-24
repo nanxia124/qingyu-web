@@ -315,12 +315,15 @@ function nextId() {
 // 根据模型名找到对应渠道（模型名格式: channelId::modelName 或纯 modelName）
 function findChannel(modelName) {
   if (!modelName) return null;
-  // 优先解析 channelId::modelName 格式
-  if (modelName.includes("::")) {
-    const [cid, ...rest] = modelName.split("::");
-    const id = parseInt(cid, 10);
-    const ch = keys.find(k => k.id === id && k.is_active === 1);
-    if (ch) return { channel: ch, model: rest.join("::") };
+  // 优先解析 channelId::modelName 格式（channelId 可能是数字或 UUID）
+  const sepIdx = modelName.indexOf("::");
+  if (sepIdx > 0) {
+    const cid = modelName.slice(0, sepIdx);
+    const pureModel = modelName.slice(sepIdx + 2);
+    const ch = keys.find(k => String(k.id) === cid && k.is_active === 1);
+    if (ch) return { channel: ch, model: pureModel };
+    // channelId 匹配失败时，用纯模型名继续走后面的回退逻辑
+    modelName = pureModel;
   }
   // 回退：找第一个包含此模型的活跃渠道
   for (const k of keys) {
@@ -1302,6 +1305,25 @@ const server = http.createServer(async (req, res) => {
           model: k.model,
         }));
       return sendJSON(res, 200, publicKeys);
+    }
+
+    // POST /api/feedback — 反馈允许匿名提交，但必须进入 PostgreSQL；数据库不可用时明确失败。
+    if (pathname === "/api/feedback" && req.method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "反馈服务暂不可用，请稍后重试" });
+      const body = await parseBody(req);
+      const identity = getBillingIdentity(req);
+      try {
+        const saved = await postgresBilling.createFeedback({
+          appwriteUserId: identity?.role === "customer" ? identity.sub : null,
+          feedbackType: body.type,
+          content: body.content,
+          contact: body.contact,
+          requestId: req.headers["x-request-id"] || crypto.randomUUID(),
+        });
+        return sendJSON(res, 201, saved);
+      } catch (error) {
+        return sendJSON(res, 400, { error: error.message || "反馈保存失败，请稍后重试" });
+      }
     }
 
     // POST /api/proxy/openai/* — AI 请求代理

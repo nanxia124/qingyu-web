@@ -195,7 +195,7 @@ export function ProjectListFloat() {
                                 </button>
                                 <button onClick={exportSelected} style={toolBtnStyle(false, c.btnText, c.btnBg)}>
                                     <Download size={13} /> 导出
-                                </button></Tooltip>
+                                </button>
                             </>
                         )}
                         <button onClick={() => fileInputRef.current?.click()} style={toolBtnStyle(false, c.btnText, c.btnBg)}>

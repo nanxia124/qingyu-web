@@ -160,7 +160,7 @@ html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
  */
 .dark {
   color-scheme: dark;
-  --color-bg: #09090b;
+  --color-bg: #141416;
   --color-surface: #181818;
   --color-surface-hover: #282828;
   --color-card: #202020;

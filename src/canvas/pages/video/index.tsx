@@ -13,6 +13,7 @@ import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeVa
 import { canvasThemes } from "@canvas/lib/canvas-theme";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, videoRatioOptions, VIDEO_SECONDS_MIN, VIDEO_SECONDS_MAX } from "@canvas/lib/media-size";
 import { formatBytes, formatDuration } from "@canvas/lib/image-utils";
+import { SpeechInputButton } from "@/components/speech-input-button";
 import { deleteStoredMedia, resolveMediaUrl } from "@canvas/services/file-storage";
 import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@canvas/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@canvas/services/api/video";
@@ -438,6 +439,7 @@ export default function VideoPage() {
                                 className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-foreground outline-none placeholder:text-muted-foreground"
                             />
                             <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                                <SpeechInputButton onResult={(text) => setPrompt((prev) => (prev || "") + " " + text)} />
                                 <button
                                     onClick={() => setPromptDialogOpen(true)}
                                     className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-muted"

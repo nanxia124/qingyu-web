@@ -11,6 +11,8 @@ import {
   Users,
   User,
   CreditCard,
+  Sun,
+  Moon,
   Globe,
   Crown,
   Languages,
@@ -26,6 +28,8 @@ import AuthModal from '@/components/AuthModal'
 import InviteModal from '@/components/InviteModal'
 import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useThemeStore } from '@canvas/stores/use-theme-store'
+import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
 import i18n, { changeAppLocale, onLanguageSuggestion, type AppLocale } from '@canvas/i18n'
 import {
   SidebarHomeIcon,
@@ -100,8 +104,17 @@ export default function AppLayout() {
     }
   }, [location.pathname, isLoggedIn, openAuthModal])
 
+  // 主题：与画布共用同一个 useThemeStore，同步 <html> 上的 .dark 类
+  const theme = useThemeStore((s) => s.theme)
+  const setTheme = useThemeStore((s) => s.setTheme)
+  useEffect(() => {
+    const dark = theme === 'dark'
+    document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.style.colorScheme = theme
+  }, [theme])
 
-  // ── 语言 ──
+
+  // ── 语言 ─=
   const [currentLocale, setCurrentLocale] = useState<AppLocale>(i18n.resolvedLanguage as AppLocale)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
   const langMenuRef = useRef<HTMLDivElement>(null)
@@ -283,7 +296,7 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-bg">
       {/* 全局顶部栏：只放站点级功能，页面内部标签继续留在主内容区 */}
-      <header className="relative z-50 flex h-[56px] shrink-0 items-center gap-4 bg-nav-bg px-3">
+      <header className="relative z-[60] flex h-[56px] shrink-0 items-center gap-4 bg-nav-bg px-3">
         <div className="relative flex h-[44px] w-[220px] shrink-0 items-center gap-[10px]">
           <Tooltip title={expanded ? '收起侧栏' : '展开侧栏'}>
           <button
@@ -386,8 +399,32 @@ export default function AppLayout() {
           </div>
         </nav>
 
-        {/* 底部：语言切换 */}
+        {/* 底部：主题切换 + 语言切换 */}
         <div className="shrink-0 border-t border-border px-2 py-2">
+          {/* 浅色 / 深色 切换 */}
+          <Tooltip title={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}>
+          <AnimatedThemeToggler
+            theme={theme}
+            onThemeChange={setTheme}
+            aria-label={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
+            className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
+          >
+            <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
+            <span className="relative z-10 flex h-[30px] w-[50px] shrink-0 items-center justify-center">
+              {theme === 'dark' ? (
+                <Sun className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
+              ) : (
+                <Moon className="size-[20px] text-text-muted transition-colors group-hover:text-text" />
+              )}
+            </span>
+            {expanded && (
+              <span className="whitespace-nowrap text-[14px] font-medium leading-[20px] text-text-muted transition-colors group-hover:text-text">
+                {theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
+              </span>
+            )}
+          </AnimatedThemeToggler>
+          </Tooltip>
+
           {/* 语言切换：点击按钮展开/收起，点击外部关闭 */}
           <div
             ref={langMenuRef}

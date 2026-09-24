@@ -109,8 +109,8 @@ export const AnimatedThemeToggler = ({ children, className, duration = 550, vari
         return () => observer.disconnect();
     }, [theme]);
 
-    const toggleTheme = useCallback(() => {
-        const button = buttonRef.current;
+    const toggleTheme = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+        const button = event.currentTarget;
         if (!button) return;
 
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;

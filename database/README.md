@@ -66,7 +66,7 @@
 
 `scripts/Verify-DatabaseTestSuite.ps1` 会先校验迁移清单，再在空库重放全部迁移后逐个执行 `database/tests` 下的事务回滚测试，验证跨空间、RLS、会话、额度、支付、备份和任务幂等规则；测试结束只删除本次创建的容器。若指定容器名已存在，脚本会失败并保留原容器，避免误删其他环境。
 
-`scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量、迁移版本和必需的最新迁移后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
+`scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量、迁移版本和必需的最新迁移，并自动匹配同时间戳的对象归档，校验归档 SHA-256 和 tar 目录；设置 `REQUIRE_OBJECT_ARCHIVE=1` 时，缺少对象归档会直接判定演练失败。结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
 
 `scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成数据库备份和对象文件归档，并分别生成 SHA-256 校验文件；设置 `BACKUP_MIRROR_DIR` 后会把数据库备份、对象归档及各自校验文件复制到已挂载的独立目录，逐个重新校验并把 `app.backup_copies` 标记为 `verified`，任何一类失败都会标记为 `failed` 并让任务失败；最后按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务。腾讯云 COS 等真正异机存储仍需另外配置适配器和凭据。
 

@@ -15,7 +15,7 @@ $files = Get-ChildItem -LiteralPath $MigrationDirectory -Filter '*.sql' -File | 
 # 空库还没有版本表；已初始化的库连第一版也必须检查，避免重建已有表。
 $state = & psql @psqlBase -Atqc "SELECT to_regclass('app.schema_migrations') IS NOT NULL;"
 if ($LASTEXITCODE -ne 0) { throw '无法读取数据库初始化状态。' }
-$hasVersionTable = (($state -join '').Trim() -eq 't')
+$hasVersionTable = (($state -join '').Trim() -eq "t")
 foreach ($file in $files) {
     $version = [IO.Path]::GetFileNameWithoutExtension($file.Name)
     if ($version -notmatch '^\d{4}_[a-z0-9_]+$') { throw "迁移文件名不符合规范：$version" }

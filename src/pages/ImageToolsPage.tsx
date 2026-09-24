@@ -125,11 +125,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
   const counts = ['1', '2', '3', '4']
-  // 模型能力限制：nano-banana 系列只支持 n=1、不支持 hd 画质
+  // 模型能力限制
   const currentModelName = model.split('::').pop() || model
   const isNanoBanana = currentModelName.includes('nano-banana')
-  const disabledCounts = isNanoBanana ? ['2', '3', '4'] : []
-  const disabledQualities = isNanoBanana ? ['2K', '4K'] : []
+  const isGptImage25 = currentModelName === 'gpt-image-2.5'
+  const onlyOne = isNanoBanana || isGptImage25
+  const only1K = isNanoBanana || isGptImage25
+  const disabledCounts = onlyOne ? ['2', '3', '4'] : []
+  const disabledQualities = only1K ? ['2K', '4K'] : []
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success', action?: { label: string; onClick: () => void }, pos: 'top' | 'input' = 'top') => {
     setToast({ msg, type, action, pos })
@@ -415,7 +418,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               onChange={(m: string) => {
                 setModel(m);
                 const mn = (m || '').split('::').pop() || '';
-                if (mn.includes('nano-banana')) {
+                if (mn.includes('nano-banana') || mn === 'gpt-image-2.5') {
                   setCount('1');
                   setQuality('1K');
                 }

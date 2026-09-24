@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useBillingStore } from "@/stores/useBillingStore";
@@ -20,7 +21,9 @@ export default function WalletPage() {
   const { t } = useTranslation()
   const { user: authUser, isLoggedIn } = useAuthStore();
   const { user: billingUser, initFromAuth, refreshMe } = useBillingStore();
-  const [tab, setTab] = useState<"codes" | "orders" | "txns" | "invite">("codes");
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "invite" ? "invite" : "codes";
+  const [tab, setTab] = useState<"codes" | "orders" | "txns" | "invite">(initialTab as "codes" | "orders" | "txns" | "invite");
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);

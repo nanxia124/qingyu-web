@@ -302,7 +302,7 @@ export default function AppLayout() {
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text" title="通知"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button>
-          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
+          <button onClick={() => navigate('/wallet?tab=invite')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
           <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
           <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
           {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}

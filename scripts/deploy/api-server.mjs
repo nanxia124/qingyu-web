@@ -523,7 +523,7 @@ async function fetchUrlAsBase64(imageUrl) {
 
 // 部分上游（如麦子 nano-banana 系列）提交后返回 task_id，需要轮询查询接口拿结果。
 // 探测到 data[0].task_id 且无 b64_json/url 时自动走这个分支。
-async function pollAsyncUpstreamTask(channel, taskId, timeoutMs = 300000) {
+async function pollAsyncUpstreamTask(channel, taskId, timeoutMs = 600000) {
   const base = String(channel.base_url || "").replace(/\/+$/, "");
   const pollUrl = /\/v1$/i.test(base) ? `${base}/tasks/${taskId}` : `${base}/v1/tasks/${taskId}`;
   const deadline = Date.now() + timeoutMs;
@@ -554,10 +554,11 @@ async function pollAsyncUpstreamTask(channel, taskId, timeoutMs = 300000) {
     if (st === "completed" || st === "succeeded" || st === "success") {
       return body;
     }
-    if (st === "failed" || st === "error" || st === "canceled" || st === "cancelled") {
-      throw new Error(body.error_msg || body.error?.message || "上游任务执行失败");
+    if (st === "failed" || st === "error" || st === "canceled" || st === "cancelled" || st === "violation") {
+      throw new Error(body.error_msg || body.error?.message || (st === "violation" ? "内容审核未通过" : "上游任务执行失败"));
     }
-    await new Promise(r => setTimeout(r, 2500));
+    // queued / pending / processing 都继续等待
+    await new Promise(r => setTimeout(r, 5000));
   }
 }
 
@@ -1796,15 +1797,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // GET /api/admin/key-stats — 密钥使用统计（占位，返回空结构）
+    // GET /api/admin/key-stats — 密钥使用统计
     if (pathname === "/api/admin/key-stats" && req.method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPlatformApiKeyStats());
       const stats = {};
       keys.forEach(k => { stats[k.id] = { success: 0, failure: 0, total: 0 }; });
       return sendJSON(res, 200, stats);
     }
 
-    // GET /api/admin/key-history — 密钥使用历史（占位）
+    // GET /api/admin/key-history — 密钥使用历史
     if (pathname === "/api/admin/key-history" && req.method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPlatformApiKeyHistory());
       const history = {};
       keys.forEach(k => { history[k.id] = []; });
       return sendJSON(res, 200, history);

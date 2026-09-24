@@ -10,6 +10,18 @@
 
 `0005_canvas_agent.sql` 补齐画布项目、节点、连线、画布聊天会话、Agent 线程、消息和事件日志。项目、节点和消息都按工作空间关联，后续同步时不会把一个空间的画布挂到另一个空间。
 
+`0041_platform_api_key_plaintext_guard.sql` 给平台 API 密钥增加数据库级明文禁止约束。服务端只写入加密密文；即使以后代码误把明文写入，PostgreSQL 也会拒绝这次写入。
+
+`0042_session_limit_hard_cap.sql` 把每个账号的设备上限固定为 1 到 3 台。`0043_session_count_guard.sql` 再用延迟约束触发器检查有效会话总数，防止并发或后台直写绕过设备上限。
+
+`0044_refund_amount_guard.sql` 把退款单笔金额、累计金额、币种和退款归属锁在订单范围内；退款申请建立后，订单、付款记录、金额、币种和幂等键不能被直接改写。
+
+`0045_quota_idempotency_scope_guard.sql` 要求额度预占和每日免费额度的幂等键同时匹配工作空间、用户、功能、额度类型和金额；范围不一致的重试会被数据库拒绝。
+
+`0046_async_generation_tasks.sql` 把生图请求拆成可追踪的 pending/running/succeeded/failed/refunded 状态；创建任务时原子预占额度，成功结算，失败和超时自动释放。成功任务必须绑定且只能绑定一种已经结算的额度预占；管理员审计日志只允许追加，告警和额度对账均保留数据库记录。0046 已通过空库重放，执行线上迁移前必须先备份并完成恢复演练；0046、0047 已完成线上执行和迁移后恢复演练。
+
+`0047_generation_task_idempotency_lock.sql` 为生成任务的幂等键增加事务级并发锁，并要求客户端把同一个幂等编号带到服务器；重复点击会复用原任务，不会重复预扣额度。
+
 `0006_row_level_security.sql` 为业务表开启 PostgreSQL 行级安全。服务端完成身份校验后在事务内用 `SET LOCAL app.user_id` 设置内部用户 ID，连接池复用时不会残留；数据库再根据个人空间所有者或团队有效成员关系过滤读写。`tests/rls_isolation.sql` 已验证 A 用户只能看到 A 空间，直接写入 B 空间会被拒绝。
 
 `0007_security_boundary.sql` 收紧业务连接账号：内容表可以在行级安全保护下读写；身份、成员、权限、支付、配额、机密、审计和迁移记录不能被普通账号直接写入。以后这些敏感操作必须由后端事务或数据库受控函数完成。`tests/privilege_boundary.sql` 检查了这条边界。
@@ -46,9 +58,11 @@
 
 首次执行时脚本会先判断 `app.schema_migrations` 是否存在：空库从 `0001_foundation.sql` 开始；已有库包括第一版在内全部按版本检查，不会重复执行第一版。迁移目录必须同时包含匹配的 `MANIFEST.sha256.json`。
 
-`scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量和迁移版本后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
+`scripts/Verify-EmptyReplay.ps1` 会启动一次隔离的 PostgreSQL 16 容器，从零执行全部迁移并在结束后自动删除容器；它用于验证迁移能否在新服务器或托管数据库上重建，不会连接正式数据库。
 
-`scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成备份和 SHA-256 校验文件，再按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务；异机副本仍需另配对象存储或另一台服务器。
+`scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量、迁移版本和必需的最新迁移后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
+
+`scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成备份和 SHA-256 校验文件；设置 `BACKUP_MIRROR_DIR` 后还会复制到已挂载的独立目录、重新校验并把 `app.backup_copies` 标记为 `verified`，失败会标记为 `failed` 并让任务失败；最后按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务。腾讯云 COS 等真正异机存储仍需另外配置适配器和凭据。
 
 正式应用连接必须使用独立的业务数据库角色，不能长期复用 Appwrite 的 `user` 角色。前端不能直接连接 PostgreSQL；迁移、回滚和备份由服务器端受控执行。
 
@@ -62,7 +76,7 @@
 - 额度预占、结算、释放和并发守恒已有 0010 事务函数并通过测试；退款、支付回调和真实供应商计费接入仍需单独实现。
 - 成员邀请、角色变更、订阅、支付、额度预占/结算仍需补受控事务函数；当前 0007 先确保普通连接账号不能绕过这些流程直接改事实表。
 - 分享目标、额度分配、组织归属、成员离职等核心关联和生命周期校验已补入迁移与测试；真实业务流程仍需继续做接口级验收。
-- 真实业务数据迁移尚未发生；备份文件校验和一次隔离恢复演练已在服务器完成，异机副本、定期任务、空库重放和字段数据字典仍需上线前补齐。
+- 真实业务数据迁移尚未发生；备份文件校验、挂载镜像副本、定期任务和空库重放已完成验证。真正跨故障域的腾讯云 COS 副本和字段数据字典仍需上线前补齐。
 - 计费 API 已接入用户映射、个人空间、套餐、订单、支付、订阅和额度流水。其他业务模块仍在逐步接入；不要把表数量作为全面性、隔离或上线验收证据，资源边界还要由后端事务和接口测试共同验证。
 
 ## 数据库图展示规范

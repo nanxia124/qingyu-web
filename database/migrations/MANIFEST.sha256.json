@@ -38,5 +38,12 @@
   "0037_usage_reservation_scope_integrity.sql": "95a0c09017e92f59a58b90aa59c039ab7b3608bf38a1bcd9874ab2629d108c34",
   "0038_usage_actor_workspace_integrity.sql": "e7fb4824801158c7335feaf7797a0628b8f9a043f372f7d0468242cc9f5f57dd",
   "0039_quota_allocation_scope_integrity.sql": "4afd970abc0858fb037544c8433b88f627f76665e7f6c2bd57ed5d9c4c16cdff",
-  "0040_outbox_aggregate_scope_integrity.sql": "75988a391ad38b840e75a4a786b9f455ca0632e308d89007369c8811b34ce1d3"
+  "0040_outbox_aggregate_scope_integrity.sql": "75988a391ad38b840e75a4a786b9f455ca0632e308d89007369c8811b34ce1d3",
+  "0041_platform_api_key_plaintext_guard.sql": "7e75691089e0bc4b864543fcaa770195221435e0968862b144a9d2b2601eb78d",
+  "0042_session_limit_hard_cap.sql": "55204ed85a0ff4f89e9612f2f3e776d88e23159f60944f845661a531169c931e",
+  "0043_session_count_guard.sql": "148c46d6c5ea9af1daff23bf8dae04995f49ade3ee95a6845577555072c13b0d",
+  "0044_refund_amount_guard.sql": "0a63489e80017f1960f912dfe66e4335def9f829751fbf05dd41a14165932bcd",
+  "0045_quota_idempotency_scope_guard.sql": "43b785a5952ca1f645b6ba60526224fd72ca891ba35eacaddc073892a7f98cbe",
+  "0046_async_generation_tasks.sql": "1b3669ba921af6d99e4fbdd5df25902e71b4906bf98bedc10a9130f58cedad64",
+  "0047_generation_task_idempotency_lock.sql": "e74644fbd449ea247bc56cbd29634f7615d89c4b0067a3508a2eb809d37a5161"
 }

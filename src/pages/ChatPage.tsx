@@ -132,7 +132,7 @@ export default function ChatPage() {
       {/* 输入区：居中 600×60 */}
       <div className="shrink-0 px-4 pb-5">
         <div className="mx-auto w-[600px] max-w-full">
-          <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-card px-2 py-2 transition-colors focus-within:ring-1 focus-within:ring-accent hover:bg-surface-hover">
+          <div className="flex min-h-[60px] items-end gap-2 rounded-xl bg-card px-2 py-2 transition-colors hover:bg-surface-hover">
             {/* 附件按钮 */}
             <button
               onClick={() => alert(t('chat.attachSoon'))}
@@ -154,7 +154,7 @@ export default function ChatPage() {
               }}
               rows={1}
               placeholder={t('chat.placeholder')}
-              className="max-h-40 flex-1 resize-none bg-transparent text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
+              className="chat-input max-h-40 flex-1 resize-none bg-transparent text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
             />
             {/* 发送按钮 */}
             <button

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { writeAssetUpload } from './asset-upload.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
@@ -440,12 +441,71 @@ function proxyRequest(req, res, targetPath) {
     proxyReq.on("timeout", () => {
       proxyReq.destroy();
       if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, phase: "timeout" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
-      if (!res.headersSent) sendJSON(res, 504, { error: "上游请求超时" });
+      if (!res.headersSent) sendJSON(res, 504, { error: "生成超时，请重试" });
     });
 
     proxyReq.write(forwardBody);
     proxyReq.end();
   });
+}
+
+// ---------- 异步生图任务 worker（0046）：后台调用上游，状态机 pending→running→succeeded/refunded ----------
+async function callUpstreamImage(channel, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const base = String(channel.base_url || "").replace(/\/+$/, "");
+    const url = new URL(base + "/v1/images/generations");
+    const lib = url.protocol === "https:" ? https : http;
+    const forwardBody = JSON.stringify(bodyObj);
+    const proxyReq = lib.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === "https:" ? 443 : 80),
+      path: url.pathname + url.search,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${channel.api_key}`,
+        "Content-Length": Buffer.byteLength(forwardBody),
+      },
+      timeout: 600000,
+    }, (upstreamRes) => {
+      const chunks = [];
+      upstreamRes.on("data", c => chunks.push(c));
+      upstreamRes.on("end", () => resolve({ status: upstreamRes.statusCode || 502, text: Buffer.concat(chunks).toString("utf-8") }));
+    });
+    proxyReq.on("error", (e) => reject(e));
+    proxyReq.on("timeout", () => { proxyReq.destroy(); reject(new Error("生成超时")); });
+    proxyReq.write(forwardBody);
+    proxyReq.end();
+  });
+}
+
+async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
+  let claimed = false;
+  try {
+    claimed = await postgresBilling.markTaskRunning(identity.sub, task.id, null);
+    if (!claimed) return;
+    const { status, text } = await callUpstreamImage(channel, bodyObj);
+    let payload = {};
+    try { payload = JSON.parse(text); } catch { payload = {}; }
+    if (status >= 200 && status < 300 && Array.isArray(payload.data)) {
+      const outputs = payload.data.map((d, i) => ({
+        type: "image", index: i,
+        b64_json: d.b64_json || null, url: d.url || null,
+        revisedPrompt: d.revised_prompt || null,
+      })).filter(o => o.b64_json || o.url);
+      await postgresBilling.settleTaskSuccess(identity.sub, task.id, outputs, payload.id || null);
+    } else {
+      const msg = (payload && payload.error && payload.error.message) || `上游返回状态 ${status}`;
+      await postgresBilling.failTask(identity.sub, task.id, "upstream_error", String(msg).slice(0, 500), true);
+    }
+  } catch (e) {
+    console.error("[task worker]", task.id, e.message);
+    // 没领取成功的处理者不能释放另一个处理者正在使用的额度。
+    if (claimed) {
+      try { await postgresBilling.failTask(identity.sub, task.id, "upstream_error", e.message, true); }
+      catch (settlementError) { console.error('[task settlement]', task.id, settlementError.message); }
+    }
+  }
 }
 
 // ===================== 计费路由处理器 =====================
@@ -1093,24 +1153,9 @@ async function handleAssets(req, res, pathname, method, url) {
       const objectKey = `${identity.sub}/${crypto.randomUUID()}${extension}`;
       const outputPath = path.join(OBJECT_DATA_DIR, objectKey);
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      const hash = crypto.createHash('sha256');
-      let sizeBytes = 0;
-      await new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(outputPath, { flags: 'wx', mode: 0o600 });
-        let settled = false;
-        const fail = (error) => { if (!settled) { settled = true; output.destroy(); reject(error); } };
-        req.on('data', chunk => {
-          sizeBytes += chunk.length;
-          if (sizeBytes > 50 * 1024 * 1024) return fail(new Error('单个文件不能超过50MB'));
-          hash.update(chunk);
-          output.write(chunk);
-        });
-        req.on('end', () => { if (!settled) { settled = true; output.end(resolve); } });
-        req.on('error', fail);
-        output.on('error', fail);
-      });
+      const { sizeBytes, checksum } = await writeAssetUpload(req, outputPath);
       try {
-        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum: hash.digest('hex'), objectKey, metadata }));
+        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum, objectKey, metadata }));
       } catch (error) {
         try { fs.unlinkSync(outputPath); } catch { /* 文件已不存在 */ }
         throw error;
@@ -1186,8 +1231,7 @@ const server = http.createServer(async (req, res) => {
         .map(k => ({
           id: k.id,
           name: k.name,
-          base_url: k.base_url,
-          provider: k.provider,
+            provider: k.provider,
           model: k.model,
         }));
       return sendJSON(res, 200, publicKeys);
@@ -1197,6 +1241,54 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith("/api/proxy/openai/") && req.method === "POST") {
       const targetPath = pathname.replace("/api/proxy/openai", "");
       return proxyRequest(req, res, targetPath);
+    }
+
+    // ===== 异步生图任务（0046）：提交即返回 task_id，后台执行，前端轮询 =====
+    if (pathname === "/api/generation-tasks" && req.method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录后再使用 AI 服务" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
+      const body = await parseBody(req);
+      const modelField = String(body.model || "");
+      const match = findChannel(modelField);
+      if (!match) return sendJSON(res, 502, { error: "当前模型暂不可用，请稍后再试" });
+      const channel = match.channel;
+      const bodyObj = { ...body };
+      const idempotencyKey = String(bodyObj.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `image-task:${crypto.randomUUID()}`;
+      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds;
+      if (modelField.includes("::")) bodyObj.model = match.model;
+      bodyObj.response_format = bodyObj.response_format || "b64_json";
+      const quantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
+      try {
+        const task = await postgresBilling.createGenerationTask(identity.sub, {
+           taskType: "image", provider: channel.provider, model: match.model,
+           prompt: String(bodyObj.prompt || "").slice(0, 4000), parameters: bodyObj, quantity,
+           idempotencyKey,
+           timeoutSeconds: 600,
+        });
+        // 立即返回，不等待上游；后台异步执行避免请求超时导致状态不确定。
+        setImmediate(() => runGenerationTaskWorker(identity, task, channel, bodyObj));
+        return sendJSON(res, 202, { taskId: task.id, status: task.status });
+      } catch (e) {
+        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(e.message || ""))) return sendJSON(res, 402, { error: e.message });
+        console.error("[generation-task] create failed", e);
+        return sendJSON(res, 500, { error: "生成失败，请稍后重试" });
+      }
+    }
+    if (pathname === "/api/generation-tasks" && req.method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      return sendJSON(res, 200, await postgresBilling.listMyGenerationTasks(identity.sub, 50));
+    }
+    const taskMatch = pathname.match(/^\/api\/generation-tasks\/([^/]+)$/);
+    if (taskMatch && req.method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      try { return sendJSON(res, 200, await postgresBilling.getGenerationTask(identity.sub, taskMatch[1])); }
+      catch (e) { return sendJSON(res, 404, { error: e.message }); }
     }
 
     // POST /api/admin/login — 管理员登录
@@ -1288,6 +1380,20 @@ const server = http.createServer(async (req, res) => {
       if (payload.role && payload.role !== "admin") {
         return sendJSON(res, 403, { error: "无管理员权限" });
       }
+    }
+
+    // ===== 管理员：对账、异常告警（0046） =====
+    if (postgresBilling && pathname === "/api/admin/billing/reconciliation" && req.method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.adminReconciliation());
+    }
+    if (postgresBilling && pathname === "/api/admin/billing/alerts" && req.method === "GET") {
+      const all = url.searchParams.get("all") === "1";
+      return sendJSON(res, 200, await postgresBilling.listAlerts(!all));
+    }
+    const alertAckMatch = pathname.match(/^\/api\/admin\/billing\/alerts\/([^/]+)\/ack$/);
+    if (postgresBilling && alertAckMatch && req.method === "POST") {
+      await postgresBilling.ackAlert(alertAckMatch[1], (requestIdentity && requestIdentity.sub) || "admin");
+      return sendJSON(res, 200, { success: true });
     }
 
     // PostgreSQL 模式下，管理后台密钥也必须走业务库，不能退回服务器 JSON 文件。
@@ -1543,6 +1649,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  // 0046：每 30 秒回收超时在途任务并释放过期预扣额度；发现守恒异常自动写告警。
+  if (postgresBilling) {
+    setInterval(() => {
+      postgresBilling.reapStaleTasks()
+        .then(r => { if ((r.refunded_tasks||0) > 0 || (r.expired_quota_reservations||0) > 0) console.log("[reaper]", JSON.stringify(r)); })
+        .catch(e => console.error("[reaper] failed", e.message));
+    }, 30000).unref?.();
+  }
+
   console.log(`[qingyu-api] 服务已启动，端口 ${PORT}`);
   console.log(`[qingyu-api] 数据目录: ${DATA_DIR}`);
   console.log(`[qingyu-api] 活跃密钥: ${keys.filter(k => k.is_active === 1).length} 个`);

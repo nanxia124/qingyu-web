@@ -3,10 +3,28 @@ button { cursor: pointer; }
 @custom-variant dark (&:is(.dark *));
 
 /* 主题切换圆形扩散（View Transitions）：关闭默认淡入淡出，交由 AnimatedThemeToggler 控制 */
+@property --reveal-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
+}
+
+/* 圆形扩散带羽化边缘：径向渐变 mask 柔化边界，避免硬切边 */
+html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
+  -webkit-mask-image: radial-gradient(circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+    #000 0px,
+    #000 calc(var(--reveal-radius, 0px) - var(--reveal-feather, 32px)),
+    transparent var(--reveal-radius, 0px));
+  mask-image: radial-gradient(circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+    #000 0px,
+    #000 calc(var(--reveal-radius, 0px) - var(--reveal-feather, 32px)),
+    transparent var(--reveal-radius, 0px));
 }
 
 @keyframes bgFade {
@@ -365,6 +383,9 @@ input.home-search-input:focus::placeholder {
 .prompt-box { }
 html:not(.dark) .prompt-box:focus-within { border-color: var(--color-accent); }
 html:not(.dark) .prompt-box textarea:focus { box-shadow: none; }
+
+/* 聊天输入框：禁止聚焦描边 */
+.chat-input:focus { box-shadow: none; }
 
 /* 生图页子功能标签：浅色下未选中标签 hover 底色（Tailwind 变体类未生成，改用确定性 CSS） */
 html:not(.dark) .image-subtab:not(:disabled):hover { background-color: var(--color-surface-hover); }

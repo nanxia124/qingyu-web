@@ -8,6 +8,7 @@ DB_USER="${PGUSER:-user}"
 BACKUP_FILE="${BACKUP_FILE:?请设置 BACKUP_FILE，例如 /home/ubuntu/backups/qingyu/qingyu_business_20260923T000000Z.dump}"
 DRILL_DB="${DRILL_DB:-qingyu_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)}"
 ENVIRONMENT="${RESTORE_DRILL_ENVIRONMENT:-isolated_server}"
+REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0047_generation_task_idempotency_lock}"
 
 test -r "$BACKUP_FILE"
 sha256sum -c "${BACKUP_FILE}.sha256"
@@ -58,6 +59,9 @@ schema_version="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRILL_DB
   "select coalesce(max(version),'unknown') from app.schema_migrations")"
 test "$table_count" -ge 1
 test "$schema_version" = "$expected_schema_version"
+required_migration="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRILL_DB" -Atqc \
+  "select case when exists (select 1 from app.schema_migrations where version='$REQUIRED_MIGRATION_VERSION') then 'ok' else 'failed' end")"
+test "$required_migration" = "ok"
 rto_seconds="$(( $(date +%s) - started_epoch ))"
 
 sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_STOP=1 \
@@ -65,7 +69,7 @@ sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_S
   -v schema_version="$schema_version" -f - >/dev/null <<'SQL'
 update app.restore_drills
 set status='passed',restored_at=now(),completed_at=now(),rpo_seconds=0,rto_seconds=:'rto_seconds',
-    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'checksum_verified', true)
+    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'required_migration', '$REQUIRED_MIGRATION_VERSION', 'checksum_verified', true)
 where id=:'drill_id';
 SQL
 

@@ -501,13 +501,21 @@ function stringValue(value: unknown) {
     return typeof value === "string" ? value : "";
 }
 
+function friendlyProviderError(message: unknown): string {
+    const text = String(message || "");
+    if (/safety|content[_ -]?policy|blocked|violat|sensitive|moderation|rejected|审核|安全|违规|不符合/i.test(text)) {
+        return apiText("contentRejected");
+    }
+    return apiText("imageRequestFailed");
+}
+
 function validateResponsePayload(payload: ResponseApiPayload) {
     if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || apiText("requestFailed"));
-    if (payload.error?.message) throw new Error(payload.error.message);
+    if (payload.error?.message) throw new Error(friendlyProviderError(payload.error.message));
 }
 
 function validateGeminiPayload(payload: GeminiPayload) {
-    if (payload.error?.message) throw new Error(payload.error.message);
+    if (payload.error?.message) throw new Error(friendlyProviderError(payload.error.message));
     if (payload.promptFeedback?.blockReason) throw new Error(apiText("geminiRejected", { reason: payload.promptFeedback.blockReason }));
 }
 

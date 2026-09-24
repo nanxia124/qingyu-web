@@ -446,6 +446,18 @@
     mix-blend-mode: normal;
 }
 
+/* 圆形扩散带羽化边缘：径向渐变 mask 柔化边界，避免硬切边 */
+html[data-magicui-theme-vt="circle-reveal"]::view-transition-new(root) {
+    -webkit-mask-image: radial-gradient(circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+        #000 0px,
+        #000 calc(var(--reveal-radius, 0px) - var(--reveal-feather, 32px)),
+        transparent var(--reveal-radius, 0px));
+    mask-image: radial-gradient(circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+        #000 0px,
+        #000 calc(var(--reveal-radius, 0px) - var(--reveal-feather, 32px)),
+        transparent var(--reveal-radius, 0px));
+}
+
 .agent-streamdown {
     overflow-wrap: anywhere;
 }

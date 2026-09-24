@@ -1161,9 +1161,9 @@ export async function createPostgresBillingStore() {
       const object = await client.query(`insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status) values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`, [workspaceId, owner.rows[0].id, file.storageProvider || 'local', file.bucket || 'qingyu-assets', file.objectKey, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream']);
       const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : {};
       let generationTaskId = null;
-      if (metadata.source === 'image_generation') {
-        const task = await client.query(`insert into app.generation_tasks(workspace_id,created_by,task_type,provider,model,prompt,parameters,status,request_id,idempotency_key,started_at,finished_at)
-          values($1,$2,'image',$3,$4,$5,$6::jsonb,'succeeded',$7,$8,now(),now()) returning id`, [workspaceId, owner.rows[0].id, String(metadata.provider || 'configured').slice(0,80), String(metadata.model || '').slice(0,160), String(metadata.prompt || '').slice(0,2000), JSON.stringify({ quality: metadata.quality || null, size: metadata.size || null }), `asset-${crypto.randomUUID()}`, `asset-upload-${crypto.randomUUID()}`]);
+      if (metadata.source === 'image_generation' && metadata.sourceGenerationTaskId) {
+        const task = await client.query(`select id from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 and status='succeeded'`, [metadata.sourceGenerationTaskId, workspaceId, owner.rows[0].id]);
+        if (!task.rowCount) throw new Error('来源生图任务不存在、未成功或不属于当前用户');
         generationTaskId = task.rows[0].id;
       }
       const asset = await client.query(`insert into app.assets(workspace_id,created_by,source_generation_id,asset_type,title,visibility,moderation_status,status) values($1,$2,$3,$4,$5,'private','approved','active') returning id,title,asset_type,visibility,status,created_at,updated_at`, [workspaceId, owner.rows[0].id, generationTaskId, assetType, title]);
@@ -1188,5 +1188,168 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  // ── 异步生图任务（0046）：创建即预占额度并返回 task，由后端 worker 异步调用上游 ──
+  function apiTask(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      status: row.status,
+      taskType: row.task_type,
+      provider: row.provider || '',
+      model: row.model || '',
+      prompt: row.prompt || '',
+      parameters: row.parameters || {},
+      outputs: row.outputs || [],
+      errorCode: row.error_code || null,
+      errorMessage: row.error_message || null,
+      requestId: row.request_id,
+      createdAt: new Date(row.created_at).toISOString(),
+      startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
+      finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
+      timeoutAt: row.timeout_at ? new Date(row.timeout_at).toISOString() : null,
+    };
+  }
+
+  async function createGenerationTask(appwriteUserId, input = {}) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const idempotencyKey = String(input.idempotencyKey || `task:${crypto.randomUUID()}`).slice(0, 160);
+      const quantity = Math.max(0, Math.min(15, Number(input.quantity) || 1));
+      const r = await client.query(
+        `select * from app.create_generation_task($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)`,
+        [me.workspace_id, me.internal_user_id, String(input.taskType || 'image').slice(0, 32),
+         String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null,
+         String(input.pricingVersion || '').slice(0, 160) || null, String(input.prompt || '').slice(0, 4000),
+         JSON.stringify(input.parameters || {}), quantity, idempotencyKey,
+         Math.max(30, Number(input.timeoutSeconds) || 600)]
+      );
+      await client.query('commit');
+      return apiTask(r.rows[0]);
+    } catch (e) { await client.query('rollback'); throw e; } finally { client.release(); }
+  }
+
+  async function getGenerationTask(appwriteUserId, taskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const r = await pool.query(
+      `select * from app.generation_tasks where id=$1 and workspace_id=$2`,
+      [taskId, me.workspace_id]
+    );
+    if (!r.rowCount) throw new Error('任务不存在或无权访问');
+    return apiTask(r.rows[0]);
+  }
+
+  async function listMyGenerationTasks(appwriteUserId, limit = 50) {
+    const me = await getUser(appwriteUserId);
+    if (!me) return [];
+    const take = Math.min(200, Math.max(1, Number(limit) || 50));
+    const r = await pool.query(
+      `select * from app.generation_tasks where workspace_id=$1 order by created_at desc limit $2`,
+      [me.workspace_id, take]
+    );
+    return r.rows.map(apiTask);
+  }
+
+  async function markTaskRunning(appwriteUserId, taskId, providerTaskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      // 领取与状态检查共用行锁；重复处理者等待首个事务提交后只能读到 running。
+      const task = await client.query(`select status,timeout_at from app.generation_tasks
+        where id=$1 and workspace_id=$2 and created_by=$3 for update`,
+        [taskId, me.workspace_id, me.internal_user_id]);
+      if (!task.rowCount) throw new Error('任务不存在或无权领取');
+      if (task.rows[0].status !== 'pending' ||
+          (task.rows[0].timeout_at && new Date(task.rows[0].timeout_at).getTime() <= Date.now())) {
+        await client.query('commit');
+        return false;
+      }
+      await client.query(`select app.mark_generation_task_running($1,$2)`, [taskId, providerTaskId || null]);
+      await client.query('commit');
+      return true;
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+  async function settleTaskSuccess(appwriteUserId, taskId, outputs, providerRef) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const r = await client.query(`select * from app.settle_generation_task_success($1,$2::jsonb,$3)`, [taskId, JSON.stringify(outputs || []), providerRef || null]);
+      await client.query('commit');
+      return apiTask(r.rows[0]);
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+  async function failTask(appwriteUserId, taskId, errorCode, errorMessage, refund = true) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const r = await client.query(`select * from app.fail_generation_task($1,$2,$3,$4)`, [taskId, errorCode || 'failed', errorMessage || '', !!refund]);
+      await client.query('commit');
+      return apiTask(r.rows[0]);
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  // 超时自动回收：在途任务→refunded，过期预占→expired，守恒异常→告警。
+  async function reapStaleTasks() {
+    const r = await pool.query(`select app.reap_stale_generation_tasks() AS result`);
+    return r.rows[0]?.result || {};
+  }
+
+  // 管理员审计、对账、告警
+  async function writeAdminAudit({ actor, action, workspaceId = null, targetType = null, targetId = null, summary = '', metadata = {}, ip = null }) {
+    const r = await pool.query(
+      `select app.write_admin_audit($1,$2,$3,$4,$5,$6,$7::jsonb,$8::inet) AS id`,
+      [String(actor).slice(0, 160), String(action).slice(0, 120), workspaceId,
+       targetType ? String(targetType).slice(0, 80) : null, targetId ? String(targetId).slice(0, 160) : null,
+       String(summary || '').slice(0, 2000), JSON.stringify(metadata || {}), ip]
+    );
+    return r.rows[0]?.id;
+  }
+  async function adminReconciliation() {
+    const r = await pool.query(
+      `select q.*, w.owner_user_id, u.email as owner_email, u.appwrite_user_id
+       from app.v_quota_reconciliation q
+       join app.workspaces w on w.id=q.workspace_id
+       join app.user_accounts u on u.id=w.owner_user_id
+       order by abs(q.drift) desc nulls last`
+    );
+    return r.rows.map(x => ({
+      workspaceId: x.workspace_id, ownerEmail: x.owner_email, quotaCode: x.quota_code,
+      granted: Number(x.granted), reserved: Number(x.reserved), consumed: Number(x.consumed),
+      available: Number(x.available), ledgerReserved: Number(x.ledger_reserved),
+      ledgerCommitted: Number(x.ledger_committed), ledgerReleased: Number(x.ledger_released),
+      drift: Number(x.drift || 0),
+    }));
+  }
+  async function listAlerts(openOnly = true) {
+    const r = await pool.query(
+      `select id,alert_type,severity,workspace_id,summary,detail,status,created_at,acknowledged_at,acknowledged_by
+       from app.platform_alerts ${openOnly ? `where status='open'` : ''} order by created_at desc limit 200`
+    );
+    return r.rows.map(x => ({
+      id: x.id, type: x.alert_type, severity: x.severity, workspaceId: x.workspace_id,
+      summary: x.summary, detail: x.detail || {}, status: x.status,
+      createdAt: new Date(x.created_at).toISOString(), acknowledgedAt: x.acknowledged_at, acknowledgedBy: x.acknowledged_by,
+    }));
+  }
+  async function ackAlert(alertId, actor) {
+    const r = await pool.query(
+      `update app.platform_alerts set status='ack', acknowledged_at=now(), acknowledged_by=$2
+       where id=$1 and status<>'closed' returning id`, [alertId, String(actor).slice(0, 160)]);
+    return r.rowCount === 1;
+  }
+
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, writeAdminAudit, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

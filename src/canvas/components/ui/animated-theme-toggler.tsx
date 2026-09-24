@@ -143,9 +143,52 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
             return;
         }
 
+        const root = document.documentElement;
+
+        // 圆形扩散：径向渐变 mask 羽化边缘 + 柔和缓动
+        if (shape === "circle") {
+            root.dataset.magicuiThemeVt = "circle-reveal";
+            root.style.setProperty("--reveal-x", `${x}px`);
+            root.style.setProperty("--reveal-y", `${y}px`);
+            root.style.setProperty("--reveal-feather", "36px");
+
+            const cleanup = () => {
+                delete root.dataset.magicuiThemeVt;
+                root.style.removeProperty("--reveal-x");
+                root.style.removeProperty("--reveal-y");
+                root.style.removeProperty("--reveal-feather");
+            };
+
+            const transition = document.startViewTransition(() => {
+                flushSync(applyTheme);
+            });
+            if (typeof transition?.finished?.finally === "function") {
+                transition.finished.finally(cleanup);
+            } else {
+                cleanup();
+            }
+
+            const ready = transition?.ready;
+            if (ready && typeof ready.then === "function") {
+                ready.then(() => {
+                    document.documentElement.animate(
+                        { "--reveal-radius": ["0px", `${maxRadius}px`] },
+                        {
+                            duration,
+                            // 柔和减速曲线：开头有速度但快速收住，配合羽化边不生硬
+                            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+                            fill: "forwards",
+                            pseudoElement: "::view-transition-new(root)",
+                        },
+                    );
+                });
+            }
+            return;
+        }
+
+        // 其他形状：保持 clip-path 硬边动画
         const clipPath = getThemeTransitionClipPaths(shape, x, y, maxRadius, viewportWidth, viewportHeight);
 
-        const root = document.documentElement;
         root.dataset.magicuiThemeVt = "active";
         root.style.setProperty("--magicui-theme-toggle-vt-duration", `${duration}ms`);
         // Pin the collapsed clip-path via CSS so Firefox does not paint the new

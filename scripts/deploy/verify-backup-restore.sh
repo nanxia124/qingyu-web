@@ -7,6 +7,7 @@ CONTAINER="${PG_DOCKER_CONTAINER:-appwrite-postgresql}"
 DB_USER="${PGUSER:-user}"
 BACKUP_DIR="${BACKUP_DIR:-/home/ubuntu/backups/qingyu}"
 DATABASE="${PGDATABASE:-qingyu_business}"
+REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0047_generation_task_idempotency_lock}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 verify_db="${DATABASE}_restore_verify_${stamp//[^a-zA-Z0-9_]/_}"
 dump_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DATABASE}_*.dump" -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2- || true)"
@@ -46,12 +47,17 @@ sudo docker exec "$CONTAINER" pg_restore -U "$DB_USER" -d "$verify_db" --no-owne
 
 result="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$verify_db" -Atqc "
 select 'schema_migrations=' || count(*) from app.schema_migrations;
+select 'required_migration=' || case when exists (select 1 from app.schema_migrations where version='${REQUIRED_MIGRATION_VERSION}') then 'ok' else 'failed' end;
 select 'tables=' || count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='app' and c.relkind='r';
 select 'rls_tables=' || count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='app' and c.relkind='r' and c.relrowsecurity;
 select 'sentinel=' || case when to_regclass('app.user_accounts') is not null and to_regclass('app.backup_runs') is not null then 'ok' else 'failed' end;")"
 printf '%s\n' "$result"
 if ! grep -q '^sentinel=ok$' <<<"$result"; then
   echo "恢复后的结构检查失败" >&2
+  exit 1
+fi
+if ! grep -q '^required_migration=ok$' <<<"$result"; then
+  echo "恢复后的备份缺少必需迁移：$REQUIRED_MIGRATION_VERSION" >&2
   exit 1
 fi
 if [[ -n "$drill_id" ]]; then

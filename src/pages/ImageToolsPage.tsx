@@ -30,11 +30,15 @@ import {
   Trash2 as TrashIcon,
   PanelRightOpen,
   ChevronDown,
+  History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { requestGeneration, requestEdit } from '@canvas/services/api/image'
+import { submitImageTask, pollImageTask, taskOutputToDataUrls, resolveOpenImageParams, listImageTasks } from '@/lib/generationTasks'
+import type { GenTask } from '@/lib/generationTasks'
+import { nanoid } from 'nanoid'
 import type { ReferenceImage } from '@canvas/types/image'
 import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
 import { api } from '@/lib/api'
@@ -98,6 +102,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [undoPrompt, setUndoPrompt] = useState('')
   const [commonPrompts, setCommonPrompts] = useState<{id:number; title:string; content:string}[]>([])
   const [showCommonPromptModal, setShowCommonPromptModal] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyTasks, setHistoryTasks] = useState<GenTask[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [newPromptTitle, setNewPromptTitle] = useState('')
   const [newPromptContent, setNewPromptContent] = useState('')
   const [replaceIndex, setReplaceIndex] = useState<number | null>(null)
@@ -122,6 +129,18 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
   const copyPrompt = (text: string) => {
     navigator.clipboard?.writeText(text).then(() => showToast(t('imageTools.toasts.copiedPrompt'))).catch(() => showToast(t('imageTools.toasts.copyFailed'), 'error'))
+  }
+
+  const openHistory = async () => {
+    setShowHistory(true)
+    setHistoryLoading(true)
+    try {
+      setHistoryTasks(await listImageTasks(50))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '查询历史失败', 'error')
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const deleteResult = (id: number) => {
@@ -240,9 +259,29 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         type: 'image',
         dataUrl,
       }))
+      let sourceGenerationTaskId: string | undefined
       const generated = references.length
         ? await requestEdit(requestConfig, prompt.trim(), references)
-        : await requestGeneration(requestConfig, prompt.trim())
+        : await (async () => {
+            // 0046 生图改异步任务：提交即返回 taskId，后台生成，前端轮询。
+            const imgParams = resolveOpenImageParams({ ratio, quality })
+            const { taskId } = await submitImageTask({
+              model: selectedModel,
+              prompt: prompt.trim(),
+              n: requestedCount,
+              ...imgParams,
+              response_format: 'b64_json',
+            })
+            sourceGenerationTaskId = taskId
+            const task = await pollImageTask(taskId)
+            if (task.status === 'failed' || task.status === 'refunded') {
+              const msg = task.errorCode === 'timeout'
+                ? t('imageTools.toasts.timeoutRefunded')
+                : t('imageTools.toasts.failedRefunded');
+              throw new Error(msg)
+            }
+            return taskOutputToDataUrls(task).map((dataUrl) => ({ id: nanoid(), dataUrl }))
+          })()
       const now = new Date()
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const modelLabel = selectedModel.split('::').pop() || selectedModel
@@ -253,6 +292,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           const file = new File([blob], `生成结果-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
           return await api.uploadAsset<{ id: string }>(file, {
             source: 'image_generation',
+            ...(sourceGenerationTaskId ? { sourceGenerationTaskId } : {}),
             prompt: prompt.trim(),
             model: modelLabel,
             quality,
@@ -593,6 +633,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               </div>
             )}
           </div>
+          <button onClick={openHistory} data-tip={t('imageTools.toasts.history')} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
+            <History className="size-[14px]" />
+          </button>
           <button onClick={() => showToast(t('imageTools.toasts.search'))} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <Search className="size-[14px]" />
           </button>
@@ -729,6 +772,50 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
       {/* Toast — 顶部居中，成功绿色/失败红色 */}
       {/* 常用提示词弹窗 */}
+      {showHistory && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+          onClick={() => setShowHistory(false)}
+        >
+          <div
+            className="flex max-h-[80vh] w-[560px] flex-col rounded-xl bg-card p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[16px] text-text">{t('imageTools.historyTitle')}</h3>
+              <button onClick={() => setShowHistory(false)} className="text-text-muted hover:text-text">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {historyLoading && (
+                <p className="py-10 text-center text-[13px] text-text-secondary">{t('imageTools.historyLoading')}</p>
+              )}
+              {!historyLoading && historyTasks.length === 0 && (
+                <p className="py-10 text-center text-[13px] text-text-secondary">{t('imageTools.historyEmpty')}</p>
+              )}
+              {!historyLoading && historyTasks.map((historyItem) => {
+                const thumb = taskOutputToDataUrls(historyItem)[0]
+                const statusLabel = historyItem.status === 'succeeded' ? t('imageTools.statusDone')
+                  : historyItem.status === 'refunded' ? t('imageTools.statusRefunded')
+                  : historyItem.status === 'failed' ? t('imageTools.statusFailed')
+                  : t('imageTools.statusRunning')
+                return (
+                  <div key={historyItem.id} className="mb-2 flex gap-3 rounded-lg bg-secondary p-2.5">
+                    <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-hover">
+                      {thumb ? <img src={thumb} alt="" className="h-full w-full object-cover" /> : <span className="text-[11px] text-text-muted">{statusLabel}</span>}
+                    </div>
+                    <div className="flex min-w-0 flex-1 flex-col justify-center">
+                      <p className="truncate text-[13px] text-text">{historyItem.prompt || '—'}</p>
+                      <p className="mt-0.5 text-[11px] text-text-secondary">{new Date(historyItem.createdAt).toLocaleString()} · {statusLabel}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>, document.body)}
+
       {showCommonPromptModal && createPortal(
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"

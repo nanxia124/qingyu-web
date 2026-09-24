@@ -715,12 +715,12 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <input
               type="range"
               min={30}
-              max={300}
+              max={500}
               value={thumbScale}
               onChange={(e) => setThumbScale(Number(e.target.value))}
-              onWheel={(e) => { e.preventDefault(); setThumbScale(v => Math.min(300, Math.max(30, v + (e.deltaY < 0 ? 6 : -6)))) }}
+              onWheel={(e) => { e.preventDefault(); setThumbScale(v => Math.min(500, Math.max(30, v + (e.deltaY < 0 ? 6 : -6)))) }}
               className="thumb-scale-slider w-24"
-              style={{ ['--pct' as string]: `${((thumbScale - 30) / 270) * 100}%` }}
+              style={{ ['--pct' as string]: `${((thumbScale - 30) / 470) * 100}%` }}
             />
             <button onClick={() => setViewMode('list')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='list' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <List className="size-[14px]" />
@@ -735,7 +735,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         </div>
 
         {/* 结果列表 — 根据 viewMode 切换布局 */}
-        <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <div
+          className="flex-1 overflow-y-auto p-4 pt-2"
+          onWheel={(e) => {
+            if (!e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            setThumbScale(v => Math.min(500, Math.max(30, v + (e.deltaY < 0 ? 8 : -8))));
+          }}
+        >
           {results.length === 0 && generating && (
             <div className="flex h-full flex-col items-center justify-center text-text-muted">
               <Loader2 className="mb-3 size-8 animate-spin text-accent" />

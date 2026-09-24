@@ -795,7 +795,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             </div>
           )}
           {viewMode === 'grid' && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbScale}px, 1fr))` }}>
               {results.map((r) => (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
                   {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
@@ -815,7 +815,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <div className="space-y-4">
               {results.map((r) => (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
-                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-[400px] w-full cursor-zoom-in object-contain bg-surface-hover" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="w-full cursor-zoom-in object-contain bg-surface-hover" style={{ height: thumbScale * 2.5 }} onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex items-center justify-center bg-surface-hover text-[14px] text-text-secondary" style={{ height: thumbScale * 2.5 }}>{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>

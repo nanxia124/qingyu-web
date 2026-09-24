@@ -119,7 +119,7 @@ export default function ModelCatalog() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
         },
-        body: JSON.stringify(addForm),
+        body: JSON.stringify({ ...addForm, modelId: addForm.modelId.trim() || addForm.displayName.trim() || `model-${Date.now()}` }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -577,7 +577,7 @@ export default function ModelCatalog() {
             <div className="text-base font-medium text-text mb-4">添加模型到目录</div>
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">模型 ID *</label>
+                <label className="text-xs text-gray-500 mb-1 block">模型 ID（可选，后面再关联实际模型）</label>
                 <input
                   type="text"
                   value={addForm.modelId}

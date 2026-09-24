@@ -82,7 +82,7 @@ function getThemeTransitionClipPaths(variant: TransitionVariant, cx: number, cy:
     }
 }
 
-export const AnimatedThemeToggler = ({ children, className, duration = 400, variant, fromCenter = false, theme, targetTheme, onThemeChange, ...props }: AnimatedThemeTogglerProps) => {
+export const AnimatedThemeToggler = ({ children, className, duration = 550, variant, fromCenter = false, theme, targetTheme, onThemeChange, ...props }: AnimatedThemeTogglerProps) => {
     const { t } = useTranslation();
     const shape = variant ?? "circle";
     const [isDark, setIsDark] = useState(false);
@@ -150,7 +150,7 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
             root.dataset.magicuiThemeVt = "circle-reveal";
             root.style.setProperty("--reveal-x", `${x}px`);
             root.style.setProperty("--reveal-y", `${y}px`);
-            root.style.setProperty("--reveal-feather", "36px");
+            root.style.setProperty("--reveal-feather", "320px");
 
             const cleanup = () => {
                 delete root.dataset.magicuiThemeVt;
@@ -175,8 +175,7 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
                         { "--reveal-radius": ["0px", `${maxRadius}px`] },
                         {
                             duration,
-                            // 柔和减速曲线：开头有速度但快速收住，配合羽化边不生硬
-                            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+                            easing: "linear",
                             fill: "forwards",
                             pseudoElement: "::view-transition-new(root)",
                         },

@@ -12,6 +12,11 @@
 - **边改边验证**：不要一次改一大堆代码。每改一小部分（一个函数、一个组件、一个接口），就立刻跑一遍检查（TypeScript 编译、页面刷新），没问题再继续改下一块。出了问题也能快速定位到刚改的那几行
 - **本地/生产隔离**：严格区分本地 localhost 和生产 litzone.art，不要混到一起
 
+## 部署流程
+- **前端改动**（src/ 下的 tsx/ts/css）：`git push origin main` → GitHub Actions 自动构建并部署到 nginx
+- **后端改动**（scripts/deploy/api-server.mjs）：push 后还需手动 scp 上传到生产服务器并重启 node 进程
+- 生产服务器：`ubuntu@43.160.249.6`，API 路径 `~/qingyu-api/api-server.mjs`
+
 ## 代码规范
 - 组件命名清晰，不要用缩写
 - 关键操作（删除、关闭、开启）必须有确认弹窗

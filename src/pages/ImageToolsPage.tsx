@@ -714,13 +714,13 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           <div className="ml-auto flex items-center gap-2">
             <input
               type="range"
-              min={60}
-              max={160}
+              min={30}
+              max={300}
               value={thumbScale}
               onChange={(e) => setThumbScale(Number(e.target.value))}
-              onWheel={(e) => { e.preventDefault(); setThumbScale(v => Math.min(160, Math.max(60, v + (e.deltaY < 0 ? 4 : -4)))) }}
+              onWheel={(e) => { e.preventDefault(); setThumbScale(v => Math.min(300, Math.max(30, v + (e.deltaY < 0 ? 6 : -6)))) }}
               className="thumb-scale-slider w-24"
-              style={{ ['--pct' as string]: `${thumbScale - 60}%` }}
+              style={{ ['--pct' as string]: `${((thumbScale - 30) / 270) * 100}%` }}
             />
             <button onClick={() => setViewMode('list')} className={cn('flex size-[30px] items-center justify-center rounded-lg', viewMode==='list' ? 'bg-accent text-accent-foreground' : 'text-text-secondary hover:bg-surface-hover')}>
               <List className="size-[14px]" />

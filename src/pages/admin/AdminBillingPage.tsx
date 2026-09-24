@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
+import { App as AntdApp } from "antd";
 import { useTranslation } from 'react-i18next'
-import { adminBillingApi, type BillingUser, type Order, type Plan } from "@/lib/billing";
-import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, Plug, RefreshCw } from "lucide-react";
+import { adminBillingApi, type BillingUser, type Order, type Plan, type InvoiceRequest } from "@/lib/billing";
+import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, Plug, RefreshCw, FileText } from "lucide-react";
 
 export default function AdminBillingPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "supplier">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "supplier" | "invoices">("stats");
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [codes, setCodes] = useState<any[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [invoices, setInvoices] = useState<(InvoiceRequest & { userEmail?: string })[]>([]);
   const [plansDraft, setPlansDraft] = useState<Record<string, Plan>>({});
   const [savingPlanId, setSavingPlanId] = useState<string>("");
   const [msg, setMsg] = useState("");
@@ -26,6 +28,7 @@ export default function AdminBillingPage() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [announcementsLoading, setAnnouncementsLoading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: (() => void) | null }>({ open: false, message: "", onConfirm: null });
 
   const load = async (t: string) => {
     setMsg("");
@@ -33,6 +36,7 @@ export default function AdminBillingPage() {
       if (t === "stats") setStats(await adminBillingApi.stats());
       if (t === "users") setUsers(await adminBillingApi.users());
       if (t === "orders") setOrders(await adminBillingApi.orders());
+      if (t === "invoices") setInvoices(await adminBillingApi.invoices());
       if (t === "codes") setCodes(await adminBillingApi.codes());
       if (t === "plans") {
         const list = await adminBillingApi.plans();
@@ -59,6 +63,15 @@ export default function AdminBillingPage() {
 
   useEffect(() => { load(tab); }, [tab]);
 
+  const showConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmDialog({ open: true, message, onConfirm });
+  };
+
+  const handleConfirmOk = () => {
+    if (confirmDialog.onConfirm) confirmDialog.onConfirm();
+    setConfirmDialog({ open: false, message: "", onConfirm: null });
+  };
+
   const adjustUser = async (u: BillingUser) => {
     const input = prompt(t("pages.admin.billing.adjustPrompt", { email: u.email, balance: u.balance }));
     if (input === null) return;
@@ -79,6 +92,38 @@ export default function AdminBillingPage() {
     } catch (e: any) { setMsg(e.message); }
   };
 
+  const markInvoiceProcessing = async (inv: InvoiceRequest) => {
+    try {
+      await adminBillingApi.updateInvoice(inv.id, { status: "processing" });
+      setMsg("已标记为开票中");
+      load("invoices");
+    } catch (e: any) { setMsg(e.message); }
+  };
+
+  const completeInvoice = (inv: InvoiceRequest) => {
+    const pdfUrl = window.prompt(`请输入发票 PDF 的访问 URL（抬头：${inv.titleName}，金额：¥${(inv.totalCents / 100).toFixed(2)}）：`);
+    if (pdfUrl === null) return;
+    const url = pdfUrl.trim();
+    if (!/^https?:\/\/.+/.test(url)) { setMsg("请输入合法的 http/https PDF 地址"); return; }
+    showConfirm(`确认完成发票审核？将该发票申请标记为已完成，并关联此 PDF：${url}`, async () => {
+      try {
+        await adminBillingApi.updateInvoice(inv.id, { status: "completed", pdfUrl: url });
+        setMsg("发票申请已标记完成");
+        load("invoices");
+      } catch (e: any) { setMsg(e.message); }
+    });
+  };
+  const failInvoice = async (inv: InvoiceRequest) => {
+    const reason = window.prompt(`请输入拒绝原因（将展示给用户）：`);
+    if (reason === null) return;
+    if (!reason.trim()) { setMsg("拒绝原因不能为空"); return; }
+    try {
+      await adminBillingApi.updateInvoice(inv.id, { status: "failed", rejectReason: reason.trim() });
+      setMsg("已拒绝该发票申请");
+      load("invoices");
+    } catch (e: any) { setMsg(e.message); }
+  };
+
   const genCodes = async () => {
     try {
       const res = await adminBillingApi.genCodes(genForm);
@@ -88,22 +133,21 @@ export default function AdminBillingPage() {
     } catch (e: any) { setMsg(e.message); }
   };
 
-  const savePlan = async (planId: string) => {
+  const savePlan = (planId: string) => {
     const draft = plansDraft[planId];
     if (!draft) return;
-    if (!window.confirm(`确认保存「${draft.name}」套餐的修改？`)) return;
-    setSavingPlanId(planId);
-    try {
-      await adminBillingApi.updatePlan({ ...draft, priceCents: Math.round(draft.priceCents) });
-      setMsg(`套餐「${draft.name}」已保存`);
-      load("plans");
-    } catch (e: any) {
-      setMsg(e.message);
-    } finally {
-      setSavingPlanId("");
-    }
+    showConfirm(`确认保存「${draft.name}」套餐的修改？`, async () => {
+      setSavingPlanId(planId);
+      try {
+        await adminBillingApi.updatePlan({ ...draft, priceCents: Math.round(draft.priceCents) });
+        setMsg(`套餐「${draft.name}」已保存`);
+        load("plans");
+      } catch (e: any) { setMsg(e.message); }
+      finally {
+        setSavingPlanId("");
+      }
+    });
   };
-
   const updatePlanDraft = (planId: string, field: keyof Plan, value: any) => {
     setPlansDraft(prev => ({
       ...prev,
@@ -111,21 +155,21 @@ export default function AdminBillingPage() {
     }));
   };
 
-  const saveSupplierConfig = async () => {
-    if (!window.confirm("确认保存供应商配置？")) return;
-    try {
-      await adminBillingApi.updateSettings({
-        ...settings,
-        supplier: {
-          ...settings.supplier,
-          maizitech: { ...supConfigDraft },
-        },
-      });
-      setMsg("供应商配置已保存");
-      load("supplier");
-    } catch (e: any) { setMsg(e.message); }
+  const saveSupplierConfig = () => {
+    showConfirm("确认保存供应商配置？", async () => {
+      try {
+        await adminBillingApi.updateSettings({
+          ...settings,
+          supplier: {
+            ...settings.supplier,
+            maizitech: { ...supConfigDraft },
+          },
+        });
+        setMsg("供应商配置已保存");
+        load("supplier");
+      } catch (e: any) { setMsg(e.message); }
+    });
   };
-
   const querySupplierBalance = async () => {
     setSupLoading(true);
     setSupBalance(null);
@@ -172,8 +216,10 @@ export default function AdminBillingPage() {
     ["stats", t("pages.admin.billing.tabs.stats"), Wallet],
     ["users", t("pages.admin.billing.tabs.users"), UsersIcon],
     ["orders", t("pages.admin.billing.tabs.orders"), Receipt],
+    ["invoices", "发票审核", FileText],
     ["codes", t("pages.admin.billing.tabs.codes"), Ticket],
     ["plans", t("pages.admin.billing.tabs.plans"), Crown],
+    ["supplier", "供应商", Plug],
   ];
 
   return (
@@ -260,6 +306,71 @@ export default function AdminBillingPage() {
                     {o.status !== "paid" && (
                       <button onClick={() => completeOrder(o)} className="text-accent hover:underline text-xs">{t("pages.admin.billing.markPaid")}</button>
                     )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 发票审核 */}
+      {tab === "invoices" && (
+        <div className="rounded-xl bg-card border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary">
+              <tr>
+                {["提交时间", "用户", "抬头", "税号", "收票邮箱", "金额", "订单数", "状态", "操作"].map(h =>
+                  <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium">{h}</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">暂无发票申请</td></tr>
+              )}
+              {invoices.map(inv => (
+                <tr key={inv.id} className="border-t border-border">
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{new Date(inv.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-gray-600">{inv.userEmail || inv.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3 text-text">
+                    {inv.titleName}
+                    <span className="ml-1 text-xs text-gray-500">（{inv.titleType === "company" ? "企业" : "个人"}）</span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 font-mono text-xs">{inv.taxNo || "-"}</td>
+                  <td className="px-4 py-3 text-gray-600">{inv.email}</td>
+                  <td className="px-4 py-3 text-text">¥{(inv.totalCents / 100).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-gray-500">{inv.orders.length} 笔</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      inv.status === "completed" ? "bg-green-500/10 text-green-600"
+                      : inv.status === "processing" ? "bg-blue-500/10 text-blue-600"
+                      : inv.status === "failed" ? "bg-red-500/10 text-red-500"
+                      : "bg-yellow-500/10 text-amber-600"}`}>
+                      {inv.status === "completed" ? "已完成"
+                       : inv.status === "processing" ? "开票中"
+                       : inv.status === "failed" ? "已拒绝"
+                       : "待处理"}
+                    </span>
+                    {inv.status === "failed" && inv.rejectReason && (
+                      <div className="text-xs text-red-500 mt-1">原因：{inv.rejectReason}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {inv.status === "pending" && (
+                        <button onClick={() => markInvoiceProcessing(inv)} className="text-accent hover:underline text-xs">开始开票</button>
+                      )}
+                      {(inv.status === "pending" || inv.status === "processing") && (
+                        <button onClick={() => completeInvoice(inv)} className="text-green-600 hover:underline text-xs">标记完成</button>
+                      )}
+                      {(inv.status === "pending" || inv.status === "processing") && (
+                        <button onClick={() => failInvoice(inv)} className="text-red-500 hover:underline text-xs">拒绝</button>
+                      )}
+                      {inv.status === "completed" && inv.pdfUrl && (
+                        <a href={inv.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline text-xs">查看 PDF</a>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -541,6 +652,29 @@ export default function AdminBillingPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* 确认弹窗 */}
+      {confirmDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmDialog({ open: false, message: "", onConfirm: null })}>
+          <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="text-sm text-text mb-6">{confirmDialog.message}</div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDialog({ open: false, message: "", onConfirm: null })}
+                className="px-4 py-2 rounded-lg bg-secondary text-text text-sm hover:bg-secondary/80"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmOk}
+                className="px-4 py-2 rounded-lg bg-[#5051F8] text-white text-sm hover:bg-accent-hover"
+              >
+                确认
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

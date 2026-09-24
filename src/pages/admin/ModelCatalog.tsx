@@ -114,7 +114,8 @@ export default function ModelCatalog() {
     setAdding(true);
     try {
       const res = await fetch("/api/admin/models-catalog", {
-        headers: {
+      const res = await fetch("/api/admin/models-catalog", {
+        method: "POST",
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
         },

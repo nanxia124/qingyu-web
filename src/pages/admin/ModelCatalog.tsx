@@ -266,7 +266,7 @@ export default function ModelCatalog() {
             {expandedAll ? "折叠全部" : "展开全部"}
           </button>
           <button className="rounded-lg bg-secondary px-3 py-2 text-sm text-gray-500 hover:bg-border">批量导入</button>
-          <button className="rounded-lg bg-[#5051F8] px-4 py-2 text-sm text-white hover:bg-accent-hover">
+          <button onClick={() => setShowAddDialog(true)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-sm text-white hover:bg-accent-hover">
             + 添加模型
           </button>
         </div>

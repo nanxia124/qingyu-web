@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Pencil, Check, X, Upload, ChevronDown, Plus } from "lucide-react";
 
 interface CatalogModel {
@@ -75,7 +75,18 @@ function getDefaultAvatar(provider: string) {
 }
 
 export default function ModelCatalog() {
-  const [models, setModels] = useState<CatalogModel[]>(MOCK_MODELS);
+  const [models, setModels] = useState<CatalogModel[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/models-catalog", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setModels(data);
+      })
+      .catch(e => console.error("加载模型目录失败:", e));
+  }, []);
   const [capTab, setCapTab] = useState<string>("全部");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandedAll, setExpandedAll] = useState(false);

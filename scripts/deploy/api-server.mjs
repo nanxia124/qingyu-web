@@ -23,6 +23,7 @@ const CODES_FILE = path.join(DATA_DIR, "billing_codes.json");       // 兑换码
 const TX_FILE = path.join(DATA_DIR, "billing_transactions.json");   // 流水
 const PLANS_FILE = path.join(DATA_DIR, "billing_plans.json");       // 会员套餐
 const SETTINGS_FILE = path.join(DATA_DIR, "billing_settings.json"); // 系统设置（支付开关等）
+const MODELS_CATALOG_FILE = path.join(DATA_DIR, "models_catalog.json"); // 模型目录
 const PORT = process.env.PORT || 3001;
 let postgresBilling = null;
 
@@ -93,6 +94,7 @@ let billingCodes = loadJSON(CODES_FILE, []);       // 兑换码数组
 let billingTxs = loadJSON(TX_FILE, []);            // 流水数组
 let billingPlans = loadJSON(PLANS_FILE, []);      // 套餐数组
 let billingSettings = loadJSON(SETTINGS_FILE, null); // 设置
+let modelsCatalog = loadJSON(MODELS_CATALOG_FILE, []);       // 模型目录数组
 
 if (process.env.BILLING_STORE === "postgres") {
   const { createPostgresBillingStore } = await import("./postgres-billing-store.mjs");
@@ -281,6 +283,15 @@ function parseBody(req) {
       catch (e) { reject(new Error("JSON 解析失败")); }
     });
     req.on("error", reject);
+  });
+}
+
+function parseRawBody(req, maxBytes = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', chunk => { size += chunk.length; if (size > maxBytes) { reject(new Error('请求体过大')); req.destroy(); return; } chunks.push(chunk); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
   });
 }
 
@@ -633,6 +644,32 @@ async function handleBilling(req, res, pathname, method, url) {
       return sendJSON(res, 200, list.slice(0, 200));
     }
 
+    // GET /api/billing/invoices — 我的开票申请列表
+    if (pathname === "/api/billing/invoices" && method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 200, []);
+      return sendJSON(res, 200, await postgresBilling.listMyInvoiceRequests(identity.sub));
+    }
+
+    // POST /api/billing/invoices — 提交开票申请 { titleType, titleName, taxNo, email, orderIds }
+    if (pathname === "/api/billing/invoices" && method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 501, { error: "开票服务暂不可用" });
+      const body = await parseBody(req);
+      try {
+        return sendJSON(res, 201, await postgresBilling.createInvoiceRequest(identity.sub, body));
+      } catch (error) { return sendJSON(res, 400, { error: error.message }); }
+    }
+
+    // GET/POST /api/billing/refunds — 用户查看和提交退款申请
+    if (pathname === "/api/billing/refunds" && method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 200, []);
+      return sendJSON(res, 200, await postgresBilling.listRefunds(identity.sub));
+    }
+    if (pathname === "/api/billing/refunds" && method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 501, { error: "退款服务暂不可用" });
+      try { return sendJSON(res, 201, await postgresBilling.createRefundRequest(identity.sub, await parseBody(req))); }
+      catch (error) { return sendJSON(res, 400, { error: error.message || "退款申请失败" }); }
+    }
+
     // GET /api/billing/invite — 我的邀请
     if (pathname === "/api/billing/invite" && method === "GET") {
       if (postgresBilling) return sendJSON(res, 200, await postgresBilling.inviteInfo(identity.sub));
@@ -682,6 +719,25 @@ async function handleBilling(req, res, pathname, method, url) {
       }
       if (pathname === "/api/admin/billing/orders" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminOrders());
+      }
+      if (pathname === "/api/admin/billing/invoices" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminListInvoiceRequests());
+      }
+      const invoiceUpdateMatch = pathname.match(/^\/api\/admin\/billing\/invoices\/([^/]+)\/(processing|completed|failed)$/);
+      if (invoiceUpdateMatch && method === "POST") {
+        const body = await parseBody(req);
+        try {
+          return sendJSON(res, 200, await postgresBilling.adminUpdateInvoiceRequest(invoiceUpdateMatch[1], { status: invoiceUpdateMatch[2], pdfUrl: body.pdfUrl, rejectReason: body.rejectReason }));
+        } catch (error) { return sendJSON(res, 400, { error: error.message }); }
+      }
+      if (pathname === "/api/admin/billing/refunds" && method === "GET") {
+        return sendJSON(res, 200, await postgresBilling.adminRefunds());
+      }
+      const refundUpdateMatch = pathname.match(/^\/api\/admin\/billing\/refunds\/([^/]+)\/(processing|succeeded|failed|unknown)$/);
+      if (refundUpdateMatch && method === "POST") {
+        const body = await parseBody(req);
+        try { return sendJSON(res, 200, await postgresBilling.adminUpdateRefund(refundUpdateMatch[1], { status: refundUpdateMatch[2], providerRefundId: body.providerRefundId, note: body.note })); }
+        catch (error) { return sendJSON(res, 400, { error: error.message || "退款处理失败" }); }
       }
       if (pathname === "/api/admin/billing/codes" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminListCodes());
@@ -1098,6 +1154,21 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   try {
+    // POST /api/payment/webhooks/:provider — 只接收经过 HMAC 校验的供应商事件，收到不等于已入账
+    const paymentWebhookMatch = pathname.match(/^\/api\/payment\/webhooks\/([A-Za-z0-9_-]+)$/);
+    if (paymentWebhookMatch && req.method === 'POST') {
+      const secret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
+      if (!secret) return sendJSON(res, 503, { error: '支付回调尚未配置服务端密钥' });
+      const raw = await parseRawBody(req);
+      const signature = String(req.headers['x-payment-signature'] || '');
+      const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+      const signatureBytes = Buffer.from(signature); const expectedBytes = Buffer.from(expected);
+      if (!signature || signatureBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(signatureBytes, expectedBytes)) return sendJSON(res, 401, { error: '支付回调签名无效' });
+      let event; try { event = JSON.parse(raw.toString('utf8')); } catch { return sendJSON(res, 400, { error: '支付回调 JSON 无效' }); }
+      if (!postgresBilling) return sendJSON(res, 503, { error: '计费数据库暂不可用' });
+      return sendJSON(res, 202, await postgresBilling.recordPaymentEvent(paymentWebhookMatch[1], event));
+    }
+
     // ===== 公开接口（无需认证）=====
 
     // GET /api/config/public — 公开模型配置
@@ -1304,6 +1375,61 @@ const server = http.createServer(async (req, res) => {
       const k = keys.find(k => k.id === id);
       if (!k) return sendJSON(res, 404, { error: "密钥不存在" });
       return sendJSON(res, 200, { api_key: k.api_key });
+    }
+
+    // ===== 模型目录接口 =====
+    // GET /api/admin/models-catalog — 模型目录列表
+    if (pathname === "/api/admin/models-catalog" && req.method === "GET") {
+      return sendJSON(res, 200, modelsCatalog);
+    }
+
+    // POST /api/admin/models-catalog/bulk — 批量添加模型（已存在的跳过）
+    if (pathname === "/api/admin/models-catalog/bulk" && req.method === "POST") {
+      const body = await parseBody(req);
+      const models = body.models || [];
+      let added = 0;
+      for (const m of models) {
+        if (!m.modelId) continue;
+        // 已存在就跳过
+        if (modelsCatalog.find(existing => existing.modelId === m.modelId)) continue;
+        modelsCatalog.push({
+          id: nextId(),
+          modelId: m.modelId,
+          displayName: m.displayName || m.modelId,
+          provider: m.provider || "unknown",
+          capability: m.capability || "text",
+          visible: m.visible !== false,
+          sortOrder: modelsCatalog.length + 1,
+          createdAt: Date.now(),
+        });
+        added++;
+      }
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 200, { added, total: modelsCatalog.length });
+    }
+
+    // PUT /api/admin/models-catalog/:id — 更新单个模型
+    const catalogPutMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)$/);
+    if (catalogPutMatch && req.method === "PUT") {
+      const id = parseInt(catalogPutMatch[1], 10);
+      const idx = modelsCatalog.findIndex(m => m.id === id);
+      if (idx === -1) return sendJSON(res, 404, { error: "模型不存在" });
+      const body = await parseBody(req);
+      if (body.displayName !== undefined) modelsCatalog[idx].displayName = body.displayName;
+      if (body.capability !== undefined) modelsCatalog[idx].capability = body.capability;
+      if (body.visible !== undefined) modelsCatalog[idx].visible = !!body.visible;
+      if (body.sortOrder !== undefined) modelsCatalog[idx].sortOrder = Number(body.sortOrder);
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 200, modelsCatalog[idx]);
+    }
+
+    // DELETE /api/admin/models-catalog/:id — 删除模型
+    const catalogDelMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)$/);
+    if (catalogDelMatch && req.method === "DELETE") {
+      const id = parseInt(catalogDelMatch[1], 10);
+      modelsCatalog = modelsCatalog.filter(m => m.id !== id);
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 200, { success: true });
     }
 
     // POST /api/admin/fetch-models — 从供应商拉取模型列表

@@ -37,5 +37,6 @@
   "0036_payment_refund_scope_integrity.sql": "a2ee1be141a89e50d6d25e5d3e08f3a4e3a6b39f198077feede749bc3e4ad9db",
   "0037_usage_reservation_scope_integrity.sql": "95a0c09017e92f59a58b90aa59c039ab7b3608bf38a1bcd9874ab2629d108c34",
   "0038_usage_actor_workspace_integrity.sql": "e7fb4824801158c7335feaf7797a0628b8f9a043f372f7d0468242cc9f5f57dd",
-  "0039_quota_allocation_scope_integrity.sql": "4afd970abc0858fb037544c8433b88f627f76665e7f6c2bd57ed5d9c4c16cdff"
+  "0039_quota_allocation_scope_integrity.sql": "4afd970abc0858fb037544c8433b88f627f76665e7f6c2bd57ed5d9c4c16cdff",
+  "0040_outbox_aggregate_scope_integrity.sql": "75988a391ad38b840e75a4a786b9f455ca0632e308d89007369c8811b34ce1d3"
 }

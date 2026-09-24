@@ -4,6 +4,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AdminRoute from '@/components/AdminRoute'
+import { ErrorState } from '@/components/states/ErrorState'
+import { RouteSkeleton } from '@/components/states/RouteSkeleton'
 
 // 所有页面按需加载，减少首屏体积
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'))
@@ -33,42 +35,20 @@ const CanvasProjectRoute = lazy(() => import('@canvas/index').then((m) => ({ def
 const CanvasVideoRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasVideoRoute })))
 
 // 错误边界：任何组件渲染抛错时显示兜底页，避免整应用白屏
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false }
-  static getDerivedStateFromError() { return { hasError: true } }
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  state = { hasError: false, error: null }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error } }
   componentDidCatch(error: Error) { console.error('页面渲染错误:', error) }
   render() {
     if (this.state.hasError) {
-      return (
-        <div style={{ padding: 48, textAlign: 'center', color: '#5f5f66', background: '#f4f4f6', height: '100vh' }}>
-          <h2 style={{ color: '#1d1d1f', marginBottom: 12 }}>页面出错了</h2>
-          <p>请刷新页面重试，或联系技术支持</p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{ marginTop: 20, padding: '8px 24px', background: '#5051F8', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
-          >
-            刷新页面
-          </button>
-        </div>
-      )
+      return <ErrorState code="500" error={this.state.error} />
     }
     return this.props.children
   }
 }
 
 function PageFallback() {
-  return (
-    <div style={{
-      width: '100%', height: '100%', background: '#f4f4f6',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <div style={{
-        width: 32, height: 32, border: '3px solid #e2e2e8', borderTopColor: '#5051F8',
-        borderRadius: '50%', animation: 'spin 0.8s linear infinite',
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  )
+  return <RouteSkeleton />
 }
 
 function lazyPage(el: ReactElement) {

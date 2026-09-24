@@ -107,14 +107,10 @@ export default function ModelCatalog() {
   const [adding, setAdding] = useState(false);
 
   const handleAddModel = async () => {
-    if (!addForm.modelId.trim()) {
-      alert("请输入模型 ID");
+    if (!addForm.displayName.trim()) {
+      alert("请输入显示名称");
       return;
     }
-    setAdding(true);
-    try {
-      const res = await fetch("/api/admin/models-catalog", {
-        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,

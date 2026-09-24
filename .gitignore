@@ -36,11 +36,13 @@ pnpm-debug.log*
 *.py
 *.tmp
 *.bak
+*.err
 .ref*.txt
 .skills_ref*.png
 dev-run.log
 dev-server.log
 build-canvas.log
+scripts/deploy/_*
 
 # SSH deploy keys (never commit these!)
 .deploy_key

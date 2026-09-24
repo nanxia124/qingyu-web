@@ -1481,10 +1481,16 @@ const server = http.createServer(async (req, res) => {
 
     // ===== 异步生图任务（0046）：提交即返回 task_id，后台执行，前端轮询 =====
     // ===== 本地开发专用：一键登录 =====
-    // 仅在 DEV_LOGIN=1 时启用；生产环境不设此变量，路由直接 404。
+    // 仅允许本地开发环境使用；生产环境或非本机请求一律 404。
     // 访问 http://localhost:3001/api/dev-login 自动签 token 并跳回前端。
     if (pathname === "/api/dev-login" && req.method === "GET") {
-      if (process.env.DEV_LOGIN !== "1") return sendJSON(res, 404, { error: "not found" });
+      const remoteAddress = req.socket.remoteAddress || "";
+      const isLoopback = remoteAddress === "127.0.0.1"
+        || remoteAddress === "::1"
+        || remoteAddress === "::ffff:127.0.0.1";
+      if (process.env.DEV_LOGIN !== "1" || process.env.NODE_ENV === "production" || !isLoopback) {
+        return sendJSON(res, 404, { error: "not found" });
+      }
       if (!postgresBilling) return sendJSON(res, 503, { error: "db not ready" });
       const uid = url.searchParams.get("user") || "local-dev-user";
       const email = url.searchParams.get("email") || `${uid}@local.dev`;
@@ -1494,13 +1500,26 @@ const server = http.createServer(async (req, res) => {
         const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
         const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
         // 返回一个自动写 localStorage 并跳转的 HTML 页
+        // zustand persist 的 auth-store 也要写，否则 checkSession 会强制查 Appwrite 把登录态清掉。
+        const authStoreState = {
+          state: {
+            user: { id: uid, email: user.email, name: uid, emailVerified: true, createdAt: new Date().toISOString() },
+            isLoggedIn: true,
+            teams: [],
+            currentTeam: null,
+          },
+          version: 0,
+        };
         const html = `<!doctype html><meta charset="utf-8"><title>dev login</title>
 <body style="background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <div>登录中... <script>
 localStorage.setItem('billing_token', ${JSON.stringify(token)});
 localStorage.setItem('token', ${JSON.stringify(token)});
 localStorage.setItem('appwrite_uid', ${JSON.stringify(uid)});
-location.href = '/';
+localStorage.setItem('auth-store', ${JSON.stringify(JSON.stringify(authStoreState))});
+localStorage.setItem('infinite-canvas:locale', 'zh-CN');
+localStorage.removeItem('infinite-canvas:locale-manual');
+location.href = 'http://localhost:5173/';
 </script></div></body>`;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);

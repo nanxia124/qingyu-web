@@ -125,6 +125,7 @@ if (!billingSettings) {
     registeredBonusQuota: 100,     // 新注册赠送积分
     supplier: {
       maizitech: {
+        enabled: false,
         baseUrl: "https://www.maizitech.ai",
         apiKey: "",
         balanceToken: "",
@@ -657,6 +658,17 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // 正式环境的计费事实统一来自 PostgreSQL，避免管理后台继续读旧 JSON 账本。
     if (postgresBilling) {
+      if (pathname === '/api/admin/billing/usage/unknown' && method === 'GET') {
+        return sendJSON(res, 200, await postgresBilling.adminUnknownUsage());
+      }
+      const reconciliationMatch = pathname.match(/^\/api\/admin\/billing\/usage\/([0-9a-f-]{36})\/reconcile$/i);
+      if (reconciliationMatch && method === 'POST') {
+        const body = await parseBody(req);
+        if (body.confirm !== true) return sendJSON(res, 400, { error: '请确认供应商核对结论后再提交' });
+        try {
+          return sendJSON(res, 200, await postgresBilling.adminReconcileUsage(reconciliationMatch[1], adminIdentity.sub, body));
+        } catch (error) { return sendJSON(res, 409, { error: error.message || '核对失败，额度未变更' }); }
+      }
       if (pathname === "/api/admin/billing/stats" && method === "GET") {
         return sendJSON(res, 200, await postgresBilling.adminStats());
       }

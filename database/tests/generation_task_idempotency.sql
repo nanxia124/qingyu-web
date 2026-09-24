@@ -15,12 +15,25 @@ SELECT * FROM app.create_generation_task(
   'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60
 );
 
-SELECT CASE WHEN r.id = t.id THEN 'PASS: repeated key returned the same task'
-            ELSE 'FAIL: repeated key created a different task' END AS result
-  FROM generation_task_idempotency_result r
-  JOIN app.generation_tasks t ON t.idempotency_key='test-generation-repeat-key';
-SELECT CASE WHEN count(*)=1 THEN 'PASS: exactly one task exists'
-            ELSE 'FAIL: task count is ' || count(*) END AS result
-  FROM app.generation_tasks WHERE idempotency_key='test-generation-repeat-key';
+INSERT INTO generation_task_idempotency_result
+SELECT * FROM app.create_generation_task(
+  :'wid'::uuid, :'uid'::uuid, 'image', 'test', 'test-model', 'test-v1',
+  'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60
+);
+
+DO $$
+DECLARE task_count integer; first_id uuid; second_id uuid;
+BEGIN
+  SELECT count(*) INTO task_count FROM generation_task_idempotency_result;
+  SELECT id INTO first_id FROM generation_task_idempotency_result ORDER BY id LIMIT 1;
+  SELECT id INTO second_id FROM generation_task_idempotency_result ORDER BY id OFFSET 1 LIMIT 1;
+  IF task_count <> 2 OR first_id IS DISTINCT FROM second_id THEN
+    RAISE EXCEPTION '重复幂等键没有复用同一任务：返回数=%', task_count;
+  END IF;
+  SELECT count(*) INTO task_count FROM app.generation_tasks
+    WHERE idempotency_key='test-generation-repeat-key';
+  IF task_count <> 1 THEN RAISE EXCEPTION '重复幂等键创建了 % 条任务', task_count; END IF;
+  RAISE NOTICE 'PASS: 重复幂等键复用同一任务且只保留一条任务';
+END $$;
 
 ROLLBACK;

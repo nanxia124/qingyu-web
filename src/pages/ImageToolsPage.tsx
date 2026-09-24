@@ -469,7 +469,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           <div className="mb-6">
             <label className="mb-2 block text-[14px] text-text">{t("imageTools.ratio")}</label>
             <div className="grid grid-cols-7 gap-1.5">
-              {ratios.map((r) => (
+              {ratios.filter(r => r !== '__ORIG__' || refImages.length > 0).map((r) => (
                 <button key={r} onClick={() => setRatio(r)}
                   className={cn('flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors',
                     ratio === r ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>

@@ -17,6 +17,15 @@ export default function AdminBillingPage() {
   // 生成兑换码表单
   const [genForm, setGenForm] = useState({ count: 10, denomination: 100, kind: "quota", days: 0 });
   const [genResult, setGenResult] = useState<string[]>([]);
+  const [settings, setSettings] = useState<any>(null);
+  const [supBalance, setSupBalance] = useState<any>(null);
+  const [supKeyLimits, setSupKeyLimits] = useState<any>(null);
+  const [supLoading, setSupLoading] = useState(false);
+  const [supConfigDraft, setSupConfigDraft] = useState({ enabled: false, apiKey: "", balanceToken: "", baseUrl: "" });
+  const [models, setModels] = useState<any[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
 
   const load = async (t: string) => {
     setMsg("");
@@ -31,6 +40,17 @@ export default function AdminBillingPage() {
         const draft: Record<string, Plan> = {};
         list.forEach(p => { draft[p.id] = { ...p, features: [...p.features] }; });
         setPlansDraft(draft);
+      }
+      if (t === "supplier") {
+        const s = await adminBillingApi.getSettings();
+        setSettings(s);
+        const sup = s.supplier?.maizitech || {};
+        setSupConfigDraft({
+          enabled: sup.enabled || false,
+          apiKey: sup.apiKey || "",
+          balanceToken: sup.balanceToken || "",
+          baseUrl: sup.baseUrl || "https://www.maizitech.ai",
+        });
       }
     } catch (e: any) {
       setMsg(e.message);
@@ -89,6 +109,63 @@ export default function AdminBillingPage() {
       ...prev,
       [planId]: { ...prev[planId], [field]: value },
     }));
+  };
+
+  const saveSupplierConfig = async () => {
+    if (!window.confirm("确认保存供应商配置？")) return;
+    try {
+      await adminBillingApi.updateSettings({
+        ...settings,
+        supplier: {
+          ...settings.supplier,
+          maizitech: { ...supConfigDraft },
+        },
+      });
+      setMsg("供应商配置已保存");
+      load("supplier");
+    } catch (e: any) { setMsg(e.message); }
+  };
+
+  const querySupplierBalance = async () => {
+    setSupLoading(true);
+    setSupBalance(null);
+    setSupKeyLimits(null);
+    try {
+      const [bal, limits] = await Promise.all([
+        adminBillingApi.supplierBalance().catch(e => ({ error: e.message })),
+        adminBillingApi.supplierKeyLimits().catch(e => ({ error: e.message })),
+      ]);
+      setSupBalance(bal);
+      setSupKeyLimits(limits);
+    } finally {
+      setSupLoading(false);
+    }
+  };
+
+  const queryModels = async () => {
+    setModelsLoading(true);
+    setModels([]);
+    try {
+      const res = await adminBillingApi.supplierModels();
+      setModels(res.data || []);
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const queryAnnouncements = async () => {
+    setAnnouncementsLoading(true);
+    setAnnouncements([]);
+    try {
+      const res = await adminBillingApi.supplierAnnouncements();
+      setAnnouncements(Array.isArray(res) ? res : []);
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setAnnouncementsLoading(false);
+    }
   };
 
   const TABS: [typeof tab, string, any][] = [

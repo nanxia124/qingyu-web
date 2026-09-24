@@ -9,6 +9,14 @@ const start = source.indexOf('async function runGenerationTaskWorker(');
 const end = source.indexOf('// ===================== 计费路由处理器', start);
 assert.ok(start >= 0 && end > start);
 const workerSource = source.slice(start, end);
+const urlStart = source.indexOf('function buildUpstreamImageUrl(');
+const urlEnd = source.indexOf('async function callUpstreamImage(', urlStart);
+const buildUpstreamImageUrl = vm.runInNewContext(`${source.slice(urlStart, urlEnd)}; buildUpstreamImageUrl`, { URL });
+
+test('渠道地址已包含 /v1 时不会重复拼接', () => {
+  assert.equal(buildUpstreamImageUrl('https://provider.example/v1').pathname, '/v1/images/generations');
+  assert.equal(buildUpstreamImageUrl('https://provider.example').pathname, '/v1/images/generations');
+});
 
 test('重复 worker 只允许领取成功者调用上游', async () => {
   let claimed = false, calls = 0, settlements = 0, refunds = 0;
@@ -20,6 +28,7 @@ test('重复 worker 只允许领取成功者调用上游', async () => {
       async failTask() { refunds++; },
     },
     async callUpstreamImage() { calls++; return { status: 200, text: JSON.stringify({ data: [{ url: 'https://example.invalid/test.png' }] }) }; },
+    async fetchUrlAsBase64() { return 'dGVzdA=='; },
   });
   await Promise.all(Array.from({ length: 20 }, () => worker({ sub: 'test-user' }, { id: 'task' }, {}, {})));
   assert.equal(calls, 1);

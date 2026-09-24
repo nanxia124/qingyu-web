@@ -19,6 +19,15 @@ if [[ -z "$backup_file" || ! -f "$backup_file" ]]; then
   exit 1
 fi
 
+# 文件本体和数据库元数据一起归档。数据库备份成功但对象归档失败时，后面的镜像步骤会明确失败，避免留下“记录在、文件不在”的假完整备份。
+object_archive=""
+if [[ -d "$OBJECT_DIR" ]]; then
+  object_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  object_archive="$BACKUP_DIR/qingyu_objects_${object_stamp}.tar.gz"
+  tar -czf "$object_archive" -C "$OBJECT_DIR" .
+  sha256sum "$object_archive" > "$object_archive.sha256"
+fi
+
 mirror_backup() {
   local mirror_root="$1"
   local storage_provider='mounted_mirror'
@@ -52,6 +61,28 @@ mirror_backup() {
     return 1
   fi
   printf 'mirror_copy=verified\nstorage_key=%s\n' "$mirror_file"
+
+  if [[ -n "$object_archive" ]]; then
+    local object_mirror="$mirror_root/$(basename "$object_archive")"
+    local object_copy_id object_checksum object_size
+    object_copy_id="$(sudo docker exec "$PG_DOCKER_CONTAINER" psql -U "$PGUSER" -d "$PGDATABASE" -Atqc \
+      "insert into app.backup_copies(backup_id,storage_provider,storage_key,status) values('$backup_id','$storage_provider','$object_mirror','started') on conflict (backup_id,storage_provider,storage_key) do update set status='started',error_message=null returning id")"
+    if ! cp -- "$object_archive" "$object_mirror" || ! cp -- "$object_archive.sha256" "$object_mirror.sha256"; then
+      sudo docker exec "$PG_DOCKER_CONTAINER" psql -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c \
+        "update app.backup_copies set status='failed',error_message='对象归档复制失败' where id='$object_copy_id';" >/dev/null
+      return 1
+    fi
+    object_checksum="$(cut -d' ' -f1 "$object_mirror.sha256")"
+    object_size="$(stat -c '%s' "$object_mirror")"
+    if ! (cd "$(dirname "$object_mirror")" && sha256sum --check "$(basename "$object_mirror").sha256"); then
+      sudo docker exec "$PG_DOCKER_CONTAINER" psql -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c \
+        "update app.backup_copies set status='failed',error_message='对象归档 SHA-256 校验失败' where id='$object_copy_id';" >/dev/null
+      return 1
+    fi
+    sudo docker exec "$PG_DOCKER_CONTAINER" psql -U "$PGUSER" -d "$PGDATABASE" -v ON_ERROR_STOP=1 -c \
+      "update app.backup_copies set status='verified',checksum_sha256='$object_checksum',size_bytes=$object_size,uploaded_at=now(),verified_at=now(),error_message=null where id='$object_copy_id';" >/dev/null
+    printf 'object_mirror_copy=verified\nstorage_key=%s\n' "$object_mirror"
+  fi
 }
 
 if [[ -n "${BACKUP_MIRROR_DIR:-}" ]]; then
@@ -59,14 +90,6 @@ if [[ -n "${BACKUP_MIRROR_DIR:-}" ]]; then
     echo '异机镜像复制失败，已写入 backup_copies.failed' >&2
     exit 1
   fi
-fi
-
-# 文件本体与数据库元数据一起备份。对象键保留原目录结构，恢复后可直接放回对象目录。
-if [[ -d "$OBJECT_DIR" ]]; then
-  object_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  object_archive="$BACKUP_DIR/qingyu_objects_${object_stamp}.tar.gz"
-  tar -czf "$object_archive" -C "$OBJECT_DIR" .
-  sha256sum "$object_archive" > "$object_archive.sha256"
 fi
 
 find "$BACKUP_DIR" -maxdepth 1 -type f \

@@ -39,6 +39,14 @@ BEGIN
         VALUES (test_user, test_device, 'session-limit-test-' || i, 'active', false, now() + interval '1 hour');
     END LOOP;
 
+    -- 三台设备都可以保留有效登录记录，但只有一台能标记为在线。
+    IF (SELECT count(*) FROM app.user_sessions WHERE user_id = test_user AND admission_status = 'active') <> 3 THEN
+        RAISE EXCEPTION '有效设备登录记录没有保留为 3 台';
+    END IF;
+    IF (SELECT count(*) FROM app.user_sessions WHERE user_id = test_user AND admission_status = 'active' AND NOT is_online) <> 2 THEN
+        RAISE EXCEPTION '第二、第三台设备没有保持离线状态';
+    END IF;
+
     IF (SELECT count(*) FROM app.user_sessions WHERE user_id = test_user AND admission_status = 'active' AND is_online) <> 1 THEN
         RAISE EXCEPTION '同一账号在线会话数量不是 1';
     END IF;

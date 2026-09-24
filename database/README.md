@@ -40,6 +40,8 @@
 
 `0013_sessions_realtime.sql` 为设备会话增加最大并发数量、撤销动作记录、outbox 顺序号和同步游标。`revoke_other_sessions` 在事务内撤销其他会话；实时同步以后按顺序号从 outbox 补发，不能依赖客户端时间戳。
 
+设备登录规则是“最多保留 3 台有效设备，但同一时间只有 1 台在线”：新设备登录会把原在线设备改为离线，原设备的登录记录仍保留；离线设备不能继续调用业务接口，在线设备可以在账号会话页撤销其他设备。只有超过 3 台时，最早的有效会话才会被撤销。
+
 `0014_organization_lifecycle.sql` 增加部门防环、成员入离职状态校验、团队成员角色绑定校验，以及数据导出、注销申请和删除墓碑记录。删除先留下事实，订单、支付、额度和审计不会因为用户删除请求被直接抹掉。
 
 `0015_workspace_link_integrity.sql` 给收藏夹条目、资产引用、点赞、评论、分享和审核记录补上 `workspace_id` 及复合外键，数据库会直接拒绝把 A 空间的资源挂到 B 空间；同时收紧这些表的 RLS 判断。提示词来源和标签也增加了同空间校验。
@@ -66,7 +68,7 @@
 
 `scripts/backup-business-db.sh` 生成 PostgreSQL custom 格式备份和旁边的 SHA-256 文件，并把备份状态、版本、大小和校验和写入 `app.backup_runs`；`scripts/verify-backup-file.sh` 只做文件校验。`scripts/restore-drill-business-db.sh` 会把指定备份恢复到临时隔离库，核对表数量、迁移版本和必需的最新迁移后删除临时库，并把结果写入 `app.restore_drills`。脚本不会删除旧备份、不会覆盖正式库，也不会自动上传到收费的异机存储。正式上线前仍要配置异机副本和定期任务。
 
-`scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成备份和 SHA-256 校验文件；设置 `BACKUP_MIRROR_DIR` 后还会复制到已挂载的独立目录、重新校验并把 `app.backup_copies` 标记为 `verified`，失败会标记为 `failed` 并让任务失败；最后按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务。腾讯云 COS 等真正异机存储仍需另外配置适配器和凭据。
+`scripts/scheduled-business-backup.sh` 是服务器每日任务入口：先生成数据库备份和对象文件归档，并分别生成 SHA-256 校验文件；设置 `BACKUP_MIRROR_DIR` 后会把数据库备份、对象归档及各自校验文件复制到已挂载的独立目录，逐个重新校验并把 `app.backup_copies` 标记为 `verified`，任何一类失败都会标记为 `failed` 并让任务失败；最后按保留天数清理过期本地文件。`systemd/qingyu-business-backup.timer` 每天 03:30 UTC 触发，服务器重启后会补跑错过的任务。腾讯云 COS 等真正异机存储仍需另外配置适配器和凭据。
 
 正式应用连接必须使用独立的业务数据库角色，不能长期复用 Appwrite 的 `user` 角色。前端不能直接连接 PostgreSQL；迁移、回滚和备份由服务器端受控执行。
 

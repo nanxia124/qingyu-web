@@ -9,6 +9,24 @@ BACKUP_FILE="${BACKUP_FILE:?请设置 BACKUP_FILE，例如 /home/ubuntu/backups/
 DRILL_DB="${DRILL_DB:-qingyu_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)}"
 ENVIRONMENT="${RESTORE_DRILL_ENVIRONMENT:-isolated_server}"
 REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0049_reconciliation_drift_and_audit_query}"
+REQUIRE_OBJECT_ARCHIVE="${REQUIRE_OBJECT_ARCHIVE:-0}"
+OBJECT_ARCHIVE_FILE="${OBJECT_ARCHIVE_FILE:-}"
+
+# 数据库备份和对象归档使用同一时间戳；如果调用方没有显式指定，就尝试自动匹配。
+if [[ -z "$OBJECT_ARCHIVE_FILE" ]]; then
+  backup_stamp="$(basename "$BACKUP_FILE" | sed -n "s/^${DATABASE}_\\(.*\\)\\.dump$/\\1/p")"
+  if [[ -n "$backup_stamp" && -f "$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz" ]]; then
+    OBJECT_ARCHIVE_FILE="$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz"
+  fi
+fi
+if [[ -n "$OBJECT_ARCHIVE_FILE" ]]; then
+  test -r "$OBJECT_ARCHIVE_FILE"
+  sha256sum -c "${OBJECT_ARCHIVE_FILE}.sha256"
+  tar -tzf "$OBJECT_ARCHIVE_FILE" >/dev/null
+elif [[ "$REQUIRE_OBJECT_ARCHIVE" == '1' ]]; then
+  echo '要求对象归档，但没有找到对应的对象归档文件' >&2
+  exit 1
+fi
 
 test -r "$BACKUP_FILE"
 sha256sum -c "${BACKUP_FILE}.sha256"
@@ -63,17 +81,20 @@ required_migration="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRIL
   "select case when exists (select 1 from app.schema_migrations where version='$REQUIRED_MIGRATION_VERSION') then 'ok' else 'failed' end")"
 test "$required_migration" = "ok"
 rto_seconds="$(( $(date +%s) - started_epoch ))"
+object_archive_checked=false
+if [[ -n "$OBJECT_ARCHIVE_FILE" ]]; then object_archive_checked=true; fi
 
 sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_STOP=1 \
   -v drill_id="$drill_id" -v rto_seconds="$rto_seconds" -v table_count="$table_count" \
-  -v schema_version="$schema_version" -f - >/dev/null <<'SQL'
+  -v schema_version="$schema_version" -v required_migration="$REQUIRED_MIGRATION_VERSION" \
+  -v object_archive_checked="$object_archive_checked" -f - >/dev/null <<'SQL'
 update app.restore_drills
 set status='passed',restored_at=now(),completed_at=now(),rpo_seconds=0,rto_seconds=:'rto_seconds',
-    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'required_migration', '$REQUIRED_MIGRATION_VERSION', 'checksum_verified', true)
+    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'required_migration', :'required_migration', 'checksum_verified', true, 'object_archive_checked', :'object_archive_checked'::boolean)
 where id=:'drill_id';
 SQL
 
 cleanup
 restored=0
-printf 'restore_drill_id=%s\napp_table_count=%s\nschema_version=%s\nrto_seconds=%s\n' \
-  "$drill_id" "$table_count" "$schema_version" "$rto_seconds"
+printf 'restore_drill_id=%s\napp_table_count=%s\nschema_version=%s\nrto_seconds=%s\nobject_archive_checked=%s\n' \
+  "$drill_id" "$table_count" "$schema_version" "$rto_seconds" "$object_archive_checked"

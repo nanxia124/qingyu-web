@@ -454,10 +454,17 @@ function proxyRequest(req, res, targetPath) {
 }
 
 // ---------- 异步生图任务 worker（0046）：后台调用上游，状态机 pending→running→succeeded/refunded ----------
+function buildUpstreamImageUrl(baseUrl) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  if (!base) throw new Error("渠道未配置 base_url");
+  // 渠道地址可能已经包含 /v1；统一只保留一段，避免请求 /v1/v1/...
+  return new URL(/\/v1$/i.test(base) ? `${base}/images/generations` : `${base}/v1/images/generations`);
+}
+
 async function callUpstreamImage(channel, bodyObj) {
   return new Promise((resolve, reject) => {
-    const base = String(channel.base_url || "").replace(/\/+$/, "");
-    const url = new URL(base + "/v1/images/generations");
+    let url;
+    try { url = buildUpstreamImageUrl(channel.base_url); } catch (error) { reject(error); return; }
     const lib = url.protocol === "https:" ? https : http;
     const forwardBody = JSON.stringify(bodyObj);
     const proxyReq = lib.request({

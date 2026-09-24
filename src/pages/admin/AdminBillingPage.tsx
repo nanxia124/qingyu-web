@@ -212,6 +212,52 @@ export default function AdminBillingPage() {
     }
   };
 
+  const [syncing, setSyncing] = useState(false);
+  const syncToApiKeys = () => {
+    if (!supConfigDraft.baseUrl || !supConfigDraft.apiKey) {
+      setMsg("请先填写 Base URL 和 API Key");
+      return;
+    }
+    if (models.length === 0) {
+      setMsg("请先查询模型列表，再同步");
+      return;
+    }
+    showConfirm(
+      `确认将 MaiziAI 的 ${models.length} 个模型同步到 API 渠道？` + "\n" + `这会在「API 与模型」页面新建一条配置。`,
+      async () => {
+        setSyncing(true);
+        try {
+          const modelIds = models.map((m: any) => m.id).join(",");
+          const res = await fetch("/api/admin/api-keys", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
+            },
+            body: JSON.stringify({
+              name: "MaiziAI 中转站",
+              base_url: supConfigDraft.baseUrl,
+              api_key: supConfigDraft.apiKey,
+              provider: "openai",
+              model: modelIds,
+              max_concurrency: 5,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            setMsg(err.error || `同步失败：HTTP ${res.status}`);
+            return;
+          }
+          setMsg(`已同步 ${models.length} 个模型到 API 渠道`);
+        } catch (e: any) {
+          setMsg(e.message);
+        } finally {
+          setSyncing(false);
+        }
+      }
+    );
+  };
+
   const TABS: [typeof tab, string, any][] = [
     ["stats", t("pages.admin.billing.tabs.stats"), Wallet],
     ["users", t("pages.admin.billing.tabs.users"), UsersIcon],
@@ -548,6 +594,10 @@ export default function AdminBillingPage() {
               <button onClick={queryAnnouncements} disabled={announcementsLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-text text-sm hover:bg-secondary/80 disabled:opacity-50">
                 <RefreshCw size={14} className={announcementsLoading ? "animate-spin" : ""} />
                 {announcementsLoading ? "加载中..." : "查看公告"}
+              <button onClick={syncToApiKeys} disabled={syncing} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500 disabled:opacity-50">
+                <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "同步中..." : "一键同步到 API 渠道"}
+              </button>
               </button>
             </div>
           </div>

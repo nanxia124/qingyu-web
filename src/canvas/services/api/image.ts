@@ -253,6 +253,15 @@ function resolveImageSource(item: Record<string, unknown> | string) {
     if (typeof item.url === "string" && item.url) {
         return item.url;
     }
+    // 部分网关使用 { type: "image", data: "<base64 或 data URL>" }。
+    for (const key of ["data", "image", "image_base64", "imageData", "output"] as const) {
+        const value = item[key];
+        if (typeof value === "string" && value) {
+            return value.startsWith("data:") || /^https?:\/\//.test(value)
+                ? value
+                : `data:image/png;base64,${value}`;
+        }
+    }
     // image_url may be a plain string or a { url } object (chat-completions style).
     const imageUrl = item.image_url;
     if (typeof imageUrl === "string" && imageUrl) {

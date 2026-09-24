@@ -189,7 +189,7 @@ export default function ModelCatalog() {
   const startEditName = (m: CatalogModel) => {
     setConfirmDialog({
       title: "修改模型名称",
-      message: `确定要修改 "${m.displayName}" 的显示名称吗？`,
+                <label className="text-xs text-gray-500 mb-1 block">显示名称 *</label>
       onConfirm: () => {
         setEditingNameId(m.id);
         setEditingNameValue(m.displayName);
@@ -577,22 +577,12 @@ export default function ModelCatalog() {
             <div className="text-base font-medium text-text mb-4">添加模型到目录</div>
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">模型 ID（可选，后面再关联实际模型）</label>
-                <input
-                  type="text"
-                  value={addForm.modelId}
-                  onChange={e => setAddForm(prev => ({ ...prev, modelId: e.target.value }))}
-                  placeholder="例如 gpt-4o"
-                  className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-text outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">显示名称</label>
+                <label className="text-xs text-gray-500 mb-1 block">显示名称 *</label>
                 <input
                   type="text"
                   value={addForm.displayName}
                   onChange={e => setAddForm(prev => ({ ...prev, displayName: e.target.value }))}
-                  placeholder="默认和模型 ID 一样"
+                  placeholder="例如：GPT-4o"
                   className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-text outline-none"
                 />
               </div>

@@ -518,6 +518,46 @@ async function fetchUrlAsBase64(imageUrl) {
   });
 }
 
+// 部分上游（如麦子 nano-banana 系列）提交后返回 task_id，需要轮询查询接口拿结果。
+// 探测到 data[0].task_id 且无 b64_json/url 时自动走这个分支。
+async function pollAsyncUpstreamTask(channel, taskId, timeoutMs = 300000) {
+  const base = String(channel.base_url || "").replace(/\/+$/, "");
+  const pollUrl = /\/v1$/i.test(base) ? `${base}/tasks/${taskId}` : `${base}/v1/tasks/${taskId}`;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (Date.now() > deadline) throw new Error("上游异步任务轮询超时");
+    const res = await new Promise((resolve, reject) => {
+      const target = new URL(pollUrl);
+      const lib = target.protocol === "https:" ? https : http;
+      const req = lib.request({
+        hostname: target.hostname,
+        port: target.port || (target.protocol === "https:" ? 443 : 80),
+        path: target.pathname, method: "GET",
+        headers: { Authorization: `Bearer ${channel.api_key}` },
+        timeout: 15000,
+      }, (upstreamRes) => {
+        const chunks = [];
+        upstreamRes.on("data", ch => chunks.push(ch));
+        upstreamRes.on("end", () => resolve({ status: upstreamRes.statusCode, text: Buffer.concat(chunks).toString("utf-8") }));
+      });
+      req.on("error", reject);
+      req.on("timeout", () => { req.destroy(); reject(new Error("轮询请求超时")); });
+      req.end();
+    });
+    if (res.status >= 300) throw new Error(`轮询查询失败: HTTP ${res.status}`);
+    let body = {};
+    try { body = JSON.parse(res.text); } catch {}
+    const st = String(body.status || "").toLowerCase();
+    if (st === "completed" || st === "succeeded" || st === "success") {
+      return body;
+    }
+    if (st === "failed" || st === "error" || st === "canceled" || st === "cancelled") {
+      throw new Error(body.error_msg || body.error?.message || "上游任务执行失败");
+    }
+    await new Promise(r => setTimeout(r, 2500));
+  }
+}
+
 async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
   let claimed = false;
   try {
@@ -527,6 +567,27 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
     let payload = {};
     try { payload = JSON.parse(text); } catch { payload = {}; }
     if (status >= 200 && status < 300 && Array.isArray(payload.data)) {
+      // 部分上游返回 task_id 走异步轮询（如麦子 nano-banana）
+      const first = payload.data[0] || {};
+      if (first.task_id && !first.b64_json && !first.url) {
+        const done = await pollAsyncUpstreamTask(channel, first.task_id);
+        const urls = done.result_urls || done.urls || [];
+        if (!urls.length) {
+          await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游异步任务完成但未返回图片", true);
+          return;
+        }
+        const outputs = [];
+        for (let i = 0; i < urls.length; i++) {
+          try { outputs.push({ type: "image", index: i, b64_json: await fetchUrlAsBase64(urls[i]), url: urls[i], revisedPrompt: null }); }
+          catch (dlErr) { console.error("[async task] image download failed", task.id, dlErr.message); }
+        }
+        if (!outputs.length) {
+          await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游结果图均下载失败", true);
+          return;
+        }
+        await postgresBilling.settleTaskSuccess(identity.sub, task.id, outputs, done.id || first.task_id || null);
+        return;
+      }
       // 先筛出至少带一种可用图片引用的条目；一个都没有则视为"没出图"，必须退款，不能结算。
       const raw = payload.data.map((d, i) => ({
         type: "image", index: i,
@@ -1591,6 +1652,7 @@ const server = http.createServer(async (req, res) => {
     // ===== 模型目录接口 =====
     // GET /api/admin/models-catalog — 模型目录列表
     if (pathname === "/api/admin/models-catalog" && req.method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listModelCatalog());
       return sendJSON(res, 200, modelsCatalog);
     }
 
@@ -1598,6 +1660,10 @@ const server = http.createServer(async (req, res) => {
     // POST /api/admin/models-catalog — 新增单个模型
     if (pathname === "/api/admin/models-catalog" && req.method === "POST") {
       const body = await parseBody(req);
+      if (postgresBilling) {
+        try { return sendJSON(res, 201, await postgresBilling.createModelCatalog(body)); }
+        catch (error) { return sendJSON(res, 400, { error: error.message }); }
+      }
       if (!body.modelId) {
         return sendJSON(res, 400, { error: "模型 ID 为必填项" });
       }
@@ -1622,6 +1688,10 @@ const server = http.createServer(async (req, res) => {
     // POST /api/admin/models-catalog/bulk — 批量添加模型（已存在的跳过）
     if (pathname === "/api/admin/models-catalog/bulk" && req.method === "POST") {
       const body = await parseBody(req);
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.bulkCreateModelCatalog(body.models || [])); }
+        catch (error) { return sendJSON(res, 400, { error: error.message }); }
+      }
       const models = body.models || [];
       let added = 0;
       for (const m of models) {
@@ -1648,6 +1718,10 @@ const server = http.createServer(async (req, res) => {
     const catalogPutMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)$/);
     if (catalogPutMatch && req.method === "PUT") {
       const id = parseInt(catalogPutMatch[1], 10);
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.updateModelCatalog(id, await parseBody(req))); }
+        catch (error) { return sendJSON(res, error.message === '模型不存在' ? 404 : 400, { error: error.message }); }
+      }
       const idx = modelsCatalog.findIndex(m => m.id === id);
       if (idx === -1) return sendJSON(res, 404, { error: "模型不存在" });
       const body = await parseBody(req);
@@ -1663,6 +1737,10 @@ const server = http.createServer(async (req, res) => {
     const catalogDelMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)$/);
     if (catalogDelMatch && req.method === "DELETE") {
       const id = parseInt(catalogDelMatch[1], 10);
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.deleteModelCatalog(id)); }
+        catch (error) { return sendJSON(res, error.message === '模型不存在' ? 404 : 400, { error: error.message }); }
+      }
       modelsCatalog = modelsCatalog.filter(m => m.id !== id);
       saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
       return sendJSON(res, 200, { success: true });

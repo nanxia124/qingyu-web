@@ -736,7 +736,13 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
         {/* 结果列表 — 根据 viewMode 切换布局 */}
         <div className="flex-1 overflow-y-auto p-4 pt-2">
-          {results.length === 0 && (
+          {results.length === 0 && generating && (
+            <div className="flex h-full flex-col items-center justify-center text-text-muted">
+              <Loader2 className="mb-3 size-8 animate-spin text-accent" />
+              <p className="text-sm">{t("imageTools.generating")}...</p>
+            </div>
+          )}
+          {results.length === 0 && !generating && (
             <div className="flex h-full flex-col items-center justify-center text-text-muted">
               <p className="text-sm">{t("imageTools.noResults")}</p>
               <p className="mt-1 text-xs text-text-secondary">{t("imageTools.resultsHint")}</p>
@@ -747,7 +753,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               {results.map((r) => (
                 <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
                   <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
-                    {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
+                    {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-1 flex items-baseline gap-2">
@@ -785,7 +791,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <div className="grid grid-cols-3 gap-3">
               {results.map((r) => (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
-                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
@@ -802,7 +808,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <div className="space-y-4">
               {results.map((r) => (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
-                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-[400px] w-full object-contain bg-surface-hover" /> : <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-[400px] w-full cursor-zoom-in object-contain bg-surface-hover" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-[400px] items-center justify-center bg-surface-hover text-[14px] text-text-secondary">{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>

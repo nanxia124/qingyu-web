@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -29,7 +29,7 @@ import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useThemeStore } from '@canvas/stores/use-theme-store'
 import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
-import i18n, { changeAppLocale, onLanguageSuggestion, SUPPORTED_LOCALES, type AppLocale } from '@canvas/i18n'
+import i18n, { changeAppLocale, onLanguageSuggestion, type AppLocale } from '@canvas/i18n'
 import {
   SidebarHomeIcon,
   SidebarChatIcon,
@@ -116,6 +116,7 @@ export default function AppLayout() {
   // ── 语言 ──
   const [currentLocale, setCurrentLocale] = useState<AppLocale>(i18n.resolvedLanguage as AppLocale)
   const [langMenuOpen, setLangMenuOpen] = useState(false)
+  const langMenuRef = useRef<HTMLDivElement>(null)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [suggested, setSuggested] = useState<{ locale: AppLocale; country?: string } | null>(null)
@@ -134,6 +135,18 @@ export default function AppLayout() {
     return () => window.clearTimeout(timer)
   }, [suggested])
 
+  // 点击语言菜单外部时关闭
+  useEffect(() => {
+    if (!langMenuOpen) return
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (langMenuRef.current && !langMenuRef.current.contains(e.target as Node)) {
+        setLangMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [langMenuOpen])
+
   const pickLocale = (loc: AppLocale) => {
     void changeAppLocale(loc)
     setCurrentLocale(loc)
@@ -148,17 +161,12 @@ export default function AppLayout() {
     'tr-TR': 'Türkçe', 'hi-IN': 'हिन्दी', 'th-TH': 'ไทย', 'vi-VN': 'Tiếng Việt',
     'id-ID': 'Bahasa Indonesia',
   }
-  const LANG_FLAGS: Record<string, string> = {
-    'zh-CN': '🇨🇳', 'zh-TW': '🇹🇼', 'en-US': '🇺🇸', 'ja-JP': '🇯🇵',
-    'ko-KR': '🇰🇷', 'es-ES': '🇪🇸', 'fr-FR': '🇫🇷', 'de-DE': '🇩🇪',
-    'ru-RU': '🇷🇺', 'pt-BR': '🇧🇷', 'it-IT': '🇮🇹', 'ar-SA': '🇸🇦',
-    'tr-TR': '🇹🇷', 'hi-IN': '🇮🇳', 'th-TH': '🇹🇭', 'vi-VN': '🇻🇳',
-    'id-ID': '🇮🇩',
-  }
-  // 中文（简/繁）排到最下面，其余按 SUPPORTED_LOCALES 原顺序
+  // 菜单里只显示这些语言；其余语言资源保留但不展示，以后想恢复直接加进这个数组即可
+  const VISIBLE_LOCALES: AppLocale[] = ['en-US', 'ja-JP', 'ko-KR', 'es-ES', 'zh-CN', 'zh-TW']
+  // 中文（简/繁）排到最下面，其余按 VISIBLE_LOCALES 顺序
   const sortedLocales = [
-    ...SUPPORTED_LOCALES.filter((l) => !l.startsWith('zh-')),
-    ...SUPPORTED_LOCALES.filter((l) => l.startsWith('zh-')),
+    ...VISIBLE_LOCALES.filter((l) => !l.startsWith('zh-')),
+    ...VISIBLE_LOCALES.filter((l) => l.startsWith('zh-')),
   ]
 
   const isCanvas = location.pathname.startsWith('/canvas')
@@ -410,15 +418,15 @@ export default function AppLayout() {
             )}
           </AnimatedThemeToggler>
 
-          {/* 语言切换：鼠标移入即展开，移出即关闭 */}
+          {/* 语言切换：点击按钮展开/收起，点击外部关闭 */}
           <div
+            ref={langMenuRef}
             className="relative"
-            onMouseEnter={() => setLangMenuOpen(true)}
-            onMouseLeave={() => setLangMenuOpen(false)}
           >
             <button
-              onClick={() => setLangMenuOpen(true)}
+              onClick={() => setLangMenuOpen((v) => !v)}
               title={t("nav.language")}
+              aria-expanded={langMenuOpen}
               className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
             >
               <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
@@ -433,7 +441,7 @@ export default function AppLayout() {
             </button>
             {langMenuOpen && (
               <div className="absolute left-0 bottom-full z-50 w-[168px] pb-2">
-                <div className="rounded-xl border border-border bg-card p-1 shadow-xl">
+                <div className="rounded-xl bg-card p-1 shadow-xl">
                   {sortedLocales.map((loc) => (
                     <button
                       key={loc}
@@ -443,7 +451,6 @@ export default function AppLayout() {
                         loc === currentLocale ? 'bg-accent/10 text-accent' : 'text-text hover:bg-secondary',
                       )}
                     >
-                      <span className="text-[15px] leading-none">{LANG_FLAGS[loc]}</span>
                       <span className="flex-1 truncate text-left">{LANG_LABELS[loc] ?? loc}</span>
                       {loc === currentLocale && <span className="size-1.5 shrink-0 rounded-full bg-accent" />}
                     </button>

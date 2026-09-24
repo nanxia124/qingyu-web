@@ -6,6 +6,33 @@ import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
 import { api } from "@/lib/api";
 import { billingApi, clearBillingToken, setBillingToken } from "@/lib/billing";
 
+const PRODUCTION_OAUTH_ORIGIN = "https://litzone.art";
+
+/** OAuth 回调地址必须和 Google/Appwrite 控制台登记的地址完全一致。 */
+export function getOAuthOrigin(): string {
+  const configuredOrigin = String(import.meta.env.VITE_OAUTH_ORIGIN || "").trim().replace(/\/$/, "");
+  if (configuredOrigin) return configuredOrigin;
+  if (window.location.hostname === "litzone.art" || window.location.hostname === "www.litzone.art") {
+    return PRODUCTION_OAUTH_ORIGIN;
+  }
+  return window.location.origin;
+}
+
+export function getOAuthErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.toLowerCase();
+  if (normalized.includes("redirect_uri_mismatch") || normalized.includes("redirect uri")) {
+    return `Google OAuth 回调地址不匹配。当前应使用 ${getOAuthOrigin()}/；请检查 Google OAuth 客户端和 Appwrite 平台域名配置。`;
+  }
+  if (normalized.includes("invalid origin") || normalized.includes("origin")) {
+    return `OAuth 来源域名不被 Appwrite 接受。请确认 Appwrite 项目平台域名包含 ${getOAuthOrigin().replace(/^https?:\/\//, "")}。`;
+  }
+  if (normalized.includes("https") || normalized.includes("too many redirects")) {
+    return "OAuth 反向代理没有正确传递 HTTPS。请检查 Nginx 的 X-Forwarded-Proto、X-Forwarded-Host 和 X-Forwarded-Port。";
+  }
+  return message || "第三方登录失败，请稍后重试；如果持续失败，请检查浏览器控制台中的 OAuth 诊断信息。";
+}
+
 // 类型定义
 export interface User {
   id: string;
@@ -79,6 +106,10 @@ export const useAuthStore = create<AuthState>()(
 
       // 检查当前会话是否有效
       checkSession: async () => {
+        // dev-login 模式：会话由 /api/dev-login 建立，不查 Appwrite，也不清业务 token
+        if (localStorage.getItem('dev_login') === '1') {
+          return;
+        }
         try {
           const user = await account.get();
           set({
@@ -141,6 +172,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // 忽略错误
         }
+        localStorage.removeItem('dev_login');
         clearBillingToken();
         set({
           user: null,
@@ -225,9 +257,10 @@ export const useAuthStore = create<AuthState>()(
 
       // 第三方 OAuth 登录：跳转 Appwrite OAuth 页面，成功后重定向回本站
       loginWithOAuth: async (provider) => {
-        const origin = window.location.origin;
+        const origin = getOAuthOrigin();
         const successUrl = `${origin}/`;
         const failureUrl = `${origin}/?oauth_error=1`;
+        console.info("[oauth] starting OAuth session", { provider, successUrl, failureUrl });
         trackEvent(AnalyticsEvent.LoginSuccess, { method: provider });
         // createOAuth2Session 会跳出当前页走授权流程，完成后浏览器自动跳回 successUrl
         await account.createOAuth2Session(provider as any, successUrl, failureUrl);

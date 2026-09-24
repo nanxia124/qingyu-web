@@ -22,6 +22,9 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build project
+        env:
+          # Google OAuth / Appwrite 回调地址必须固定为生产正式域名，不能跟随访问者的 www 或旧域名。
+          VITE_OAUTH_ORIGIN: https://litzone.art
         run: npm run build
 
       - name: Deploy to server via SSH
@@ -62,6 +65,8 @@ jobs:
             sudo chown -R www-data:www-data /var/www/qingyu-web
             nginx_conf=$(find /home/ubuntu/qingyu-upload -name nginx-qingyu-web.conf -type f -print -quit)
             test -n "$nginx_conf"
+            grep -q 'proxy_set_header X-Forwarded-Proto https;' "$nginx_conf"
+            grep -q 'proxy_set_header X-Forwarded-Host litzone.art;' "$nginx_conf"
             sudo install -m 0644 "$nginx_conf" /etc/nginx/sites-available/qingyu-web
             sudo ln -sfn /etc/nginx/sites-available/qingyu-web /etc/nginx/sites-enabled/qingyu-web
             sudo nginx -t && sudo systemctl reload nginx

@@ -1517,6 +1517,7 @@ localStorage.setItem('billing_token', ${JSON.stringify(token)});
 localStorage.setItem('token', ${JSON.stringify(token)});
 localStorage.setItem('appwrite_uid', ${JSON.stringify(uid)});
 localStorage.setItem('auth-store', ${JSON.stringify(JSON.stringify(authStoreState))});
+localStorage.setItem('dev_login', '1');
 localStorage.setItem('infinite-canvas:locale', 'zh-CN');
 localStorage.removeItem('infinite-canvas:locale-manual');
 location.href = 'http://localhost:5173/';

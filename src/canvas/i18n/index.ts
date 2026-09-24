@@ -40,8 +40,8 @@ export type AppLocale =
 
 const LOCALE_STORAGE_KEY = "infinite-canvas:locale";
 
-// 语言建议回调：检测到与当前不同的语言时，通知 UI 询问用户（不自动切换）
-type LanguageSuggestionListener = (detected: { locale: AppLocale; country?: string }) => void;
+// 语言建议回调：首次访问按地理位置自动切换后，通知 UI 弹可关闭的提示（可撤销）
+type LanguageSuggestionListener = (detected: { locale: AppLocale; country?: string; previousLocale?: AppLocale }) => void;
 let languageSuggestionListener: LanguageSuggestionListener | null = null;
 export function onLanguageSuggestion(cb: LanguageSuggestionListener) {
     languageSuggestionListener = cb;
@@ -52,7 +52,6 @@ export function onLanguageSuggestion(cb: LanguageSuggestionListener) {
     };
 }
 const MANUAL_SELECT_KEY = "infinite-canvas:locale-manual";
-const LANGUAGE_SUGGESTION_SEEN_KEY = "infinite-canvas:locale-suggestion-seen";
 
 export const SUPPORTED_LOCALES: AppLocale[] = [
     "zh-CN",
@@ -193,7 +192,8 @@ function getInitialLanguage(): AppLocale {
 }
 
 /**
- * 异步根据 IP 检测语言，仅在用户未手动选择时生效
+ * 首次访问（未手动选择语言）时，按 IP 地理位置自动切换语言，并通知 UI 弹可撤销提示。
+ * 已手动选择过语言的用户始终保持，不做任何自动切换。
  */
 export async function autoDetectLanguageByIP() {
     // 已手动选择过语言：始终保持，不做任何自动切换
@@ -203,13 +203,12 @@ export async function autoDetectLanguageByIP() {
 
     const detected = await detectLanguageByIP();
     if (detected && detected.locale !== i18n.resolvedLanguage) {
-        // 同一个语言建议只提示一次，避免用户刷新页面后反复打扰。
-        if (localStorage.getItem(LANGUAGE_SUGGESTION_SEEN_KEY) === detected.locale) {
-            return;
-        }
-        localStorage.setItem(LANGUAGE_SUGGESTION_SEEN_KEY, detected.locale);
-        // 不自动切换，通知 UI 弹 toast 询问用户是否切换
-        languageSuggestionListener?.(detected);
+        const previousLocale = i18n.resolvedLanguage as AppLocale;
+        // 自动应用：保存 locale（刷新后保持），但不打 manual 标记
+        localStorage.setItem(LOCALE_STORAGE_KEY, detected.locale);
+        await i18n.changeLanguage(detected.locale);
+        // 通知 UI 弹提示，用户可撤销或手动关闭；不自动消失
+        languageSuggestionListener?.({ ...detected, previousLocale });
     }
 }
 

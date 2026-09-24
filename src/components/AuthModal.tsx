@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import PolicyModal from "./PolicyModal"
 import { QingyuLogoIcon } from "./layout/SidebarIcons";
-import { useAuthStore } from "@/stores/useAuthStore";
+import { getOAuthErrorMessage, useAuthStore } from "@/stores/useAuthStore";
 import { AppwriteException } from "appwrite";
 
 export default function AuthModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
@@ -19,6 +19,19 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
     const [showPolicy, setShowPolicy] = useState<"terms" | "privacy" | null>(null);
 
     const { login, register, isLoading, forgotPassword, loginWithOAuth } = useAuthStore();
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("oauth_error") !== "1") return;
+        const detail = params.get("error_description") || params.get("error") || "OAuth provider returned an error";
+        console.error("[oauth] callback failed", {
+            error: params.get("error"),
+            errorDescription: params.get("error_description"),
+            currentOrigin: window.location.origin,
+        });
+        setError(getOAuthErrorMessage(detail));
+        window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.hash}`);
+    }, []);
 
     const validateEmail = () => {
         if (!email.trim()) { setError(t('auth.emailRequired')); return false; }
@@ -135,7 +148,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 {/* 第三方登录按钮 */}
                 <div className="flex flex-col gap-3 mb-6">
                     <button
-                        onClick={() => { setError(""); loginWithOAuth("google").catch(() => setError(t('auth.oauthNotAvail'))); }}
+                        onClick={() => { setError(""); loginWithOAuth("google").catch((err) => { console.error("[oauth] Google login failed", err); setError(getOAuthErrorMessage(err)); }); }}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -148,7 +161,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     </button>
 
                     <button
-                        onClick={() => { setError(""); loginWithOAuth("apple").catch(() => setError(t('auth.oauthNotAvail'))); }}
+                        onClick={() => { setError(""); loginWithOAuth("apple").catch((err) => { console.error("[oauth] Apple login failed", err); setError(getOAuthErrorMessage(err)); }); }}
                         className="w-full flex items-center justify-center gap-3 py-3 rounded-[12px] bg-card border border-border hover:bg-surface-hover transition-colors"
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">

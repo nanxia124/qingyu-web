@@ -11,24 +11,46 @@
 ### 这是什么
 让用户在网站里直接搜 Pinterest 灵感图，不用跳来跳去。
 
+1. **<span style="font-size:18px;color:#fff">你在网站里就能直接搜Pinterest上的灵感图，不用来回切网站复制粘贴。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">让用户在网站里直接搜 Pinterest 灵感图，不用跳来跳去。</span>
+
+
 ### 用户怎么用
 - 画布里打开"灵感"面板，输关键词搜 Pinterest
 - 缩略图墙展示，点一下拖进画布
 - 自动处理版权和来源，不用离开网站
 
+2. **<span style="font-size:18px;color:#fff">画布里开个"灵感"面板，输入关键词就能搜；看中的图点一下拖进画布就行，版权来源系统自动处理，不用你离开网站。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">画布里打开"灵感"面板，输关键词搜 Pinterest；缩略图墙展示，点一下拖进画布；自动处理版权和来源，不用离开网站。</span>
+
+
 ### 现在长什么样
 还没开始做，需求已想清楚。
+
+3. **<span style="font-size:18px;color:#fff">还没开始写代码，但要做什么已经想清楚了。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">还没开始做，需求已想清楚。</span>
+
+
 ## 1. 背景与目标
 
 ### 1.1 背景
 
 Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过程中需要大量灵感参考图。当前用户需要在 Pinterest / 本地文件夹 / 项目之间反复跳转，效率低。
 
+4. **<span style="font-size:18px;color:#fff">设计师找灵感时，要在Pinterest、自己电脑文件夹、我们的画布之间来回切，复制粘贴很麻烦，效率低。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过程中需要大量灵感参考图。当前用户需要在 Pinterest / 本地文件夹 / 项目之间反复跳转，效率低。</span>
+
+
 ### 1.2 目标
 
 通过 Pinterest 官方 API，让用户一键授权登录，并自动同步其 Pinterest 账号下的画板（Board）和图片（Pin）到 Litzone 素材库，在画布中直接调用参考图。
 
+5. **<span style="font-size:18px;color:#fff">你点一下"授权登录"，Pinterest账号里的画板和图片就自动同步到我们的素材库，在画布里直接调用。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">通过 Pinterest 官方 API，让用户一键授权登录，并自动同步其 Pinterest 账号下的画板（Board）和图片（Pin）到 Litzone 素材库，在画布中直接调用参考图。</span>
+
+
 ### 1.3 非目标（本期不做）
+
 
 
 
@@ -42,6 +64,7 @@ Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过�
 
 
 
+
 ***
 
 ## 2. Pinterest Developer 申请准备
@@ -50,11 +73,17 @@ Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过�
 
 
 
+
 * Pinterest Business Account（免费注册，个人号可转企业号）
 
 * 注册地址：[https://developers.pinterest.com](https://developers.pinterest.com)
 
+6. **<span style="font-size:18px;color:#fff">要先用一个Pinterest企业号（免费注册，个人号可以转成企业号）才能申请访问权限。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">Pinterest Business Account（免费注册，个人号可转企业号）；注册地址：https://developers.pinterest.com</span>
+
+
 ### 2.2 创建 App 时填写的信息
+
 
 
 
@@ -70,6 +99,7 @@ Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过�
 
 
 
+
 | Scope                | 用途                    | 是否必须  |
 | -------------------- | --------------------- | ----- |
 | `user_accounts:read` | 获取用户 Pinterest 用户名、头像 | ✅ 登录用 |
@@ -79,6 +109,9 @@ Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过�
 **Trial Access**：提交后 1\~2 个工作日审核通过，额度 1000 请求 / 天，创建的测试 Pin 不可见（本期只读无影响）。
 
 **Standard Access**：正式上线前需录 demo 视频申请，本期先跑通 Trial。
+
+7. **<span style="font-size:18px;color:#fff">我们只申请"读"的权限——能看到你的用户名头像、你的画板列表、画板里的图片，不能替你发图、不能改你的账号。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">user_accounts:read（获取用户 Pinterest 用户名、头像）、boards:read（读取用户画板列表）、pins:read（读取画板下的 Pin 图片）</span>
 
 
 
@@ -90,51 +123,57 @@ Litzone（qingyu-web）是一个 AI 设计画布工具，设计师在创作过�
 
 
 
+
 ```
 用户点击「用 Pinterest 登录 / 连接 Pinterest」
 
-\&#x20; ↓
+&#x20; ↓
 
 前端跳转到 Pinterest 授权页：
 
-\&#x20; https://www.pinterest.com/oauth/?client\\\_id={CLIENT\\\_ID}
+&#x20; https://www.pinterest.com/oauth/?client\_id={CLIENT\_ID}
 
-\&#x20;   \\\&redirect\\\_uri={REDIRECT\\\_URI}
+&#x20;   \&redirect\_uri={REDIRECT\_URI}
 
-\&#x20;   \\\&response\\\_type=code
+&#x20;   \&response\_type=code
 
-\&#x20;   \\\&scope=user\\\_accounts:read,boards:read,pins:read
+&#x20;   \&scope=user\_accounts:read,boards:read,pins:read
 
-\&#x20;   \\\&state={随机state}
+&#x20;   \&state={随机state}
 
-\&#x20; ↓
+&#x20; ↓
 
 用户登录并点击「Allow」
 
-\&#x20; ↓
+&#x20; ↓
 
-Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
+Pinterest 重定向回 /auth/pinterest/callback?code=xxx\&state=xxx
 
-\&#x20; ↓
+&#x20; ↓
 
-后端用 code 换取 access\\\_token：
+后端用 code 换取 access\_token：
 
-\&#x20; POST https://api.pinterest.com/v5/oauth/token
+&#x20; POST https://api.pinterest.com/v5/oauth/token
 
-\&#x20; ↓
+&#x20; ↓
 
-后端调用 GET /user\\\_account 获取用户信息
+后端调用 GET /user\_account 获取用户信息
 
-\&#x20; ↓
+&#x20; ↓
 
-后端在 Appwrite 中查找/创建用户记录，存储 pinterest\\\_access\\\_token
+后端在 Appwrite 中查找/创建用户记录，存储 pinterest\_access\_token
 
-\&#x20; ↓
+&#x20; ↓
 
 前端跳转到素材库页面，触发首次同步
 ```
 
+8. **<span style="font-size:18px;color:#fff">你点"连接Pinterest"，跳到Pinterest的授权页，登录后点"允许"，Pinterest就把你送回我们网站，系统在后台拿到你的访问凭证，然后自动把你的画板同步过来。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">用户点击「用 Pinterest 登录 / 连接 Pinterest」→ 前端跳转到 Pinterest 授权页 → 用户登录并点击「Allow」→ Pinterest 重定向回 /auth/pinterest/callback?code=xxx&state=xxx → 后端用 code 换取 access_token → 后端调用 GET /user_account 获取用户信息 → 后端在 Appwrite 中查找/创建用户记录，存储 pinterest_access_token → 前端跳转到素材库页面，触发首次同步</span>
+
+
 ### 3.2 State 参数
+
 
 
 
@@ -146,11 +185,15 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 
 
 
+
 * Pinterest access\_token 有效期约 30 天
 
 * 需要存 `refresh_token`（如果 OAuth 流程返回的话），过期时自动刷新
 
 * Token 加密存储，不要明文暴露给前端
+
+9. **<span style="font-size:18px;color:#fff">你的Pinterest访问凭证大概30天过期，系统会自动续期；凭证加密存在服务器上，不会露给你的浏览器。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">Pinterest access_token 有效期约 30 天；需要存 refresh_token（如果 OAuth 流程返回的话），过期时自动刷新；Token 加密存储，不要明文暴露给前端。</span>
 
 
 
@@ -161,6 +204,7 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 ### 4.1 新增 Collection：`pinterest_connections`
 
 存储用户的 Pinterest 授权连接信息。
+
 
 
 
@@ -177,9 +221,14 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 | created\_at         | datetime   | 创建时间                |
 | updated\_at         | datetime   | 更新时间                |
 
+10. **<span style="font-size:18px;color:#fff">系统给每个连接了Pinterest的用户建一条记录，记着你的Pinterest用户名、头像、访问凭证和上次同步时间。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">存储用户的 Pinterest 授权连接信息。</span>
+
+
 ### 4.2 新增 Collection：`pinterest_boards`
 
 存储用户的画板列表。
+
 
 
 
@@ -198,6 +247,7 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 ### 4.3 新增 Collection：`pinterest_pins`
 
 存储画板下的 Pin 图片。
+
 
 
 
@@ -220,11 +270,15 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 
 
 
+
 * **图片本体不下载**，只存 Pinterest CDN 上的图片 URL
 
 * 前端直接 `<img src={image_url_medium}>` 展示
 
 * Pinterest CDN 允许外链，无需代理
+
+11. **<span style="font-size:18px;color:#fff">图片本身不下载到我们服务器，直接用Pinterest的图片地址展示，不用把图片再复制一份存过来。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">图片本体不下载，只存 Pinterest CDN 上的图片 URL；前端直接 <img src={image_url_medium}> 展示；Pinterest CDN 允许外链，无需代理。</span>
 
 
 
@@ -242,10 +296,11 @@ Pinterest 重定向回 /auth/pinterest/callback?code=xxx\\\&state=xxx
 
 
 
+
 ```
 {
 
-\&#x20; "authUrl": "https://www.pinterest.com/oauth/?..."
+&#x20; "authUrl": "https://www.pinterest.com/oauth/?..."
 
 }
 ```
@@ -260,6 +315,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 1. 校验 state
 
 2. 用 code 换 access\_token
@@ -270,11 +326,16 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 5. 返回前端跳转地址（带登录态）
 
+12. **<span style="font-size:18px;color:#fff">Pinterest把你送回来时，系统会先检查这是不是你本人发起的授权（防止别人冒充），然后用一次性凭证换到长期访问凭证，最后把你送回素材库页面。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。</span>
+
+
 ### 5.3 `POST /api/pinterest/sync/boards`
 
 触发同步用户的 Board 列表。
 
 **行为：**
+
 
 
 
@@ -290,12 +351,13 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 ```
 {
 
-\&#x20; "boardsCount": 12,
+&#x20; "boardsCount": 12,
 
-\&#x20; "boards": \\\[...]
+&#x20; "boards": \[...]
 
 }
 ```
@@ -305,6 +367,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 同步某个画板下的所有 Pin。
 
 **行为：**
+
 
 
 
@@ -330,11 +393,13 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 ***
 
 ## 6. 前端页面与交互
 
 ### 6.1 页面位置
+
 
 
 
@@ -348,6 +413,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 * 居中展示 Pinterest logo + 说明文案
 
 * 一个「连接 Pinterest 账号」按钮
@@ -355,6 +421,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 * 点击后跳转到 Pinterest 授权页
 
 **状态二：已连接，未同步**
+
 
 
 
@@ -368,11 +435,13 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 * 进度提示：「正在同步画板...」「正在同步 Pin（3/12）...」
 
 * 禁用重复点击
 
 **状态四：已同步**
+
 
 
 
@@ -386,7 +455,12 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 * 右上角：「重新同步」按钮 + 「断开连接」按钮（需确认弹窗）
 
+13. **<span style="font-size:18px;color:#fff">页面有四种状态——没连接时显示一个大按钮让你连；连了但没同步时显示"同步我的画板"按钮；同步中显示进度；同步完后左边是画板列表，右边是图片墙，还能搜索和重新同步。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">状态一：未连接（居中展示 Pinterest logo + 说明文案 + 连接按钮）；状态二：已连接未同步（顶部显示用户头像+用户名 + 同步按钮）；状态三：同步中（进度提示 + 禁用重复点击）；状态四：已同步（左侧画板列表 + 右侧 Pin 网格 + 搜索框 + 重新同步/断开连接按钮）。</span>
+
+
 ### 6.3 画布集成（后续）
+
 
 
 
@@ -400,6 +474,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 * 遵守项目全局规则：**禁止描边**、**暗色主题**
 
 * 组件用 Ant Design + Tailwind
@@ -407,6 +482,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 * 加载状态用 Skeleton 或 Spin
 
 * 断开连接必须有确认弹窗（项目规范要求）
+
 
 
 
@@ -418,6 +494,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 * Base URL：`https://api.pinterest.com/v5`
 
 * 认证方式：Header `Authorization: Bearer {access_token}`
@@ -425,6 +502,7 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 * 分页：响应中返回 `bookmark` 字段，下一页传 `bookmark` 参数
 
 ### 7.2 关键 Endpoint
+
 
 
 
@@ -439,13 +517,19 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 * Trial：1000 请求 / 天（全局限额）
 
 * 同步时注意分页，每个 board 可能有几十上百个 pin
 
 * 加简单的延时或并发控制，避免触发限流
 
+14. **<span style="font-size:18px;color:#fff">试用期每天只能请求1000次，所以同步时要慢慢拉，一个画板可能有几百张图，不能一口气全要，不然会被Pinterest限流。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">Trial：1000 请求 / 天（全局限额）；同步时注意分页，每个 board 可能有几十上百个 pin；加简单的延时或并发控制，避免触发限流。</span>
+
+
 ### 7.4 错误处理
+
 
 
 
@@ -455,6 +539,9 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 | 403      | 权限不足          | 提示用户重新授权                   |
 | 429      | 限流            | 指数退避重试                     |
 | 404      | board/pin 不存在 | 跳过，记录日志                    |
+
+15. **<span style="font-size:18px;color:#fff">访问凭证过期了系统自动换新的重试一次；权限不够会让你重新授权；请求太多被限流会等一会儿再试；图片不存在就跳过记个日志。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">401 token 过期 → 自动用 refresh_token 刷新，重试一次；403 权限不足 → 提示用户重新授权；429 限流 → 指数退避重试；404 board/pin 不存在 → 跳过，记录日志。</span>
 
 
 
@@ -466,23 +553,26 @@ OAuth 回调接口，处理 code 换 token，创建 / 更新用户连接。
 
 
 
+
 ```
-PINTEREST\\\_CLIENT\\\_ID=你的client\\\_id
+PINTEREST\_CLIENT\_ID=你的client\_id
 
-PINTEREST\\\_CLIENT\\\_SECRET=你的client\\\_secret
+PINTEREST\_CLIENT\_SECRET=你的client\_secret
 
-PINTEREST\\\_REDIRECT\\\_URI\\\_PROD=https://litzone.art/auth/pinterest/callback
+PINTEREST\_REDIRECT\_URI\_PROD=https://litzone.art/auth/pinterest/callback
 
-PINTEREST\\\_REDIRECT\\\_URI\\\_DEV=http://localhost:5173/auth/pinterest/callback
+PINTEREST\_REDIRECT\_URI\_DEV=http://localhost:5173/auth/pinterest/callback
 ```
 
 前端需要：
 
 
 
+
 ```
-VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
+VITE\_PINTEREST\_AUTH\_URL=https://www.pinterest.com/oauth/
 ```
+
 
 
 
@@ -491,6 +581,7 @@ VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
 ## 9. 分期实施计划
 
 ### 第一期（本期）—— OAuth 登录 + 素材同步
+
 
 
 
@@ -506,6 +597,7 @@ VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
 
 
 
+
 * 画布侧边栏拖拽参考图
 
 * Pin 搜索（按关键词过滤）
@@ -518,9 +610,11 @@ VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
 
 
 
+
 ***
 
 ## 10. 验收标准
+
 
 
 
@@ -540,6 +634,7 @@ VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
 
 
 
+
 ***
 
 ## 11. 补充：开发注意事项（容易踩的坑）
@@ -547,6 +642,7 @@ VITE\\\_PINTEREST\\\_AUTH\\\_URL=https://www.pinterest.com/oauth/
 ### 11.1 图片尺寸选择
 
 Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
+
 
 
 
@@ -572,6 +668,7 @@ Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
 
 
 
+
 * 列表缩略图用 `400x300` 或 `736x`，平衡清晰度和加载速度
 
 * 点击大图预览时用 `orig` 原图
@@ -581,6 +678,7 @@ Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
 ### 11.2 非图片 Pin 的处理
 
 不是所有 Pin 都是静态图片，Pinterest API 返回的 Pin 可能是：
+
 
 
 
@@ -598,6 +696,7 @@ Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
 
 
 
+
 * Pinterest 的私密画板需要单独的 `boards:read_secret` 权限
 
 * 默认 `boards:read` 只能读到公开画板
@@ -610,6 +709,7 @@ Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
 
 
 
+
 | 场景          | 策略                                             |
 | ----------- | ---------------------------------------------- |
 | 首次同步        | 全量拉取所有 board 和 pin                             |
@@ -618,11 +718,16 @@ Pinterest API 返回的 Pin 图片是多尺寸对象，结构大致如下：
 
 **本地删除策略：** 用户在 Pinterest 上删了 board/pin，本期**不自动删除本地数据**（避免误删），只是不再出现在同步结果里。二期再加 "清理已删除项" 功能。
 
+16. **<span style="font-size:18px;color:#fff">第一次同步全量拉取，以后再同步只检查有没有新增或删除的画板，已有的画板只拉最近改过的图；你在Pinterest删了图，我们本地不自动删，只是不再显示，避免误删。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">首次同步全量拉取所有 board 和 pin；日常重新同步只拉 board 列表（对比是否有新增/删除），已有 board 只拉最近修改的 pin；单个 board 同步分页拉取，按 pinterest_pin_id upsert，不重复插入。本地删除策略：用户在 Pinterest 上删了 board/pin，本期不自动删除本地数据（避免误删），只是不再出现在同步结果里。</span>
+
+
 ### 11.5 本地开发回调问题
 
 Pinterest 要求 Redirect URI 必须在 App 配置里白名单中，`http://localhost:5173` 也需要提前加进去。
 
 **如果回调不通的备用方案：**
+
 
 
 
@@ -633,6 +738,7 @@ Pinterest 要求 Redirect URI 必须在 App 配置里白名单中，`http://loca
 * 或者用 ngrok /cloudflare tunnel 把本地服务暴露成 https 地址
 
 ### 11.6 性能与懒加载
+
 
 
 
@@ -648,15 +754,21 @@ Pinterest 要求 Redirect URI 必须在 App 配置里白名单中，`http://loca
 
 
 
+
 * `access_token` 和 `refresh_token` **绝对不能返回给前端**，只存在后端
 
 * 后端响应给前端的是自己的 session 或 cookie，前端永远不接触 Pinterest token
 
 * 加密存储：用环境变量里的密钥对称加密（AES）后再存 Appwrite，不要明文
 
+17. **<span style="font-size:18px;color:#fff">你的Pinterest访问凭证绝对不能出现在浏览器里，只存在服务器上；浏览器拿到的是我们自己发的登录凭证，跟Pinterest访问凭证完全分开。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">access_token 和 refresh_token 绝对不能返回给前端，只存在后端；后端响应给前端的是自己的 session 或 cookie，前端永远不接触 Pinterest token；加密存储：用环境变量里的密钥对称加密（AES）后再存 Appwrite，不要明文。</span>
+
+
 ### 11.8 断开连接后的数据处理
 
 用户点「断开连接」时：
+
 
 
 
@@ -672,15 +784,21 @@ Pinterest 要求 Redirect URI 必须在 App 配置里白名单中，`http://loca
 
 
 
+
 * 所有 collection 都必须带 `user_id` 字段
 
 * Appwrite 权限设置为：**用户只能读 / 写自己的数据**
 
 * 后端接口从登录态拿 `user_id`，不要相信前端传的 user\_id
 
+18. **<span style="font-size:18px;color:#fff">每个用户只能看到自己同步的画板和图片，别人看不到你的；系统从你的登录状态识别你是谁，不会信你浏览器随便传的用户编号。</span>**<br>
+   <span style="display:inline-block;font-size:12px;color:#666;transform:scale(0.35);transform-origin:left top;line-height:1">所有 collection 都必须带 user_id 字段；Appwrite 权限设置为：用户只能读/写自己的数据；后端接口从登录态拿 user_id，不要相信前端传的 user_id。</span>
+
+
 ### 11.10 空状态与错误态
 
 前端要处理这些边界情况：
+
 
 
 

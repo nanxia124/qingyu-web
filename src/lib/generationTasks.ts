@@ -92,24 +92,24 @@ export function resolveOpenImageParams(opts: {
   const out: { size?: string; quality?: string; resolution?: string } = {};
   const ratio = (opts.ratio || '').toLowerCase();
   const model = (opts.model || '').toLowerCase();
-  const isVip = model.includes('gpt-image-2-vip') || model.includes('gpt-image-2-official');
   const q = (opts.quality || '').toLowerCase();
 
-  // nano-banana 系列只支持 1K，忽略画质选择
+  // nano-banana 系列：只支持 1K，size 传像素值，不支持 resolution 参数
   if (model.includes('nano-banana')) {
     out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
     return out;
   }
 
-  // gpt-image-2-vip/official 支持 2K/4K
-  if (isVip) {
-    if (q === '4k') out.size = RATIO_SIZE_4K[ratio] || RATIO_SIZE_1K[ratio] || '1024x1024';
-    else if (q === '2k') out.size = RATIO_SIZE_2K[ratio] || RATIO_SIZE_1K[ratio] || '1024x1024';
-    else out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
+  // gpt-image-2 系列：size 直接传比例字符串，resolution 传档位
+  if (model.includes('gpt-image-2')) {
+    if (ratio && ratio !== '__orig__') out.size = ratio;
+    else out.size = '1:1';
+    if (q === '2k' || q === '4k') out.resolution = q.toUpperCase();
+    else out.resolution = '1K';
     return out;
   }
 
-  // 默认：1K
+  // 默认：1K 像素值
   out.size = RATIO_SIZE_1K[ratio] || '1024x1024';
   return out;
 }

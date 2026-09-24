@@ -254,10 +254,11 @@ export async function createPostgresBillingStore() {
     const me = await getUser(appwriteUserId);
     if (!me) return { used: 0, limit: 20 };
     const r = await pool.query(
-      `select coalesce(sum(quantity),0)::int as used from app.usage_records
-       where user_id=$1 and feature_code='ai_proxy' and daily_reservation_id is not null
-         and result <> 'failed' and occurred_at >= date_trunc('day', now()),
-      [me.internal_user_id]
+      `select coalesce(sum(amount),0)::int as used
+       from app.daily_usage_reservations
+       where user_id=$1 and workspace_id=$2 and feature_code='image_gen'
+         and usage_date=current_date and status in ('reserved','committed')`,
+      [me.internal_user_id, me.workspace_id]
     );
     return { used: r.rows[0]?.used || 0, limit: 20 };
   }

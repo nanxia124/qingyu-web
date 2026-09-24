@@ -21,3 +21,6 @@
 - 组件命名清晰，不要用缩写
 - 关键操作（删除、关闭、开启）必须有确认弹窗
 - 头像、图标等资源优先用默认映射，不要每个都手动配置
+
+## 计费额度
+- 免费生图额度以 `app.daily_usage_reservations` 中当天 `image_gen` 的 `reserved` 和 `committed` 记录为准；前端展示和禁用按钮必须使用 `/api/billing/me` 返回的 `dailyUsed` / `dailyLimit`。

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
 import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Plus, RefreshCw, Settings2, Trash2, Ungroup, Upload, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -185,7 +185,7 @@ export function CanvasNodeHoverToolbar({
     return (
         <>
             <div
-                className="absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center gap-1 overflow-visible rounded-[18px] bg-[#1c1c1c] px-3 text-[15px] text-white shadow-[0_8px_28px_rgba(0,0,0,.4)]"
+                className="absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center gap-1 overflow-visible rounded-md bg-panel px-3 text-[15px] text-text shadow-[0_8px_28px_rgba(15,23,42,.15)] dark:shadow-[0_8px_28px_rgba(0,0,0,.45)]"
                 style={{ left, top }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
@@ -292,7 +292,7 @@ function ToolbarAction({ title, label, icon, onClick, showLabel, active = false,
     return (
         <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ root: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
             <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap px-1.5 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
-                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
+                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-surface-hover ${active ? "bg-surface-hover" : ""}`}>
                     {icon}
                     {hasText ? <span>{label}</span> : null}
                 </span>

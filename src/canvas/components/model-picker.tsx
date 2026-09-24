@@ -1,4 +1,4 @@
-﻿import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Clapperboard, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -25,13 +25,21 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
     const [open, setOpen] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const serverConfigStatus = useConfigStore((state) => state.serverConfigStatus);
     const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
-    const current = value || "";
+    const defaultModel = options[0] || "";
+    const configReady = serverConfigStatus === "ready";
+    const selectableOptions = configReady ? options : [];
+    const current = configReady && value && options.includes(value) ? value : configReady ? defaultModel : "";
+
+    useEffect(() => {
+        if (configReady && defaultModel && value !== defaultModel) onChange(defaultModel);
+    }, [configReady, defaultModel, onChange, value]);
 
     // 按模型品牌分组
     const groupedOptions = useMemo(() => {
         const groups: Record<string, string[]> = {};
-        for (const model of options) {
+        for (const model of selectableOptions) {
             const lower = model.toLowerCase();
             let group = "其他";
             if (lower.includes("gpt")) group = "GPT";
@@ -45,8 +53,10 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
             groups[group].push(model);
         }
         return groups;
-    }, [options]);
-    const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
+    }, [selectableOptions]);
+    const pickerPlaceholder = selectableOptions.length
+        ? (placeholder || modelOptionLabel(config, defaultModel))
+        : t("settingsPanels.model.notFetched");
 
     const refreshModels = async () => {
         if (refreshing) return;
@@ -116,7 +126,7 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
                 open={open}
                 value={current}
                 onOpenChange={(nextOpen) => {
-                    if (nextOpen && !options.length && config.channelMode === "local") onMissingConfig?.();
+                    if (nextOpen && !selectableOptions.length && config.channelMode === "local") onMissingConfig?.();
                     if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
                     setOpen(nextOpen);
                 }}
@@ -124,7 +134,7 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
             >
                 <SelectTrigger
                     className={cn(
-                        "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-[6px] !border-0 !bg-secondary px-3 text-[13px] font-normal !shadow-none transition-colors",
+                        "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-md !border !border-border !bg-transparent dark:!border-0 dark:!bg-secondary px-3 text-[13px] font-normal !shadow-none transition-colors",
                         fullWidth ? "w-full min-w-0 justify-between" : "min-w-[9rem] justify-start",
                         "data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/20",
                     )}
@@ -137,7 +147,7 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
                 </SelectTrigger>
                 <SelectContent
                     data-canvas-no-zoom
-                    className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl bg-popover p-1 shadow-xl ring-0 border-0"
+                    className="z-[1200] min-w-[var(--radix-select-trigger-width, 320px)] max-w-[calc(100vw-24px)] rounded-xl !bg-panel p-1 text-text shadow-xl ring-0 border-0"
                     position="popper"
                     align="start"
                     side="bottom"
@@ -145,10 +155,10 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
                     onPointerDown={(event) => event.stopPropagation()}
                     onMouseDown={(event) => event.stopPropagation()}
                 >
-                    {options.length ? (
+                    {selectableOptions.length ? (
                         Object.entries(groupedOptions).map(([group, models]) => (
                             <SelectGroup key={group}>
-                                <SelectLabel className="px-2 py-1.5 text-xs font-normal text-[#6a6a6a]">{group}</SelectLabel>
+                                <SelectLabel className="px-2 py-1.5 text-xs font-normal text-text-muted">{group}</SelectLabel>
                                 {models.map((model) => (
                                     <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)} title={modelOptionLabel(config, model)}>
                                         <ModelLabel config={config} model={model} />

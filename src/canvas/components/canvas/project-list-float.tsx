@@ -4,6 +4,7 @@ import { App } from "antd";
 import { Check, Download, FolderOpen, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { useCanvasStore } from "@canvas/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@canvas/stores/canvas/use-canvas-ui-store";
+import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { exportCanvasProjects } from "@canvas/lib/canvas/canvas-export";
 import { readZip } from "@canvas/lib/zip";
 import { setMediaBlob } from "@canvas/services/file-storage";
@@ -19,6 +20,45 @@ export function ProjectListFloat() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingTitle, setEditingTitle] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const isDark = useThemeStore((state) => state.theme === "dark");
+    const c = isDark
+        ? {
+            panel: "#1c1c1c",
+            shadow: "0 8px 32px rgba(0,0,0,.4)",
+            title: "#fff",
+            close: "#888",
+            label: "#ccc",
+            card: "rgba(255,255,255,.05)",
+            cardCurrent: "rgba(80,81,248,.18)",
+            itemTitle: "#fff",
+            current: "#8b8cf5",
+            meta: "#888",
+            btnBg: "rgba(255,255,255,.08)",
+            btnText: "#ccc",
+            danger: "#f87171",
+            inputBg: "rgba(255,255,255,.1)",
+            inputText: "#fff",
+            trigger: "#fff",
+        }
+        : {
+            panel: "#ffffff",
+            shadow: "0 8px 32px rgba(0,0,0,.12)",
+            title: "#1d1d1f",
+            close: "#6b6b73",
+            label: "#3f3f46",
+            card: "#f4f4f6",
+            cardCurrent: "rgba(80,81,248,.10)",
+            itemTitle: "#1d1d1f",
+            current: "#5051f8",
+            meta: "#6b6b73",
+            btnBg: "#f0f0f2",
+            btnText: "#3f3f46",
+            danger: "#ef4444",
+            inputBg: "#f0f0f2",
+            inputText: "#1d1d1f",
+            trigger: "#1d1d1f",
+        };
 
     const projects = useCanvasStore((s) => s.projects);
     const createProject = useCanvasStore((s) => s.createProject);
@@ -104,7 +144,7 @@ export function ProjectListFloat() {
                 onClick={() => setOpen(!open)}
                 style={{
                     background: "transparent",
-                    color: "#fff",
+                    color: c.trigger,
                     border: "none",
                     borderRadius: 8,
                     padding: "6px 10px",
@@ -126,40 +166,40 @@ export function ProjectListFloat() {
                         top: 56,
                         left: 16,
                         zIndex: 100,
-                        background: "#1c1c1c",
+                        background: c.panel,
                         borderRadius: 16,
                         padding: 16,
                         width: 300,
                         maxHeight: "calc(100vh - 140px)",
                         overflowY: "auto",
                         scrollbarWidth: "thin",
-                        boxShadow: "0 8px 32px rgba(0,0,0,.4)",
+                        boxShadow: c.shadow,
                     }}
                 >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                        <span style={{ color: "#fff", fontWeight: 600 }}>画布库</span>
-                        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer" }}>
+                        <span style={{ color: c.title, fontWeight: 600 }}>画布库</span>
+                        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: c.close, cursor: "pointer" }}>
                             <X size={16} />
                         </button>
                     </div>
 
                     {/* 批量操作工具栏 */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#ccc", fontSize: 12, cursor: "pointer", marginRight: 2 }}>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, color: c.label, fontSize: 12, cursor: "pointer", marginRight: 2 }}>
                             <input type="checkbox" className="canvas-checkbox" checked={allSelected} onChange={toggleAll} />
                             全选
                         </label>
                         {selectedIds.length > 0 && (
                             <>
-                                <button onClick={deleteSelected} style={toolBtnStyle(false, "#f87171")}>
+                                <button onClick={deleteSelected} style={toolBtnStyle(false, c.danger, c.btnBg)}>
                                     <Trash2 size={13} /> 删除{selectedIds.length > 1 ? `(${selectedIds.length})` : ""}
                                 </button>
-                                <button onClick={exportSelected} style={toolBtnStyle(false, "#ccc")}>
+                                <button onClick={exportSelected} style={toolBtnStyle(false, c.btnText, c.btnBg)}>
                                     <Download size={13} /> 导出
                                 </button>
                             </>
                         )}
-                        <button onClick={() => fileInputRef.current?.click()} style={toolBtnStyle(false, "#ccc")}>
+                        <button onClick={() => fileInputRef.current?.click()} style={toolBtnStyle(false, c.btnText, c.btnBg)}>
                             <Upload size={13} /> 导入
                         </button>
                     </div>
@@ -199,7 +239,7 @@ export function ProjectListFloat() {
                                     borderRadius: 8,
                                     cursor: "pointer",
                                     marginBottom: 4,
-                                    background: isCurrent ? "rgba(80,81,248,.18)" : "rgba(255,255,255,.05)",
+                                    background: isCurrent ? c.cardCurrent : c.card,
                                 }}
                             >
                                 {editing ? (
@@ -214,19 +254,19 @@ export function ProjectListFloat() {
                                             }}
                                             style={{
                                                 flex: 1,
-                                                background: "rgba(255,255,255,.1)",
+                                                background: c.inputBg,
                                                 border: "none",
                                                 borderRadius: 6,
                                                 padding: "4px 8px",
-                                                color: "#fff",
+                                                color: c.inputText,
                                                 fontSize: 14,
                                                 outline: "none",
                                             }}
                                         />
-                                        <button onClick={() => saveRename(p.id)} style={iconBtnStyle("#5051F8")}>
+                                        <button onClick={() => saveRename(p.id)} style={iconBtnStyle("#5051F8", c.btnBg)}>
                                             <Check size={14} />
                                         </button>
-                                        <button onClick={() => setEditingId(null)} style={iconBtnStyle("#888")}>
+                                        <button onClick={() => setEditingId(null)} style={iconBtnStyle(c.close, c.btnBg)}>
                                             <X size={14} />
                                         </button>
                                     </div>
@@ -241,12 +281,12 @@ export function ProjectListFloat() {
                                                 onChange={(e) => toggleSelected(p.id, e.target.checked)}
                                                 style={{ flexShrink: 0 }}
                                             />
-                                            <span style={{ color: "#fff", fontSize: 14 }}>
+                                            <span style={{ color: c.itemTitle, fontSize: 14 }}>
                                                 {p.title}
-                                                {isCurrent && <span style={{ color: "#8b8cf5", fontSize: 11, marginLeft: 6 }}>当前</span>}
+                                                {isCurrent && <span style={{ color: c.current, fontSize: 11, marginLeft: 6 }}>当前</span>}
                                             </span>
                                         </div>
-                                        <div style={{ color: "#888", fontSize: 12, marginTop: 4, paddingLeft: 22 }}>
+                                        <div style={{ color: c.meta, fontSize: 12, marginTop: 4, paddingLeft: 22 }}>
                                             {p.nodes.length} 个节点 · 最近{" "}
                                             {new Date(p.updatedAt).toLocaleString(undefined, {
                                                 month: "2-digit",
@@ -269,13 +309,13 @@ export function ProjectListFloat() {
                                         }}
                                         onMouseDown={(e) => e.stopPropagation()}
                                     >
-                                        <button title="重命名" onClick={() => startRename(p.id, p.title)} style={iconBtnStyle("#aaa")}>
+                                        <button title="重命名" onClick={() => startRename(p.id, p.title)} style={iconBtnStyle(c.btnText, c.btnBg)}>
                                             <Pencil size={13} />
                                         </button>
-                                        <button title="导出" onClick={() => void exportCanvasProjects([p], p.title || "画布")} style={iconBtnStyle("#aaa")}>
+                                        <button title="导出" onClick={() => void exportCanvasProjects([p], p.title || "画布")} style={iconBtnStyle(c.btnText, c.btnBg)}>
                                             <Download size={13} />
                                         </button>
-                                        <button title="删除" onClick={() => deleteOne(p.id)} style={iconBtnStyle("#f87171")}>
+                                        <button title="删除" onClick={() => deleteOne(p.id)} style={iconBtnStyle(c.danger, c.btnBg)}>
                                             <Trash2 size={13} />
                                         </button>
                                     </div>
@@ -291,7 +331,7 @@ export function ProjectListFloat() {
     );
 }
 
-function toolBtnStyle(disabled: boolean, color: string): React.CSSProperties {
+function toolBtnStyle(disabled: boolean, color: string, bg: string): React.CSSProperties {
     return {
         display: "inline-flex",
         alignItems: "center",
@@ -299,7 +339,7 @@ function toolBtnStyle(disabled: boolean, color: string): React.CSSProperties {
         height: 26,
         padding: "0 8px",
         borderRadius: 6,
-        background: "rgba(255,255,255,.08)",
+        background: bg,
         border: "none",
         color: disabled ? "#555" : color,
         fontSize: 12,
@@ -308,7 +348,7 @@ function toolBtnStyle(disabled: boolean, color: string): React.CSSProperties {
     };
 }
 
-function iconBtnStyle(color: string): React.CSSProperties {
+function iconBtnStyle(color: string, bg: string): React.CSSProperties {
     return {
         display: "inline-flex",
         alignItems: "center",
@@ -316,7 +356,7 @@ function iconBtnStyle(color: string): React.CSSProperties {
         width: 24,
         height: 24,
         borderRadius: 6,
-        background: "rgba(255,255,255,.08)",
+        background: bg,
         border: "none",
         color,
         cursor: "pointer",

@@ -1,4 +1,4 @@
-﻿import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { ModelPicker } from '@canvas/components/model-picker'
 import { useConfigStore } from '@canvas/stores/use-config-store'
 import { createPortal } from 'react-dom'
@@ -297,7 +297,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           {/* 提示词 */}
           <div className="mb-6">
             <label className="mb-2 block text-[14px] text-text">{t("imageTools.prompt")}</label>
-            <div className="relative rounded-xl bg-secondary">
+            <div className="relative prompt-box rounded-xl border border-border bg-input dark:border-0 dark:bg-secondary">
               <textarea
                 ref={promptRef}
                 value={prompt}
@@ -328,8 +328,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               </div>
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
-              <button data-tip={t("imageTools.tipAddCommon")} onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
+              <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
+              <button data-tip={t("imageTools.tipAddCommon")} onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button>
             </div>
           </div>
 
@@ -340,7 +340,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               {ratios.map((r) => (
                 <button key={r} onClick={() => setRatio(r)}
                   className={cn('flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors',
-                    ratio === r ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
+                    ratio === r ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {r !== '__ORIG__' && <span className="inline-block size-[8px] rounded-[2px] bg-current opacity-60" style={{ width: r === '1:1' ? 8 : r === '2:3' || r === '3:4' || r === '4:5' ? 6 : 10, height: 8 }} />}
                   {r === '__ORIG__' ? t('imageTools.original') : r}
                 </button>
@@ -355,7 +355,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               {qualities.map((q) => (
                 <button key={q} onClick={() => setQuality(q)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
-                    quality === q ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
+                    quality === q ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {q}
                 </button>
               ))}
@@ -369,7 +369,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               {counts.map((c) => (
                 <button key={c} onClick={() => setCount(c)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
-                    count === c ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
+                    count === c ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {c}
                 </button>
               ))}
@@ -475,7 +475,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[14px] text-text">{t("imageTools.storage")}</span>
             <span className="flex-1 truncate text-[12px] text-text-secondary">{storagePath}</span>
-            <button onClick={() => showToast(t('imageTools.toasts.openedFolder'))} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.open")}</button>
+            <button onClick={() => showToast(t('imageTools.toasts.openedFolder'))} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.open")}</button>
             <button onClick={async () => {
               try {
                 // @ts-ignore
@@ -485,18 +485,18 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               } catch {
                 showToast(t('imageTools.toasts.cancelledDir'))
               }
-            }} className="h-[28px] rounded-md bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.change")}</button>
+            }} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.change")}</button>
           </div>
           <div className="mb-2 flex items-center gap-1.5">
-            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queue1")}</button>
-            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+5`}{t('imageTools.queueCustom')}</button>
-            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+10`}{t('imageTools.queueCustom')}</button>
+            <button onClick={() => addToQueue(1)} className="h-[30px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queue1")}</button>
+            <button onClick={() => addToQueue(5)} className="h-[30px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+5`}{t('imageTools.queueCustom')}</button>
+            <button onClick={() => addToQueue(10)} className="h-[30px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{`+10`}{t('imageTools.queueCustom')}</button>
             <div className="flex h-[30px] w-[72px] items-center rounded-md bg-card px-2">
               <input value={queueNum} onChange={(e) => setQueueNum(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 className="w-full bg-transparent text-center text-[12px] text-text outline-none" />
             </div>
-            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queueCustom")}</button>
-            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-surface-hover', showQueue ? 'bg-accent text-accent-foreground' : 'bg-secondary text-text-secondary')}>{t("imageTools.viewQueue")}{queueSize > 0 && `(${queueSize})`}</button>
+            <button onClick={() => addToQueue(Number(queueNum) || 1)} className="h-[30px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover">{t("imageTools.queueCustom")}</button>
+            <button onClick={() => setShowQueue((v) => !v)} className={cn('h-[30px] rounded-md px-3 text-[12px] hover:bg-surface-hover', showQueue ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary')}>{t("imageTools.viewQueue")}{queueSize > 0 && `(${queueSize})`}</button>
           </div>
           {showQueue && (
             <div className="mb-2 rounded-lg bg-card p-3 text-[12px] text-text-secondary">
@@ -523,7 +523,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <button
               type="button"
               onClick={() => setFilterMenu((menu) => menu === 'time' ? null : 'time')}
-              className="flex h-[30px] items-center gap-1 rounded-lg bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
+              className="flex h-[30px] items-center gap-1 rounded-lg border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
               aria-haspopup="listbox"
               aria-expanded={filterMenu === 'time'}
             >
@@ -556,7 +556,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <button
               type="button"
               onClick={() => setFilterMenu((menu) => menu === 'stars' ? null : 'stars')}
-              className="flex h-[30px] items-center gap-1 rounded-lg bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
+              className="flex h-[30px] items-center gap-1 rounded-lg border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text"
               aria-haspopup="listbox"
               aria-expanded={filterMenu === 'stars'}
             >
@@ -665,9 +665,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
-                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">复制</button>
-                      <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
-                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">删</button>
+                      <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">复制</button>
+                      <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
+                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">删</button>
                     </div>
                   </div>
                 </div>
@@ -760,7 +760,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowCommonPromptModal(false)}
-                className="h-[32px] rounded-md bg-secondary px-4 text-[13px] text-text-secondary hover:bg-surface-hover"
+                className="h-[32px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-4 text-[13px] text-text-secondary hover:bg-surface-hover"
               >
                 {t('imageTools.cancel')}
               </button>
@@ -962,13 +962,13 @@ function BlendPanel({ connectTopLeft = false }: { connectTopLeft?: boolean }) {
           {/* 补充要求（用户可选） */}
           <div className="mb-6">
             <label className="mb-2 block text-[14px] text-text">补充要求（可选）</label>
-            <div className="relative rounded-xl bg-secondary">
+            <div className="relative prompt-box rounded-xl border border-border bg-input dark:border-0 dark:bg-secondary">
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 rows={3}
                 placeholder="在这里添加额外要求…"
-                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted"
+                className="w-full resize-none overflow-hidden rounded-xl bg-transparent px-3 py-2 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
               />
             </div>
           </div>
@@ -1147,7 +1147,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                 {/* 原图 */}
                 <div className="text-center">
                   <div className="mb-2 text-[13px] text-text-muted">{idx + 1}. {it.name}</div>
-                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl bg-secondary overflow-hidden">
+                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary overflow-hidden">
                     <img src={it.originalUrl} alt={it.name} className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.originalUrl, name: it.name }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
                   </div>
                   <div className="mt-2 text-[12px] text-text-muted">{it.type} · {it.size}</div>
@@ -1163,7 +1163,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                     value={it.prompt}
                     onChange={(e) => updateItem(it.id, 'prompt', e.target.value)}
                     rows={9}
-                    className="w-full resize-none rounded-lg bg-input px-3 py-2 text-[13px] text-text outline-none focus:ring-1 focus:ring-accent"
+                    className="w-full resize-none rounded-lg border border-border bg-white px-3 py-2 text-[13px] text-text outline-none focus:ring-1 focus:ring-accent dark:border-0 dark:bg-input"
                   />
                   {it.status === 'translating' && <Loader2 className="size-4 animate-spin text-accent" />}
                 </div>
@@ -1173,7 +1173,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                   <div className="mb-2 text-[13px] text-text-muted">
                     {it.status === 'done' ? '翻译结果' : '等待翻译'}
                   </div>
-                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl bg-secondary overflow-hidden">
+                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary overflow-hidden">
                     {it.translatedUrl ? (
                       <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.translatedUrl!, name: it.name + " (翻译后)" }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
                     ) : (
@@ -1232,7 +1232,7 @@ export default function ImageToolsPage() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-bg p-3">
+    <div className="flex h-full flex-col bg-bg p-3 pl-2">
       <div className="flex shrink-0 items-end gap-0.5 pt-1 pb-0">
         {tabs.map((tab) => (
           <button
@@ -1246,8 +1246,8 @@ export default function ImageToolsPage() {
             }}
             aria-selected={tab.id ? activeTab === tab.id : undefined}
             className={cn(
-              cn('relative flex h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-t-xl px-3 text-[11px] font-medium leading-none transition-colors', tab.width),
-              activeTab === tab.id ? 'z-10 text-text' : tab.id ? 'text-text-secondary hover:text-text' : 'cursor-not-allowed text-text-muted/50',
+              cn('image-subtab relative flex h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-t-xl px-3 text-[12px] font-medium leading-none transition-colors', tab.width),
+              activeTab === tab.id ? 'z-10 text-accent' : tab.id ? 'text-text-secondary hover:text-text' : 'cursor-not-allowed text-text-muted/50',
             )}
           >
             {activeTab === tab.id && (
@@ -1259,7 +1259,7 @@ export default function ImageToolsPage() {
               >
                 <motion.span
                   key={activeTab}
-                  className="absolute inset-0 rounded-t-xl bg-card"
+                  className="absolute inset-0 rounded-t-xl bg-accent-soft dark:bg-card"
                   initial={{ scaleX: 1.12, scaleY: 0.88, borderRadius: '18px 18px 0 0' }}
                   animate={{ scaleX: 1, scaleY: 1, borderRadius: '12px 12px 0 0' }}
                   transition={{ type: 'spring', stiffness: 260, damping: 17, mass: 0.7 }}

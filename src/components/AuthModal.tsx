@@ -199,7 +199,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                                 <button
                                     type="submit"
                                     disabled={isLoading}
-                                    className="w-full py-3 rounded-[12px] bg-accent text-accent-foreground font-medium hover:bg-accent-hover disabled:cursor-not-allowed"
+                                    className="w-full py-3 rounded-[12px] bg-brand text-brand-foreground font-semibold hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {isLoading ? t("auth.sending") : t("auth.sendReset")}
                                 </button>
@@ -258,7 +258,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                     <button
                         type="submit"
                         disabled={isLoading || !email}
-                        className="w-full py-3 rounded-[12px] bg-accent text-accent-foreground font-medium hover:bg-accent-hover disabled:cursor-not-allowed"
+                        className="w-full py-3 rounded-[12px] bg-brand text-brand-foreground font-semibold hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {isLoading ? t("auth.processing") : step === "email" ? t("auth.continue") : (mode === 'login' ? t("auth.login") : t("auth.register"))}
                     </button>
@@ -278,9 +278,9 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 <div className="mt-6 flex flex-col gap-4">
                     <p className="text-center text-xs text-gray-500">
                         {mode === 'login' ? (
-                            <>{t("auth.noAccount")}<span className="text-accent cursor-pointer" onClick={() => switchMode('register')}>{t("auth.signUpNow")}</span></>
+                            <>{t("auth.noAccount")}<span className="text-brand cursor-pointer font-medium" onClick={() => switchMode('register')}>{t("auth.signUpNow")}</span></>
                         ) : (
-                            <>{t("auth.hasAccount")}<span className="text-accent cursor-pointer" onClick={() => switchMode('login')}>{t("auth.loginNow")}</span></>
+                            <>{t("auth.hasAccount")}<span className="text-brand cursor-pointer font-medium" onClick={() => switchMode('login')}>{t("auth.loginNow")}</span></>
                         )}
                     </p>
                     <p className="text-center text-xs text-gray-500">

@@ -414,9 +414,7 @@ export default function VideoPage() {
             {/* ── 左栏 配置区 520px ── */}
             <div className="flex w-[520px] shrink-0 flex-col overflow-hidden rounded-xl bg-popover">
                 <div className="flex-1 overflow-y-auto px-5 pt-4 pb-2">
-                    {/* 模型选择 */}
                     <div className="mb-6">
-                        <label className="mb-2 block text-[14px] text-text">{t("videoWorkbench.model")}</label>
                         <ModelPicker
                             config={effectiveConfig}
                             value={model}
@@ -442,14 +440,14 @@ export default function VideoPage() {
                             <div className="absolute bottom-2 right-2 flex items-center gap-1">
                                 <button
                                     onClick={() => setPromptDialogOpen(true)}
-                                    className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
+                                    className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-muted"
                                     title={t("videoWorkbench.promptTemplate")}
                                 >
                                     <BookOpen className="size-[13px]" />
                                 </button>
                                 <button
                                     onClick={() => setAssetPickerOpen(true)}
-                                    className="flex size-6 items-center justify-center rounded text-[#5f5f66] hover:bg-muted"
+                                    className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-muted"
                                     title={t("videoWorkbench.fromAssets")}
                                 >
                                     <FolderPlus className="size-[13px]" />
@@ -474,7 +472,7 @@ export default function VideoPage() {
                                     <button
                                         key={item.value}
                                         onClick={() => selectRatio(item.value)}
-                                        className={`flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors ${selected ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                                        className={`flex h-[30px] items-center justify-center gap-1 rounded-md text-[12px] transition-colors ${selected ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text"}`}
                                     >
                                         {icon && <span className="inline-block rounded-[2px] bg-current opacity-60" style={{ width: icon[0], height: icon[1] }} />}
                                         {isAuto ? t("videoWorkbench.auto") : item.value}
@@ -492,7 +490,7 @@ export default function VideoPage() {
                                 <button
                                     key={q}
                                     onClick={() => selectResolution(q)}
-                                    className={`h-[30px] rounded-md text-[12px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                                    className={`h-[30px] rounded-md text-[12px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text"}`}
                                 >
                                     {q}P
                                 </button>
@@ -577,13 +575,13 @@ export default function VideoPage() {
                         <div className="grid grid-cols-2 gap-1.5">
                             <button
                                 onClick={() => updateConfig("videoMode", "frames")}
-                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text"}`}
                             >
                                 {t("videoWorkbench.firstLastFrame")}
                             </button>
                             <button
                                 onClick={() => updateConfig("videoMode", "reference")}
-                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                                className={`h-[30px] rounded-md text-[12px] transition-colors ${effectiveConfig.videoMode === "reference" ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text"}`}
                             >
                                 {t("videoWorkbench.fullRef")}
                             </button>
@@ -773,7 +771,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
                         <button
                             key={ratio}
                             onClick={() => selectRatio(ratio)}
-                            className={`h-[32px] rounded-lg px-3 text-[12px] transition-colors ${selectedRatio === ratio ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
+                            className={`h-[32px] rounded-lg px-3 text-[12px] transition-colors ${selectedRatio === ratio ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover"}`}
                         >
                             {ratio === "auto" ? t("videoWorkbench.original") : ratio}
                         </button>
@@ -789,7 +787,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
                         <button
                             key={q}
                             onClick={() => updateConfig("vquality", q)}
-                            className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
+                            className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${resolution === q ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover"}`}
                         >
                             {q}p
                         </button>
@@ -805,7 +803,7 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
                         <button
                             key={d}
                             onClick={() => updateConfig("videoSeconds", String(d))}
-                            className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${seconds === d ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
+                            className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${seconds === d ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover"}`}
                         >
                             {d}s
                         </button>
@@ -819,13 +817,13 @@ function GenerationSettings({ config, model: _model, updateConfig, openConfigDia
                 <div className="flex flex-wrap gap-1.5">
                     <button
                         onClick={() => updateConfig("videoMode", "frames")}
-                        className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
+                        className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode !== "reference" ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover"}`}
                     >
                         {t("videoWorkbench.frameMode")}
                     </button>
                     <button
                         onClick={() => updateConfig("videoMode", "reference")}
-                        className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode === "reference" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-accent/20"}`}
+                        className={`h-[36px] rounded-lg px-4 text-[13px] transition-colors ${config.videoMode === "reference" ? "bg-accent text-accent-foreground" : "border border-border bg-transparent text-text-secondary hover:bg-surface-hover"}`}
                     >
                         {t("videoWorkbench.refMode")}
                     </button>

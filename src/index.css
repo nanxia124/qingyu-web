@@ -1,5 +1,13 @@
-﻿button { cursor: pointer; }
+button { cursor: pointer; }
 @import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
+
+/* 主题切换圆形扩散（View Transitions）：关闭默认淡入淡出，交由 AnimatedThemeToggler 控制 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
 
 @keyframes bgFade {
   0%, 100% { opacity: 0.1; }
@@ -8,7 +16,7 @@
 
 @theme {
   /* 浅色主题 */
-  --color-bg: #f4f4f6;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
   --color-surface-hover: #ececef;
   --color-card: #ffffff;
@@ -18,8 +26,8 @@
 
   --color-text: #1d1d1f;
   --color-text-active: #09090b;
-  --color-text-secondary: #5f5f66;
-  --color-text-muted: #8a8a91;
+  --color-text-secondary: #3f3f46;
+  --color-text-muted: #6b6b73;
 
   --color-accent: #5051f8;
   --color-accent-hover: #3f40e6;
@@ -32,9 +40,9 @@
   --color-warning: #f59e0b;
 
   /* 侧边栏 / 导航 */
-  --color-nav-bg: #f4f4f6;
-  --color-nav-text: #5f5f66;
-  --color-nav-text-muted: #8a8a91;
+  --color-nav-bg: #ffffff;
+  --color-nav-text: #3f3f46;
+  --color-nav-text-muted: #6b6b73;
   --color-nav-hover: #e8e8ec;
   --color-nav-active: #ffffff;
   --color-nav-text-active: #1d1d1f;
@@ -48,18 +56,33 @@
   --color-popover: #ffffff;
   --color-popover-foreground: #1d1d1f;
   --color-muted: #f0f0f2;
-  --color-muted-foreground: #5f5f66;
+  --color-muted-foreground: #3f3f46;
   --color-ring: #5051f8;
   --color-secondary: #f0f0f2;
   --color-secondary-foreground: #1d1d1f;
   --color-primary: #5051f8;
   --color-primary-foreground: #ffffff;
   --color-destructive: #ef4444;
+
+  /*
+   * 画布 shadcn 桥接变量：这些名字不会被 globals.css 的 @theme inline 反向别名覆盖，
+   * 供画布原始变量（--card/--border/--primary 等）引用，避免“--color-x→--x→--color-x”循环。
+   * 修改品牌色 / 卡片 / 描边时，请同步这里与深色块。
+   */
+  --color-brand: #5051f8;
+  --color-brand-hover: #3f40e6;
+  --color-brand-foreground: #ffffff;
+  --color-panel: #ffffff;
+  --color-line: #e2e2e8;
+
   --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
 }
 
 :root {
   color-scheme: light;
+  --app-font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  /* 画布懒加载的 Tailwind 基础样式会重新声明 --font-sans；用重要性保证全站字体不随模块加载改变。 */
+  --font-sans: var(--app-font-family) !important;
   /* shadcn 兼容变量（全局，供 Portal 出去的组件用） */
   --background: #f4f4f6;
   --foreground: #1d1d1f;
@@ -77,7 +100,7 @@
   --accent-foreground: #ffffff;
   --destructive: #ef4444;
   --border: #e2e2e8;
-  --input: #e2e2e8;
+  --input: #ffffff;
   --ring: #5051f8;
 }
 
@@ -108,7 +131,7 @@
   --accent-foreground: #ffffff;
   --destructive: #ef4444;
   --border: #e2e2e8;
-  --input: #e2e2e8;
+  --input: #ffffff;
   --ring: #5051f8;
 }
 
@@ -163,6 +186,13 @@
   --color-primary-foreground: #f0f0f0;
   --color-destructive: #f87171;
 
+  /* 画布 shadcn 桥接变量（深色） */
+  --color-brand: #5051f8;
+  --color-brand-hover: #6366ff;
+  --color-brand-foreground: #f0f0f0;
+  --color-panel: #202020;
+  --color-line: #383838;
+
   --background: #151515;
   --foreground: #bebebe;
   --card: #202020;
@@ -199,10 +229,14 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  font-family: var(--app-font-family) !important;
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 22px;
   font-weight: 600;
@@ -214,6 +248,19 @@ body {
 .font-normal,
 .font-medium {
   font-weight: 600 !important;
+}
+
+/* antd 组件字重统一为 semibold(600)，覆盖其默认 400（按钮/下拉/分段/输入/标签页/弹窗标题） */
+button.ant-btn,
+.ant-select .ant-select-selection-item,
+.ant-select .ant-select-item,
+.ant-segmented .ant-segmented-item,
+.ant-input,
+.ant-input-outlined,
+.ant-tabs .ant-tabs-tab,
+.ant-modal .ant-modal-title,
+.ant-popover .ant-popover-title {
+  font-weight: 600;
 }
 
 /* 滚动条 —— 对齐客户端 ScrollThumbBrush */
@@ -313,6 +360,14 @@ input.home-search-input:focus {
 input.home-search-input:focus::placeholder {
   opacity: 1;
 }
+
+/* 提示词框（外层自带边框）聚焦：浅色下外层边框变靛蓝、内层不再重复描边，避免两条线；深色保持内层靛蓝环 */
+.prompt-box { }
+html:not(.dark) .prompt-box:focus-within { border-color: var(--color-accent); }
+html:not(.dark) .prompt-box textarea:focus { box-shadow: none; }
+
+/* 生图页子功能标签：浅色下未选中标签 hover 底色（Tailwind 变体类未生成，改用确定性 CSS） */
+html:not(.dark) .image-subtab:not(:disabled):hover { background-color: var(--color-surface-hover); }
 
 /* 缩略图缩放滑块 */
 .thumb-scale-slider {

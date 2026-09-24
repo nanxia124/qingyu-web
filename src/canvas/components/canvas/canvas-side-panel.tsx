@@ -88,7 +88,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
     return (
         <motion.div
             className="absolute z-[60] left-4 top-[72px] flex h-[calc(100vh-180px)] rounded-2xl overflow-hidden shadow-2xl"
-            style={{ background: "#1c1c1c", overflow: "clip", pointerEvents: panelClosing ? "none" : undefined }}
+            style={{ background: theme.node.panel, overflow: "clip", pointerEvents: panelClosing ? "none" : undefined }}
             animate={{ width: panelOpen ? width + 1 : 0, opacity: panelOpen ? 1 : 0 }}
             transition={{ duration: resizing ? 0 : PANEL_MOTION_SECONDS, ease: PANEL_EASE }}
         >
@@ -125,7 +125,7 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
     return (
         <button type="button" onClick={onClick} className="relative pb-1.5 text-sm font-semibold transition-opacity" style={{ color: theme.node.text, opacity: active ? 1 : 0.45 }}>
             {label}
-            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.toolbar.activeText }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
+            {active ? <motion.span layoutId="sidePanelTabIndicator" className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: theme.node.activeStroke }} transition={{ type: "spring", stiffness: 500, damping: 34 }} /> : null}
         </button>
     );
 }
@@ -213,7 +213,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                     type="button"
                     onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
                     className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-                    style={selectMode ? { color: theme.toolbar.activeText, opacity: 1 } : undefined}
+                    style={selectMode ? { color: theme.node.activeStroke, opacity: 1 } : undefined}
                 >
                     <ListChecks className="size-3.5" />
                     {selectMode ? t("common.cancel") : t("canvas.sidePanel.select")}
@@ -232,7 +232,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                             const isChecked = checked.has(node.id);
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
                             return (
-                                <div key={node.id} className={cn("group relative flex items-center rounded-lg transition", depth && "ml-5", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")} style={active ? { background: theme.toolbar.activeBg } : undefined}>
+                                <div key={node.id} className={cn("group relative flex items-center rounded-lg transition", depth && "ml-5", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")} style={active ? { background: `${theme.node.activeStroke}22` } : undefined}>
                                     {depth ? <span className="pointer-events-none absolute -left-3 top-[calc(-50%-0.4rem)] h-[calc(100%+0.4rem)] w-3 rounded-bl-md border-b border-l opacity-45" style={{ borderColor: theme.node.stroke }} /> : null}
                                     {node.type === CanvasNodeType.Group && hasChildren ? (
                                         <button type="button" onClick={() => setCollapsedGroups((prev) => (prev.has(node.id) ? new Set([...prev].filter((id) => id !== node.id)) : new Set(prev).add(node.id)))} className="ml-1 grid size-6 shrink-0 place-items-center opacity-55 transition hover:opacity-100" aria-label={node.title}>
@@ -289,7 +289,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
 
 function CheckMark({ checked, theme }: { checked: boolean; theme: CanvasTheme }) {
     return (
-        <span className="grid size-4 shrink-0 place-items-center rounded border transition" style={{ borderColor: checked ? theme.toolbar.activeText : theme.node.stroke, background: checked ? theme.toolbar.activeText : "transparent" }}>
+        <span className="grid size-4 shrink-0 place-items-center rounded border transition" style={{ borderColor: checked ? theme.node.activeStroke : theme.node.stroke, background: checked ? theme.node.activeStroke : "transparent" }}>
             {checked ? <Check className="size-3 text-white" /> : null}
         </span>
     );

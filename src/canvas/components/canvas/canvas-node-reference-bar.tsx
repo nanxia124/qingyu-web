@@ -25,12 +25,12 @@ export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, uploaded
             <div className="thin-scrollbar flex min-h-12 gap-2 overflow-x-auto pb-1">
                 {references.map(({ node, sourceNodeId }) => <ReferenceItem key={`${sourceNodeId}:${node.id}`} node={node} onRemove={() => onDisconnect?.(sourceNodeId, nodeId)} />)}
                 {uploadedImages.map((url, index) => (
-                    <div key={`uploaded-${index}`} className="group relative grid size-12 shrink-0 place-items-center rounded-xl border cursor-zoom-in" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }} onClick={() => setPreviewUrl(url)}>
+                    <div key={`uploaded-${index}`} className="group relative grid size-12 shrink-0 place-items-center rounded-md border cursor-zoom-in" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }} onClick={() => setPreviewUrl(url)}>
                         <img src={url} alt="" className="size-full rounded-[inherit] object-cover" />
                         <button type="button" className="absolute right-0 top-0 grid size-5 place-items-center rounded-full border opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }} aria-label={t("canvas.references.disconnect")} title={t("canvas.references.disconnect")} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRemoveUploadedImage?.(index); }}><X className="size-3" /></button>
                     </div>
                 ))}
-                <button type="button" className="grid size-12 shrink-0 place-items-center rounded-xl border bg-transparent transition hover:opacity-70" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }} title={t("canvas.references.select")} onClick={() => onStartSelection?.(nodeId)}>
+                <button type="button" className="grid size-12 shrink-0 place-items-center rounded-md border bg-transparent transition hover:opacity-70" style={{ borderColor: theme.toolbar.border, color: theme.node.muted }} title={t("canvas.references.select")} onClick={() => onStartSelection?.(nodeId)}>
                     <Plus className="size-4" />
                 </button>
             </div>
@@ -89,7 +89,7 @@ function ReferenceItem({ node, onRemove }: { node: CanvasNodeData; onRemove: () 
     const Icon = resource?.kind === "image" || node.type === CanvasNodeType.Image ? ImageIcon : resource?.kind === "video" || node.type === CanvasNodeType.Video ? Video : resource?.kind === "audio" || node.type === CanvasNodeType.Audio ? Music2 : resource?.kind === "text" || node.type === CanvasNodeType.Text ? FileText : Puzzle;
     return (
         <Popover placement="topLeft" mouseEnterDelay={0.15} content={<ReferencePreview node={node} content={content} />}>
-            <div className="group relative grid size-12 shrink-0 place-items-center rounded-xl border" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }}>
+            <div className="group relative grid size-12 shrink-0 place-items-center rounded-md border" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }}>
                 <span className="grid size-full place-items-center overflow-hidden rounded-[inherit]">
                     {(resource?.kind === "image" || node.type === CanvasNodeType.Image) && thumbnail ? <img src={thumbnail} alt="" className="size-full object-cover" /> : (resource?.kind === "video" || node.type === CanvasNodeType.Video) && content ? <video src={content} className="size-full object-cover" muted /> : <Icon className="size-4 opacity-65" />}
                 </span>

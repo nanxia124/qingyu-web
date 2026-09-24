@@ -13,6 +13,7 @@ const neutral = {
         itemText: "#171717",
         tableSelectedBg: "rgba(17, 17, 17, 0.05)",
         tableSelectedHoverBg: "rgba(17, 17, 17, 0.08)",
+        disabledBg: "transparent", disabledBorder: "#e2e2e8", disabledText: "#a2a2aa",
     },
     dark: {
         primary: "#fafafa",
@@ -25,6 +26,7 @@ const neutral = {
         itemText: "#fafafa",
         tableSelectedBg: "rgba(255, 255, 255, 0.08)",
         tableSelectedHoverBg: "rgba(255, 255, 255, 0.12)",
+        disabledBg: "rgba(255, 255, 255, 0.08)", disabledBorder: "transparent", disabledText: "#6a6a6a",
     },
 };
 
@@ -49,6 +51,9 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
         components: {
             Button: {
                 primaryShadow: "none",
+                colorBgContainerDisabled: color.disabledBg,
+                colorBorderDisabled: color.disabledBorder,
+                colorTextDisabled: color.disabledText,
             },
             Dropdown: {
                 colorBgElevated: color.elevatedBg,

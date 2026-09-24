@@ -16,7 +16,7 @@ import type { CanvasResourceReference } from "@canvas/lib/canvas/canvas-resource
 import { useTranslation } from "react-i18next";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-const selectionBlue = "#2f80ff";
+const selectionBlue = "#5051F8";
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
@@ -376,7 +376,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             )}
 
             <div
-                className="relative h-full w-full overflow-visible rounded-xl border-2"
+                className="relative h-full w-full overflow-visible rounded-md border-2"
                 style={{
                     background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : theme.node.fill,
                     borderColor: isGroup ? (isGroupDropTarget || isActive ? selectionBlue : theme.node.stroke) : hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : transparentBg ? "transparent" : theme.node.stroke,
@@ -573,7 +573,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                       .filter((text) => text.id !== primaryTextId)
                       .map((text, index) => <ExpandedTextCard key={text.id} node={node} text={text} index={index} onSetPrimary={() => onSetBatchPrimary?.(text.id)} />)
                 : null}
-            <div className="flex h-full w-full flex-col overflow-hidden rounded-xl">
+            <div className="flex h-full w-full flex-col overflow-hidden rounded-md">
                 {isEditingContent ? (
                     <CanvasResourceMentionTextarea
                         ref={textareaRef}
@@ -641,7 +641,7 @@ function ExpandedTextCard({ node, text, index, onSetPrimary }: { node: CanvasNod
 
     return (
         <div
-            className="absolute z-20 overflow-hidden rounded-xl border shadow-[0_18px_50px_rgba(0,0,0,.14)]"
+            className="absolute z-20 overflow-hidden rounded-md border shadow-[0_18px_50px_rgba(0,0,0,.14)]"
             style={
                 {
                     left: x,
@@ -729,7 +729,7 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} controls className="h-full w-full rounded-xl bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
+    return <video src={node.metadata.content} controls className="h-full w-full rounded-md bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {
@@ -804,7 +804,7 @@ function ImageContent({
                       .filter((image) => image.id !== primaryImageId)
                       .map((image, index) => <ExpandedImageCard key={image.id} node={node} image={image} index={index} scale={scale} onView={() => onViewBatchImage?.(image.id)} onSetPrimary={() => onSetBatchPrimary?.(image.id)} onDuplicate={() => onDuplicateBatchImage?.(image.id)} onDownload={() => onDownloadBatchImage?.(image.id)} onRetry={() => onRetryBatchImage?.(image.id)} onDelete={() => onDeleteBatchImage?.(image.id)} />)
                 : null}
-            <div className="h-full w-full overflow-hidden rounded-xl">
+            <div className="h-full w-full overflow-hidden rounded-md">
                 {primaryContent ? (
                     <img
                         src={primarySource}
@@ -872,7 +872,7 @@ function ExpandedImageCard({ node, image, index, scale, onView, onSetPrimary, on
 
     return (
         <div
-            className={`absolute z-20 overflow-hidden rounded-xl ${image.content ? "" : "border shadow-[0_18px_50px_rgba(0,0,0,.18)]"}`}
+            className={`absolute z-20 overflow-hidden rounded-md ${image.content ? "" : "border shadow-[0_18px_50px_rgba(0,0,0,.18)]"}`}
             style={
                 {
                     left: x,

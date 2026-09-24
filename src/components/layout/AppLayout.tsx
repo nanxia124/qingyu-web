@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useThemeStore } from '@canvas/stores/use-theme-store'
+import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
 import i18n, { changeAppLocale, onLanguageSuggestion, SUPPORTED_LOCALES, type AppLocale } from '@canvas/i18n'
 import {
   SidebarHomeIcon,
@@ -109,7 +110,6 @@ export default function AppLayout() {
     document.documentElement.style.colorScheme = theme
   }, [theme])
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
 
   // ── 语言 ──
   const [currentLocale, setCurrentLocale] = useState<AppLocale>(i18n.resolvedLanguage as AppLocale)
@@ -150,7 +150,7 @@ export default function AppLayout() {
   const isCanvas = location.pathname.startsWith('/canvas')
   const isVideo = location.pathname.startsWith('/video')
 
-  const sidebarWidth = expanded ? 'w-[148px]' : 'w-[64px]'
+  const sidebarWidth = expanded ? 'w-[148px]' : 'w-[56px]'
 
   const handleLogout = async () => {
     await logout()
@@ -189,7 +189,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'left-[8px] h-[30px] w-[140px]' : 'left-[13px] h-[30px] w-[30px]',
+              expanded ? 'left-[8px] h-[30px] w-[132px]' : 'left-[13px] h-[30px] w-[30px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
@@ -238,7 +238,7 @@ export default function AppLayout() {
           <span
             className={cn(
               'absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-200',
-              expanded ? 'left-[8px] h-[30px] w-[140px]' : 'left-[13px] h-[30px] w-[30px]',
+              expanded ? 'left-[8px] h-[30px] w-[132px]' : 'left-[13px] h-[30px] w-[30px]',
               isActive
                 ? 'bg-nav-active'
                 : 'opacity-0 group-hover:bg-nav-hover group-hover:opacity-100',
@@ -288,7 +288,7 @@ export default function AppLayout() {
         </div>
         {location.pathname === '/' && (
           <div className="hidden min-w-0 max-w-[560px] flex-1 md:flex">
-            <label className="flex h-9 w-full items-center gap-2 rounded-xl bg-secondary px-3 text-text-muted transition-colors focus-within:bg-surface-hover">
+            <label className="flex h-9 w-full items-center gap-2 rounded-xl bg-surface-hover px-3 text-text-muted transition-colors focus-within:bg-surface">
               <Search size={16} className="shrink-0" />
               <input
                 value={new URLSearchParams(location.search).get('q') || ''}
@@ -302,16 +302,16 @@ export default function AppLayout() {
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text" title="通知"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button>
-          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
-          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
-          <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
+          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
+          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
+          <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
           {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
           <div className="relative">
             <button
               onClick={() => (isLoggedIn ? setAccountMenuOpen((v) => !v) : openAuthModal())}
               title={t("nav.my")}
               aria-expanded={isLoggedIn ? accountMenuOpen : undefined}
-              className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text"
+              className="flex items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text"
             >
               <User size={14} />
               <span className="whitespace-nowrap">{t('nav.my')}</span>
@@ -369,9 +369,11 @@ export default function AppLayout() {
         {/* 底部：主题切换 + 语言切换 */}
         <div className="shrink-0 border-t border-border px-2 py-2">
           {/* 浅色 / 深色 切换 */}
-          <button
-            onClick={toggleTheme}
+          <AnimatedThemeToggler
+            theme={theme}
+            onThemeChange={setTheme}
             title={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
+            aria-label={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
             className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
           >
             <span className="absolute left-[8px] top-1/2 h-[30px] w-[34px] -translate-y-1/2 rounded-full opacity-0 transition-all duration-200 group-hover:bg-nav-hover group-hover:opacity-100" />
@@ -387,7 +389,7 @@ export default function AppLayout() {
                 {theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}
               </span>
             )}
-          </button>
+          </AnimatedThemeToggler>
 
           {/* 语言切换 */}
           <div className="relative">
@@ -439,6 +441,7 @@ export default function AppLayout() {
           className={cn(
             'relative flex-1 overflow-hidden',
             isCanvas && 'bg-transparent',
+            !(isCanvas || isVideo) && 'rounded-tl-[16px]',
           )}
         >
           <Outlet />

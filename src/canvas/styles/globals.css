@@ -1,4 +1,4 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @source "../../../node_modules/streamdown/dist/*.js";
@@ -15,7 +15,6 @@
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) + 4px);
     --font-heading: var(--font-sans);
-    --font-sans: var(--font-sans);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -63,13 +62,15 @@
     --background: var(--color-bg);
     --foreground: var(--color-text);
 
-    --card: var(--color-card);
+    /* 用桥接变量（--color-panel/--color-line/--color-brand）避免与本文件
+       @theme inline 的反向别名（--color-card:var(--card) 等）形成循环引用。 */
+    --card: var(--color-panel);
     --card-foreground: var(--color-text);
-    --popover: var(--color-card);
+    --popover: var(--color-panel);
     --popover-foreground: var(--color-text);
 
-    --primary: var(--color-accent);
-    --primary-foreground: var(--color-accent-foreground);
+    --primary: var(--color-brand);
+    --primary-foreground: var(--color-brand-foreground);
 
     --secondary: var(--color-surface-hover);
     --secondary-foreground: var(--color-text);
@@ -82,26 +83,26 @@
     --accent-foreground: var(--color-text);
 
     --destructive: var(--color-danger);
-    --border: var(--color-border);
-    --input: var(--color-input);
-    --ring: var(--color-accent);
+    --border: var(--color-line);
+    --input: var(--color-bg);
+    --ring: var(--color-brand);
 
     /* 图表：引用统一色板 */
-    --chart-1: var(--color-accent);
+    --chart-1: var(--color-brand);
     --chart-2: var(--color-text-secondary);
     --chart-3: var(--color-text-muted);
     --chart-4: var(--color-surface-hover);
     --chart-5: var(--color-text);
 
     /* 侧边栏 */
-    --sidebar: var(--color-card);
+    --sidebar: var(--color-panel);
     --sidebar-foreground: var(--color-text);
-    --sidebar-primary: var(--color-accent);
-    --sidebar-primary-foreground: var(--color-accent-foreground);
+    --sidebar-primary: var(--color-brand);
+    --sidebar-primary-foreground: var(--color-brand-foreground);
     --sidebar-accent: var(--color-surface-hover);
     --sidebar-accent-foreground: var(--color-text);
-    --sidebar-border: var(--color-border);
-    --sidebar-ring: var(--color-accent);
+    --sidebar-border: var(--color-line);
+    --sidebar-ring: var(--color-brand);
 }
 
 @layer base {
@@ -121,9 +122,6 @@
     }
     textarea::-webkit-resizer {
         display: none;
-    }
-    html {
-        @apply font-sans;
     }
 }
 
@@ -677,9 +675,9 @@
    通过 body[data-video-page] 统一去描边 / 深色 / 字重，修“浮层带边框、整页偶尔发灰、字体粗细不统一”。 */
 body[data-video-page="true"] [data-slot="select-content"] {
     border: 0 !important;
-    background: #1c1c1c;
+    background: var(--color-panel);
     color: var(--color-text, #bebebe);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
 }
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-viewport"] {
     padding: 4px;
@@ -692,15 +690,15 @@ body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-ite
 }
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-item"][data-highlighted],
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-item"]:hover {
-    background: #2a2a3c;
-    color: #ffffff;
+    background: var(--color-surface-hover);
+    color: var(--color-text-active);
 }
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-item"][data-state="checked"] {
     color: var(--accent);
     background: transparent;
 }
 body[data-video-page="true"] [data-slot="select-content"] [data-slot="select-item"][data-state="checked"][data-highlighted] {
-    background: #2a2a3c;
+    background: var(--color-surface-hover);
 }
 
 /* 画布库浮层复选框：去掉原生描边，用自定义对勾 */

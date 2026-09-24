@@ -1,33 +1,33 @@
-﻿export type CanvasColorTheme = "light" | "dark";
+export type CanvasColorTheme = "light" | "dark";
 export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 
 export const canvasThemes = {
     light: {
         canvas: {
-            background: "#f4f2ed",
-            dot: "rgba(68,64,60,.28)",
-            line: "rgba(68,64,60,.12)",
-            selectionStroke: "#1c1917",
-            selectionFill: "rgba(28,25,23,.06)",
+            background: "#ffffff",
+            dot: "rgba(0,0,0,.13)",
+            line: "rgba(0,0,0,.07)",
+            selectionStroke: "#1d1d1f",
+            selectionFill: "rgba(0,0,0,.05)",
         },
         node: {
-            label: "#57534e",
-            fill: "#e7e5df",
+            label: "#3f3f46",
+            fill: "#f0f0f2",
             panel: "#ffffff",
-            stroke: "#d6d3ca",
-            activeStroke: "#1c1917",
-            placeholder: "#8a8479",
-            text: "#292524",
-            muted: "#78716c",
-            faint: "#a8a29e",
+            stroke: "#e2e2e8",
+            activeStroke: "#5051F8",
+            placeholder: "#6b6b73",
+            text: "#1d1d1f",
+            muted: "#6b6b73",
+            faint: "#8a8a91",
         },
         toolbar: {
             panel: "rgba(255,255,255,.95)",
-            border: "#d6d3ca",
-            item: "#57534e",
-            itemHover: "#e7e5df",
-            activeBg: "#e7e5df",
-            activeText: "#292524",
+            border: "#e2e2e8",
+            item: "#3f3f46",
+            itemHover: "#f0f0f2",
+            activeBg: "#f0f0f2",
+            activeText: "#1d1d1f",
         },
     },
     dark: {

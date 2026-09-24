@@ -6,6 +6,7 @@ import i18n from "@canvas/i18n";
 import { type CanvasTheme } from "@canvas/lib/canvas-theme";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaRatioOptions, mediaScaleOptions, readMediaDimensions } from "@canvas/lib/media-size";
 import type { AiConfig } from "@canvas/stores/use-config-store";
+import { useThemeStore } from '@canvas/stores/use-theme-store';
 
 const qualityOptions = [
     { value: "auto", labelKey: "auto" },
@@ -29,8 +30,9 @@ type ImageSettingsPanelProps = {
     quickCount?: number;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-3 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const { t } = useTranslation();
+    const isDark = useThemeStore((state) => state.theme === "dark");
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const quality = config.quality || "auto";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
@@ -61,17 +63,17 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 }}
             >
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.image.title")}</div> : null}
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.quality")}</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-4 gap-2">
                         {qualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} isDark={isDark} onClick={() => onConfigChange("quality", item.value)}>
                                 {t(`settingsPanels.common.${item.labelKey}`)}
                             </OptionPill>
                         ))}
                     </div>
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                         <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.size")}</SettingTitle>
                         <div className="flex items-center gap-2">
@@ -83,35 +85,37 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </span>
                         </div>
                     </div>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                        <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} isDark={isDark} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
                         <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
+                        <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} isDark={isDark} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
                     </div>
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.resolution")}</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-4 gap-2">
                         {mediaScaleOptions.map((value) => (
-                            <OptionPill key={value} selected={selectedScale === value} theme={theme} onClick={() => selectScale(value)}>
+                            <OptionPill key={value} selected={selectedScale === value} theme={theme} isDark={isDark} onClick={() => selectScale(value)}>
                                 {value === "auto" ? t("settingsPanels.common.auto") : value}
                             </OptionPill>
                         ))}
                     </div>
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.aspectRatio")}</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-4 gap-2">
                         {mediaRatioOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl  bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
+                                className="flex h-[62px] cursor-pointer flex-col items-center justify-center gap-1 rounded-md bg-transparent text-sm transition hover:opacity-80"
+                                style={isDark
+                                    ? { background: selectedRatio === item.value ? "rgba(255,255,255,0.10)" : "transparent", color: theme.node.text, borderWidth: 0 }
+                                    : { background: "transparent", color: selectedRatio === item.value ? theme.node.activeStroke : theme.node.text, borderWidth: 1, borderStyle: "solid", borderColor: selectedRatio === item.value ? theme.node.activeStroke : theme.node.stroke }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => selectRatio(item.value)}
                             >
-                                <AspectIcon width={item.width} height={item.height} color={theme.node.text} />
+                                <AspectIcon width={item.width} height={item.height} color={selectedRatio === item.value ? theme.node.activeStroke : theme.node.text} />
                                 <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
                             </button>
                         ))}
@@ -128,15 +132,15 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <Switch size="small" checked={transparentBackground} onChange={(checked) => onConfigChange("background", checked ? "transparent" : "")} />
                     </span>
                 </div>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.count")}</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-4 gap-2">
                         {Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => (
-                            <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
+                            <OptionPill key={value} selected={count === value} theme={theme} isDark={isDark} onClick={() => onConfigChange("count", String(value))}>
                                 {t("settingsPanels.image.images", { count: value })}
                             </OptionPill>
                         ))}
-                        <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
+                        <CountInput value={count} max={maxCount} theme={theme} isDark={isDark} onChange={(value) => onConfigChange("count", String(value || 1))} />
                     </div>
                 </div>
             </div>
@@ -172,12 +176,14 @@ export function imageSizeLabel(size: string) {
     return `${scale} · ${ratio}`;
 }
 
-function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+function OptionPill({ selected, theme, isDark, onClick, children }: { selected: boolean; theme: CanvasTheme; isDark: boolean; onClick: () => void; children: ReactNode }) {
     return (
         <button
             type="button"
-            className="h-9 cursor-pointer rounded-full  px-2 text-sm transition hover:opacity-80"
-            style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+            className="h-8 cursor-pointer rounded-md px-2 text-sm transition hover:opacity-80"
+            style={isDark
+                ? { background: selected ? "rgba(255,255,255,0.10)" : "transparent", color: theme.node.text, borderWidth: 0 }
+                : { background: "transparent", color: selected ? theme.node.activeStroke : theme.node.text, borderWidth: 1, borderStyle: "solid", borderColor: selected ? theme.node.activeStroke : theme.node.stroke }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={onClick}
         >
@@ -186,7 +192,7 @@ function OptionPill({ selected, theme, onClick, children }: { selected: boolean;
     );
 }
 
-function DimensionInput({ prefix, value, disabled, theme, alignToStep, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; alignToStep: boolean; onChange: (value: number | null) => void }) {
+function DimensionInput({ prefix, value, disabled, theme, isDark, alignToStep, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; isDark: boolean; alignToStep: boolean; onChange: (value: number | null) => void }) {
     const commit = (input: HTMLInputElement) => {
         const next = alignDimension(Math.max(1, Math.floor(Number(input.value) || value || 1024)), alignToStep);
         input.value = String(next);
@@ -194,7 +200,9 @@ function DimensionInput({ prefix, value, disabled, theme, alignToStep, onChange 
     };
 
     return (
-        <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text, opacity: disabled ? 0.55 : 1 }}>
+        <label className="flex h-8 overflow-hidden rounded-md text-sm" style={isDark
+            ? { background: theme.node.fill, color: theme.node.text, opacity: disabled ? 0.55 : 1, borderWidth: 0 }
+            : { background: "#ffffff", color: theme.node.text, opacity: disabled ? 0.55 : 1, borderWidth: 1, borderStyle: "solid", borderColor: theme.node.stroke }}>
             <span className="grid w-9 place-items-center" style={{ color: theme.node.muted }}>
                 {prefix}
             </span>
@@ -215,9 +223,11 @@ function DimensionInput({ prefix, value, disabled, theme, alignToStep, onChange 
     );
 }
 
-function CountInput({ value, max, theme, onChange }: { value: number; max: number; theme: CanvasTheme; onChange: (value: number | null) => void }) {
+function CountInput({ value, max, theme, isDark, onChange }: { value: number; max: number; theme: CanvasTheme; isDark: boolean; onChange: (value: number | null) => void }) {
     return (
-        <label className="col-span-2 flex h-9 overflow-hidden rounded-full  text-sm" style={{ color: theme.node.text }}>
+        <label className="col-span-2 flex h-8 overflow-hidden rounded-md text-sm" style={isDark
+            ? { color: theme.node.text, borderWidth: 0 }
+            : { color: theme.node.text, borderWidth: 1, borderStyle: "solid", borderColor: theme.node.stroke }}>
             <input
                 type="number"
                 min={1}
@@ -238,7 +248,7 @@ function AspectIcon({ width, height, color }: { width: number; height: number; c
     const boxWidth = ratio >= 1 ? 24 : Math.max(10, 24 * ratio);
     const boxHeight = ratio >= 1 ? Math.max(10, 24 / ratio) : 24;
     return (
-        <span className="grid h-7 w-9 place-items-center">
+        <span className="grid h-6 w-9 place-items-center">
             <span className="-2" style={{ width: boxWidth, height: boxHeight, borderColor: color }} />
         </span>
     );

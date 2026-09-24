@@ -72,7 +72,7 @@ type ResponseApiPayload = {
 type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
 
 type ImageApiResponse = {
-    data?: Array<Record<string, unknown> | string>;
+    data?: unknown;
     error?: { message?: string };
     code?: number;
     msg?: string;
@@ -254,12 +254,16 @@ function resolveImageSource(item: Record<string, unknown> | string) {
         return item.url;
     }
     // 部分网关使用 { type: "image", data: "<base64 或 data URL>" }。
-    for (const key of ["data", "image", "image_base64", "imageData", "output"] as const) {
+    for (const key of ["data", "image", "image_base64", "imageData", "output", "content"] as const) {
         const value = item[key];
         if (typeof value === "string" && value) {
             return value.startsWith("data:") || /^https?:\/\//.test(value)
                 ? value
                 : `data:image/png;base64,${value}`;
+        }
+        if (value && typeof value === "object") {
+            const nested = resolveImageSource(value as Record<string, unknown>);
+            if (nested) return nested;
         }
     }
     // image_url may be a plain string or a { url } object (chat-completions style).
@@ -283,6 +287,21 @@ function resolveImageSource(item: Record<string, unknown> | string) {
     return null;
 }
 
+function collectImageItems(value: unknown, depth = 0): Array<Record<string, unknown> | string> {
+    if (depth > 4 || value == null) return [];
+    if (typeof value === "string") return value ? [value] : [];
+    if (Array.isArray(value)) return value.flatMap((item) => collectImageItems(item, depth + 1));
+    if (typeof value !== "object") return [];
+    const record = value as Record<string, unknown>;
+    for (const key of ["data", "images", "results", "output", "content"] as const) {
+        if (record[key] !== undefined) {
+            const nested = collectImageItems(record[key], depth + 1);
+            if (nested.length) return nested;
+        }
+    }
+    return [record];
+}
+
 function parseImagePayload(payload: ImageApiResponse) {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new Error(payload.msg || apiText("requestFailed"));
@@ -293,11 +312,9 @@ function parseImagePayload(payload: ImageApiResponse) {
         throw new Error(upstreamError);
     }
     // Support data, images, and results response fields used by different APIs.
-    const imageList =
-        (Array.isArray(payload.data) ? payload.data : undefined)
-        || (Array.isArray((payload as Record<string, unknown>).images) ? (payload as Record<string, unknown>).images as Array<Record<string, unknown> | string> : undefined)
-        || (Array.isArray((payload as Record<string, unknown>).results) ? (payload as Record<string, unknown>).results as Array<Record<string, unknown> | string> : undefined)
-        || [];
+    const responseRecord = payload as Record<string, unknown>;
+    const imageList = [payload.data, responseRecord.images, responseRecord.results]
+        .flatMap((value) => collectImageItems(value));
     const images = imageList
         .map(resolveImageSource)
         .filter((value): value is string => Boolean(value))
@@ -307,7 +324,7 @@ function parseImagePayload(payload: ImageApiResponse) {
         // Surface what the gateway actually returned so the format mismatch is debuggable from the browser console.
         console.warn("[image] unrecognized generation payload", {
             topLevelKeys: Object.keys(payload),
-            dataLength: Array.isArray(payload.data) ? payload.data.length : "n/a",
+            dataLength: Array.isArray(payload.data) ? payload.data.length : typeof payload.data,
             firstItem: imageList[0] ?? null,
         });
         // Check whether the response contains data in an unrecognized format.

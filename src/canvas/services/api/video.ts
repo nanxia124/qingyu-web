@@ -6,7 +6,7 @@ import { readFileAsDataUrl } from "@canvas/lib/image-utils";
 import { clampVideoSecondsToModel, computeVideoSize, getVideoMaxReferenceImages, inferVideoRatio, normalizeVideoResolutionToModel, VIDEO_FRAMES_MODE_LIMIT } from "@canvas/lib/media-size";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@canvas/services/file-storage";
 import { imageToDataUrl } from "@canvas/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
+import { billingProxyHeaders, boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@canvas/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@canvas/types/media";
@@ -41,6 +41,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
+        ...billingProxyHeaders(),
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }

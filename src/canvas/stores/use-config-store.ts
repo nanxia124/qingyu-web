@@ -1,4 +1,4 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
@@ -82,26 +82,12 @@ export const defaultConfig: AiConfig = {
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
     apiFormat: "openai",
-    channels: [
-        {
-            id: "default",
-            name: i18n.t("config.channels.defaultName"),
-            baseUrl: OPENAI_BASE_URL,
-            apiKey: "",
-            apiFormat: "openai",
-            models: [
-                { name: "gpt-image-2", capability: "image" },
-                { name: "grok-imagine-video", capability: "video" },
-                { name: "gpt-5.5", capability: "text" },
-                { name: "gpt-4o-mini-tts", capability: "audio" },
-            ],
-        },
-    ],
-    model: "default::gpt-image-2",
-    imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
-    textModel: "default::gpt-5.5",
-    audioModel: "default::gpt-4o-mini-tts",
+    channels: [],
+    model: "",
+    imageModel: "",
+    videoModel: "",
+    textModel: "",
+    audioModel: "",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -113,7 +99,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: [],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -131,13 +117,16 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     lastSyncedAt: "",
 };
 
+type ServerConfigStatus = "idle" | "loading" | "ready" | "failed";
 type ConfigStore = {
     config: AiConfig;
+    serverConfigStatus: ServerConfigStatus;
     webdav: WebdavSyncConfig;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    setServerConfigStatus: (status: ServerConfigStatus) => void;
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
@@ -210,10 +199,12 @@ export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
+            serverConfigStatus: "loading",
             webdav: defaultWebdavSyncConfig,
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
+            setServerConfigStatus: (serverConfigStatus) => set({ serverConfigStatus }),
             updateConfig: (key, value) =>
                 set((state) => ({
                     config: {
@@ -511,6 +502,13 @@ export function buildApiUrl(_baseUrl: string, path: string) {
     const proxyBase = "/api/proxy/openai";
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     return `${proxyBase}${normalizedPath}`;
+}
+
+/** 服务器代理请求必须携带当前业务会话，API Key 不能代替用户身份。 */
+export function billingProxyHeaders(): Record<string, string> {
+    if (typeof window === "undefined") return {};
+    const token = window.localStorage.getItem("billing_token") || window.localStorage.getItem("token");
+    return token ? { "X-Qingyu-Billing-Token": token } : {};
 }
 
 export function normalizeLocalProxyUrl(value: string) {

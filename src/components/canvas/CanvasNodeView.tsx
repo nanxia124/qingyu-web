@@ -110,7 +110,7 @@ export function CanvasNodeView({
           <div className="flex items-center gap-2 px-3 pb-3">
             <button onPointerDown={(e) => e.stopPropagation()} className="flex size-7 items-center justify-center rounded-lg text-[#888] hover:bg-[#2a2a2a]"><Maximize2 className="size-3.5" /></button>
             <button onPointerDown={(e) => e.stopPropagation()} className="flex size-7 items-center justify-center rounded-lg text-[#888] hover:bg-[#2a2a2a]"><Copy className="size-3.5" /></button>
-            <button onPointerDown={(e) => e.stopPropagation()} className="flex h-7 items-center gap-1.5 rounded-full bg-[#2a2a2a] px-3 text-[12px] text-[#ccc] hover:bg-[#333]"><Sparkles className="size-3.5" />gpt-image-2<span className="text-[#666]">...</span></button>
+            <button onPointerDown={(e) => e.stopPropagation()} className="flex h-7 items-center gap-1.5 rounded-full bg-[#2a2a2a] px-3 text-[12px] text-[#ccc] hover:bg-[#333]"><Sparkles className="size-3.5" />{node.config?.model || '暂未获取到模型'}</button>
             <button onPointerDown={(e) => e.stopPropagation()} className="flex h-7 items-center gap-1.5 rounded-full bg-[#2a2a2a] px-3 text-[12px] text-[#ccc] hover:bg-[#333]"><SlidersHorizontal className="size-3.5" />自动 · 1:1 · 3 张</button>
             <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onGenerate(node) }} className="ml-auto flex size-9 items-center justify-center rounded-full bg-[#2a2a2a] text-[#ccc] hover:bg-[#333]"><ArrowUp className="size-4" /></button>
           </div>

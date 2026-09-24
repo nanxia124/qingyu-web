@@ -674,7 +674,7 @@ export default function AdminBillingPage() {
                         <td className="px-5 py-3 text-gray-500">
                           <span className="px-2 py-0.5 rounded text-xs bg-secondary">{m.type}</span>
                         </td>
-                        <td className="px-5 py-3 text-right text-text font-mono">${m.pricing?.toFixed(4) || "0.0000"}</td>
+                        <td className="px-5 py-3 text-right text-text font-mono">${typeof m.pricing === "number" ? m.pricing.toFixed(4) : (typeof m.pricing === "string" ? m.pricing : "-")}</td>
                         <td className="px-5 py-3 text-gray-500 text-xs">
                           {(m.features || []).slice(0, 3).join("、")}
                         </td>

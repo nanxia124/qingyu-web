@@ -86,6 +86,25 @@ export interface Txn {
   note: string;
   createdAt: number;
 }
+export interface InvoiceOrderItem {
+  orderId: string;
+  orderNo: string;
+  amountCents: number;
+}
+export interface InvoiceRequest {
+  id: string;
+  titleType: "personal" | "company";
+  titleName: string;
+  taxNo: string;
+  email: string;
+  totalCents: number;
+  status: "pending" | "processing" | "completed" | "failed";
+  pdfUrl: string;
+  rejectReason: string;
+  createdAt: number;
+  completedAt: number | null;
+  orders: InvoiceOrderItem[];
+}
 
 // ---------------- 客户接口 ----------------
 export const billingApi = {
@@ -102,6 +121,9 @@ export const billingApi = {
     request<{ success: boolean; user: BillingUser }>("/api/billing/redeem", { method: "POST", body: { code } }),
   orders: () => request<Order[]>("/api/billing/orders"),
   transactions: () => request<Txn[]>("/api/billing/transactions"),
+  listInvoiceRequests: () => request<InvoiceRequest[]>("/api/billing/invoices"),
+  createInvoiceRequest: (body: { titleType: "personal" | "company"; titleName: string; taxNo?: string; email: string; orderIds: string[] }) =>
+    request<InvoiceRequest>("/api/billing/invoices", { method: "POST", body }),
   invite: () =>
     request<{ inviteCode: string; invitedCount: number; invitedList: any[]; rewardQuota: number }>("/api/billing/invite"),
 };
@@ -128,4 +150,11 @@ export const adminBillingApi = {
   supplierKeyLimits: () => request<any>("/api/admin/billing/supplier/key-limits", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   supplierModels: () => request<any>("/api/admin/billing/supplier/models", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   supplierAnnouncements: () => request<any>("/api/admin/billing/supplier/announcements", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  invoices: () => request<InvoiceRequest[] & { userEmail?: string }[]>("/api/admin/billing/invoices", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  updateInvoice: (id: string, body: { status: "processing" | "completed" | "failed"; pdfUrl?: string; rejectReason?: string }) =>
+    request<{ id: string; status: string }>(`/api/admin/billing/invoices/${id}/${body.status}`, {
+      method: "POST",
+      token: localStorage.getItem(ADMIN_TOKEN_KEY) || "",
+      body: { pdfUrl: body.pdfUrl, rejectReason: body.rejectReason },
+    }),
 };

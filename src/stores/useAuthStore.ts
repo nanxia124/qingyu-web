@@ -163,7 +163,8 @@ export const useAuthStore = create<AuthState>()(
         try {
           const authUser = get().user;
           if (authUser) {
-            const billingSession = await billingApi.login({ userId: authUser.id, email: authUser.email });
+            const appwriteJwt = await account.createJWT();
+            const billingSession = await billingApi.login({ userId: authUser.id, email: authUser.email, appwriteJwt: appwriteJwt.jwt });
             setBillingToken(billingSession.token);
             const postgresTeams = await api.get<Team[]>("/teams");
             set({ teams: postgresTeams, currentTeam: postgresTeams[0] || null });

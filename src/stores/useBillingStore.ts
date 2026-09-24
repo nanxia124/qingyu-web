@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { account } from "@/lib/appwrite";
 import {
   billingApi,
   setBillingToken,
@@ -33,7 +34,8 @@ export const useBillingStore = create<BillingState>((set) => ({
         const m = window.location.search.match(/[?&]invite=([^&]+)/);
         if (m) code = decodeURIComponent(m[1]);
       }
-      const res = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode: code });
+      const appwriteJwt = await account.createJWT();
+      const res = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode: code, appwriteJwt: appwriteJwt.jwt });
       setBillingToken(res.token);
       set({ user: res.user });
     } catch (e) {

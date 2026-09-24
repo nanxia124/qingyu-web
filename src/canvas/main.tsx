@@ -1,6 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "antd/dist/reset.css";
 import "streamdown/styles.css";
 import "./styles/globals.css";
 import { RouterProvider } from "react-router-dom";
@@ -15,6 +14,7 @@ initAnalytics();
 
 // 从服务器拉取 API 配置
 async function fetchServerConfig() {
+    useConfigStore.getState().setServerConfigStatus("loading");
     try {
         const res = await fetch("/api/config/public");
         const configs = await res.json();
@@ -63,16 +63,18 @@ async function fetchServerConfig() {
             console.log("[Config] 从服务器拉取配置成功:", configs.length, "个配置,", allModels.length, "个模型");
             console.log("[Config] channels:", channels);
             console.log("[Config] models:", allModels);
+            useConfigStore.getState().setServerConfigStatus("ready");
+        } else {
+            useConfigStore.getState().setServerConfigStatus("failed");
         }
     } catch (err) {
         console.warn("[Config] 从服务器拉取配置失败，使用本地配置:", err);
+        useConfigStore.getState().setServerConfigStatus("failed");
     }
 }
 
 // 延迟执行，等 zustand persist 恢复完本地配置后再覆盖
 setTimeout(fetchServerConfig, 100);
-
-document.body.style.fontFamily = '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif';
 
 createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

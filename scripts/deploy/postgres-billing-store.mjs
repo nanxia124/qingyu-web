@@ -209,7 +209,7 @@ export async function createPostgresBillingStore() {
   }
 
   async function getUser(appwriteUserId) {
-    const result = await pool.query(`select u.appwrite_user_id,u.email,w.id workspace_id,
+    const result = await pool.query(`select u.id internal_user_id,u.appwrite_user_id,u.email,w.id workspace_id,
       coalesce(q.available,0) balance,coalesce(s.status,'trialing') subscription_status,
       coalesce(p.code,'free') member_level,s.current_period_end member_expire_at,
       coalesce((select sum(o.amount_minor) from app.orders o where o.workspace_id=w.id and o.status='paid'),0) total_spent,
@@ -219,6 +219,73 @@ export async function createPostgresBillingStore() {
       left join app.subscriptions s on s.workspace_id=w.id and s.status in ('trialing','active','past_due')
       left join app.plans p on p.id=s.plan_id where u.appwrite_user_id=$1`, [appwriteUserId]);
     return result.rows[0] || null;
+  }
+
+  // 记录每次服务器代理调用的最小业务事实。精确 Token/金额仍以供应商回执为准，不能在这里臆算。
+  async function recordProviderUsage(appwriteUserId, input = {}) {
+    const client = await pool.connect();
+    let committed = false;
+    try {
+      await client.query('begin');
+      const me = await getUser(appwriteUserId);
+      if (!me) throw new Error('用户不存在，请重新登录');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const requestId = String(input.requestId || crypto.randomUUID()).slice(0, 160);
+      const idempotencyKey = String(input.idempotencyKey || `proxy:${requestId}`).slice(0, 160);
+      const result = ['reserved', 'committed', 'released', 'failed', 'unknown'].includes(input.result) ? input.result : 'reserved';
+      const quantity = Number.isFinite(Number(input.quantity)) && Number(input.quantity) >= 0 ? Number(input.quantity) : 1;
+      const metadata = input.metadata && typeof input.metadata === 'object' ? input.metadata : {};
+      const existing = await client.query(`select id,quota_reservation_id,daily_reservation_id,result from app.usage_records where idempotency_key=$1`, [idempotencyKey]);
+      if (existing.rowCount) { await client.query('commit'); committed = true; return existing.rows[0]; }
+
+      // 付费订阅走月度额度预占；免费版走每日 20 次预占。
+      let reservationId = null;
+      let dailyReservationId = null;
+      if (me.member_level !== 'free' && quantity > 0) {
+        const reservation = await client.query(`select app.reserve_quota($1,'monthly',$2,$3,now()+interval '10 minutes') reservation_id`, [me.workspace_id, quantity, idempotencyKey]);
+        reservationId = reservation.rows[0].reservation_id;
+      } else if (quantity > 0) {
+        const reservation = await client.query(`select app.reserve_free_daily_usage($1,$2,'ai_proxy',$3,$4,20,now()+interval '10 minutes') reservation_id`, [me.workspace_id, me.internal_user_id, quantity, idempotencyKey]);
+        dailyReservationId = reservation.rows[0].reservation_id;
+      }
+      const row = await client.query(`insert into app.usage_records(workspace_id,user_id,feature_code,provider,model,quantity,unit,result,idempotency_key,request_id,metadata,quota_reservation_id,daily_reservation_id)
+        values($1,$2,$3,$4,$5,$6,'request',$7,$8,$9,$10::jsonb,$11,$12)
+        on conflict(idempotency_key) do update set metadata=app.usage_records.metadata
+        returning id,idempotency_key,result,quota_reservation_id,daily_reservation_id`, [me.workspace_id, me.internal_user_id, String(input.featureCode || 'ai_proxy').slice(0, 120), String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null, quantity, result, idempotencyKey, requestId, JSON.stringify(metadata), reservationId, dailyReservationId]);
+      await client.query('commit');
+      committed = true;
+      return row.rows[0];
+    } catch (error) {
+      if (!committed) await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async function completeProviderUsage(appwriteUserId, idempotencyKey, result, metadata = {}) {
+    const me = await getUser(appwriteUserId);
+    if (!me) return false;
+    if (!['committed', 'failed', 'unknown'].includes(result)) throw new Error('用量结果状态无效');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const current = await client.query(`select id,quota_reservation_id,daily_reservation_id,result from app.usage_records where workspace_id=$1 and idempotency_key=$2 for update`, [me.workspace_id, String(idempotencyKey).slice(0, 160)]);
+      if (!current.rowCount) { await client.query('rollback'); return false; }
+      const row = current.rows[0];
+      if (row.result === 'committed' || row.result === 'failed') { await client.query('commit'); return true; }
+      if (row.quota_reservation_id && result === 'committed') {
+        await client.query(`select app.settle_quota($1,$2)`, [row.quota_reservation_id, `${idempotencyKey}:commit`]);
+      } else if (row.quota_reservation_id && result === 'failed') {
+        await client.query(`select app.release_quota($1,$2)`, [row.quota_reservation_id, `${idempotencyKey}:release`]);
+      } else if (row.daily_reservation_id && result === 'committed') {
+        await client.query(`select app.settle_free_daily_usage($1,$2)`, [row.daily_reservation_id, `${idempotencyKey}:commit`]);
+      } else if (row.daily_reservation_id && result === 'failed') {
+        await client.query(`select app.release_free_daily_usage($1,$2)`, [row.daily_reservation_id, `${idempotencyKey}:release`]);
+      }
+      const updated = await client.query(`update app.usage_records set result=$1,metadata=coalesce(metadata,'{}'::jsonb)||$2::jsonb where id=$3 returning id`, [result, JSON.stringify(metadata), row.id]);
+      await client.query('commit');
+      return updated.rowCount === 1;
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function plans() {
@@ -242,9 +309,25 @@ export async function createPostgresBillingStore() {
         from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id
         left join lateral (select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true
         where o.workspace_id=$1 and o.idempotency_key=$2`, [me.workspace_id, idempotencyKey]);
-      if (existing.rowCount) { await client.query("commit"); return apiOrder(existing.rows[0]); }
+      if (existing.rowCount) {
+        if (existing.rows[0].plan_code !== planCode) throw new Error("幂等键已用于其他套餐，不能复用");
+        await client.query("commit");
+        return apiOrder(existing.rows[0]);
+      }
       const order = await client.query(`insert into app.orders(workspace_id,plan_id,plan_version_id,order_no,status,currency,amount_minor,idempotency_key,price_snapshot)
-        values($1,$2,$3,'QY-'||replace(gen_random_uuid()::text,'-',''),'pending',$4,$5,$6,$7::jsonb) returning id`, [me.workspace_id, p.id, p.plan_version_id, p.currency, p.price_minor, idempotencyKey, JSON.stringify({ code: p.code, version: p.version })]);
+        values($1,$2,$3,'QY-'||replace(gen_random_uuid()::text,'-',''),'pending',$4,$5,$6,$7::jsonb)
+        on conflict(idempotency_key) do nothing returning id`, [me.workspace_id, p.id, p.plan_version_id, p.currency, p.price_minor, idempotencyKey, JSON.stringify({ code: p.code, version: p.version })]);
+      if (!order.rowCount) {
+        const conflict = await client.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at
+          from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id
+          left join lateral (select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true
+          where o.idempotency_key=$1`, [idempotencyKey]);
+        if (!conflict.rowCount) throw new Error("订单创建冲突，请稍后重试");
+        if (conflict.rows[0].workspace_id !== me.workspace_id) throw new Error("幂等键已被其他空间占用");
+        if (conflict.rows[0].plan_code !== planCode) throw new Error("幂等键已用于其他套餐，不能复用");
+        await client.query("commit");
+        return apiOrder(conflict.rows[0]);
+      }
       const row = await client.query(`select o.*,u.appwrite_user_id,p.code plan_code,'' payment_provider,null provider_payment_id,null paid_at from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id where o.id=$1`, [order.rows[0].id]);
       await client.query("commit");
       return apiOrder(row.rows[0]);
@@ -282,6 +365,59 @@ export async function createPostgresBillingStore() {
   }
 
   async function listOrders(appwriteUserId) { const me = await getUser(appwriteUserId); if (!me) return []; const r = await pool.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id left join lateral(select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true where u.appwrite_user_id=$1 order by o.created_at desc`, [appwriteUserId]); return r.rows.map(apiOrder); }
+  async function createRefundRequest(appwriteUserId, input = {}) {
+    const orderId = String(input.orderId || '').trim();
+    const amount = Math.floor(Number(input.amountCents || 0));
+    const reason = String(input.reason || '').trim();
+    const idempotencyKey = String(input.idempotencyKey || `refund:${crypto.randomUUID()}`).slice(0, 160);
+    if (!orderId || !Number.isSafeInteger(amount) || amount <= 0 || !reason) throw new Error('退款订单、金额和原因不能为空');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const me = await getUser(appwriteUserId);
+      if (!me) throw new Error('用户不存在，请重新登录');
+      const existing = await client.query(`select r.id,r.order_id,r.amount_minor,r.status,r.idempotency_key,r.created_at from app.refunds r where r.workspace_id=$1 and r.idempotency_key=$2`, [me.workspace_id, idempotencyKey]);
+      if (existing.rowCount) { await client.query('commit'); return { id: existing.rows[0].id, orderId: existing.rows[0].order_id, amountCents: Number(existing.rows[0].amount_minor), status: existing.rows[0].status, idempotencyKey: existing.rows[0].idempotency_key, createdAt: new Date(existing.rows[0].created_at).getTime() }; }
+      const order = await client.query(`select o.id,o.workspace_id,o.amount_minor,o.currency,o.status,pay.id payment_id
+        from app.orders o join app.workspaces w on w.id=o.workspace_id and w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1)
+        left join lateral(select id from app.payments x where x.order_id=o.id and x.status='succeeded' order by x.paid_at desc nulls last limit 1) pay on true
+        where o.id=$2 for update of o,w`, [appwriteUserId, orderId]);
+      if (!order.rowCount || !['paid','partially_refunded','refunded'].includes(order.rows[0].status) || !order.rows[0].payment_id) throw new Error('订单不存在或尚未确认支付');
+      const used = await client.query(`select coalesce(sum(amount_minor) filter(where status in ('pending','processing','succeeded','unknown')),0) used from app.refunds where order_id=$1`, [orderId]);
+      const remaining = Number(order.rows[0].amount_minor) - Number(used.rows[0].used);
+      if (amount > remaining) throw new Error('退款金额超过可退金额');
+      const row = await client.query(`insert into app.refunds(workspace_id,order_id,payment_id,amount_minor,currency,idempotency_key,reason,requested_by)
+        values($1,$2,$3,$4,$5,$6,$7,(select id from app.user_accounts where appwrite_user_id=$8)) returning id,created_at`, [me.workspace_id, orderId, order.rows[0].payment_id, amount, order.rows[0].currency, idempotencyKey, reason, appwriteUserId]);
+      await client.query('commit');
+      return { id: row.rows[0].id, orderId, amountCents: amount, status: 'pending', idempotencyKey, createdAt: new Date(row.rows[0].created_at).getTime() };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+  async function listRefunds(appwriteUserId) {
+    const me = await getUser(appwriteUserId); if (!me) return [];
+    const r = await pool.query(`select r.id,r.order_id,r.amount_minor,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no
+      from app.refunds r join app.orders o on o.id=r.order_id where r.workspace_id=$1 order by r.created_at desc`, [me.workspace_id]);
+    return r.rows.map(x => ({ id:x.id, orderId:x.order_id, orderNo:x.order_no, amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
+  }
+  async function adminRefunds() {
+    const r = await pool.query(`select r.id,r.workspace_id,r.order_id,r.amount_minor,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no,u.appwrite_user_id,u.email
+      from app.refunds r join app.orders o on o.id=r.order_id join app.user_accounts u on u.id=(select owner_user_id from app.workspaces where id=r.workspace_id) order by r.created_at desc limit 1000`);
+    return r.rows.map(x => ({ id:x.id, workspaceId:x.workspace_id, orderId:x.order_id, orderNo:x.order_no, userId:x.appwrite_user_id, email:x.email||'', amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
+  }
+  async function adminUpdateRefund(id, input = {}) {
+    const status=String(input.status||''); const providerRefundId=String(input.providerRefundId||'').trim();
+    if (!['processing','succeeded','failed','unknown'].includes(status)) throw new Error('不支持的退款状态');
+    if (status==='succeeded' && !providerRefundId) throw new Error('退款成功必须提供供应商退款单号');
+    const client=await pool.connect();
+    try { await client.query('begin');
+      const cur=await client.query(`select r.*,o.amount_minor order_amount from app.refunds r join app.orders o on o.id=r.order_id where r.id=$1 for update`,[id]);
+      if(!cur.rowCount) throw new Error('退款申请不存在'); const row=cur.rows[0];
+      if(status==='processing' && !['pending','unknown'].includes(row.status)) throw new Error('当前退款状态不能进入处理中');
+      if(['succeeded','failed','unknown'].includes(status) && !['pending','processing','unknown'].includes(row.status)) throw new Error('该退款申请已经结束，不能重复处理');
+      await client.query(`update app.refunds set status=$1,provider_refund_id=coalesce($2,provider_refund_id),completed_at=case when $1 in ('succeeded','failed') then now() else completed_at end,raw_reference=raw_reference||$3::jsonb where id=$4`,[status,providerRefundId||null,JSON.stringify({note:String(input.note||'').slice(0,1000)}),id]);
+      if(status==='succeeded') { const total=await client.query(`select coalesce(sum(amount_minor) filter(where status='succeeded'),0) total from app.refunds where order_id=$1`,[row.order_id]); const next=Number(total.rows[0].total)>=Number(row.order_amount)?'refunded':'partially_refunded'; await client.query(`update app.orders set status=$1,updated_at=now() where id=$2 and status in ('paid','partially_refunded')`,[next,row.order_id]); }
+      await client.query('commit'); return {id,status};
+    } catch(error){await client.query('rollback');throw error;} finally{client.release();}
+  }
   async function listTransactions(appwriteUserId) {
     const me = await getUser(appwriteUserId);
     if (!me) return [];
@@ -296,6 +432,123 @@ export async function createPostgresBillingStore() {
     });
   }
 
+  // ---------------- 电子发票申请 ----------------
+  async function createInvoiceRequest(appwriteUserId, input = {}) {
+    const titleType = input.titleType === "company" ? "company" : "personal";
+    const titleName = String(input.titleName || "").trim();
+    const taxNo = String(input.taxNo || "").trim();
+    const email = String(input.email || "").trim();
+    const orderIds = Array.isArray(input.orderIds) ? input.orderIds.map(String) : [];
+    if (!titleName) throw new Error("请填写发票抬头");
+    if (titleType === "company" && !taxNo) throw new Error("企业抬头需要填写税号");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("请填写正确的收票邮箱");
+    if (!orderIds.length) throw new Error("请至少选择一笔已支付订单");
+
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const me = await client.query(`select u.id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+      if (!me.rowCount) throw new Error("用户不存在，请重新登录");
+      const userId = me.rows[0].id;
+
+      const orders = await client.query(
+        `select o.id,o.order_no,o.amount_minor from app.orders o
+         join app.workspaces w on w.id=o.workspace_id
+         where o.id = ANY($1::uuid[]) and w.owner_user_id=$2 and o.status='paid'`,
+        [orderIds, userId]
+      );
+      if (orders.rows.length !== orderIds.length) throw new Error("所选订单不存在或不可开票");
+      const taken = await client.query(`select order_id from app.invoice_request_orders where order_id = ANY($1::uuid[])`, [orderIds]);
+      if (taken.rowCount) throw new Error("所选订单中已有部分申请过发票，不能重复申请");
+
+      const totalMinor = orders.rows.reduce((s, o) => s + Number(o.amount_minor), 0);
+      const req = await client.query(
+        `insert into app.invoice_requests(user_id,workspace_id,title_type,title_name,tax_no,email,total_minor)
+         values($1,$2,$3,$4,$5,$6,$7) returning id,status,created_at`,
+        [userId, me.rows[0].workspace_id, titleType, titleName, titleType === "company" ? taxNo : null, email, totalMinor]
+      );
+      const requestId = req.rows[0].id;
+      for (const o of orders.rows) {
+        await client.query(
+          `insert into app.invoice_request_orders(request_id,order_id,order_no,amount_minor) values($1,$2,$3,$4)`,
+          [requestId, o.id, o.order_no, Number(o.amount_minor)]
+        );
+      }
+      await client.query("commit");
+      return { id: requestId, status: "pending", totalCents: totalMinor, orderCount: orders.rows.length, createdAt: new Date(req.rows[0].created_at).getTime() };
+    } catch (e) { await client.query("rollback"); throw e; } finally { client.release(); }
+  }
+
+  async function listMyInvoiceRequests(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) return [];
+    const r = await pool.query(
+      `select r.id,r.title_type,r.title_name,r.tax_no,r.email,r.total_minor,r.status,r.pdf_url,r.reject_reason,r.created_at,r.completed_at,
+        (select json_agg(json_build_object('orderId',ro.order_id,'orderNo',ro.order_no,'amountCents',ro.amount_minor)
+          order by ro.order_no) from app.invoice_request_orders ro where ro.request_id=r.id) orders
+       from app.invoice_requests r where r.user_id=$1 and r.workspace_id=$2 order by r.created_at desc`,
+      [me.internal_user_id, me.workspace_id]
+    );
+    return r.rows.map(x => ({
+      id: x.id, titleType: x.title_type, titleName: x.title_name, taxNo: x.tax_no || "",
+      email: x.email, totalCents: Number(x.total_minor), status: x.status, pdfUrl: x.pdf_url || "",
+      rejectReason: x.reject_reason || "", createdAt: new Date(x.created_at).getTime(),
+      completedAt: x.completed_at ? new Date(x.completed_at).getTime() : null,
+      orders: x.orders || [],
+    }));
+  }
+
+  async function adminListInvoiceRequests() {
+    const r = await pool.query(
+      `select r.id,r.title_type,r.title_name,r.tax_no,r.email,r.total_minor,r.status,r.pdf_url,r.reject_reason,r.created_at,r.completed_at,
+        u.appwrite_user_id,u.email user_email,
+        (select json_agg(json_build_object('orderId',ro.order_id,'orderNo',ro.order_no,'amountCents',ro.amount_minor) order by ro.order_no) from app.invoice_request_orders ro where ro.request_id=r.id) orders
+       from app.invoice_requests r join app.user_accounts u on u.id=r.user_id order by r.created_at desc limit 500`
+    );
+    return r.rows.map(x => ({
+      id: x.id, titleType: x.title_type, titleName: x.title_name, taxNo: x.tax_no || "",
+      email: x.email, userEmail: x.user_email, totalCents: Number(x.total_minor), status: x.status,
+      pdfUrl: x.pdf_url || "", rejectReason: x.reject_reason || "", createdAt: new Date(x.created_at).getTime(),
+      completedAt: x.completed_at ? new Date(x.completed_at).getTime() : null, orders: x.orders || [],
+    }));
+  }
+
+  async function adminUpdateInvoiceRequest(id, input = {}) {
+    const status = String(input.status || "");
+    if (!["processing", "completed", "failed"].includes(status)) throw new Error("不支持的发票状态");
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const cur = await client.query(`select id,status from app.invoice_requests where id=$1 for update`, [id]);
+      if (!cur.rowCount) throw new Error("发票申请不存在");
+      const currentStatus = cur.rows[0].status;
+      if (status === "processing" && currentStatus !== "pending") throw new Error("只有待处理申请可以进入开票中");
+      if (["completed", "failed"].includes(status) && !["pending", "processing"].includes(currentStatus)) throw new Error("该发票申请已经结束，不能重复处理");
+      const pdfUrl = status === "completed" ? String(input.pdfUrl || "").trim() : null;
+      if (status === "completed" && !pdfUrl) throw new Error("标记完成时需要提供电子发票 PDF 地址");
+      const rejectReason = status === "failed" ? String(input.rejectReason || "").trim() : null;
+      await client.query(
+        `update app.invoice_requests set status=$1,pdf_url=coalesce($2,pdf_url),reject_reason=coalesce($3,reject_reason),
+         completed_at=case when $1 in ('completed','failed') then now() else completed_at end where id=$4`,
+        [status, pdfUrl || null, rejectReason || null, id]
+      );
+      await client.query("commit");
+      return { id, status };
+    } catch (e) { await client.query("rollback"); throw e; } finally { client.release(); }
+  }
+
+  async function adminUnknownUsage() {
+    const r = await pool.query(`select id,workspace_id,user_id,provider,model,request_id,quantity,unit,occurred_at
+      from app.usage_records where result='unknown' order by occurred_at desc,id desc limit 200`);
+    return r.rows;
+  }
+
+  async function adminReconcileUsage(usageId, actor, input = {}) {
+    const r = await pool.query(`select app.reconcile_provider_usage($1,$2,$3,$4,$5) id`,
+      [usageId, actor, input.decision, input.reason, input.providerReference]);
+    return { reconciliationId: r.rows[0].id, usageId, decision: input.decision };
+  }
+
   async function adminStats() {
     const r = await pool.query(`select
       (select count(*) from app.user_accounts where status='active') user_count,
@@ -308,6 +561,104 @@ export async function createPostgresBillingStore() {
       (select count(*) from app.redeem_codes where used_by is null and (expires_at is null or expires_at > now())) unused_codes`);
     const x = r.rows[0];
     return { userCount: Number(x.user_count), activeMemberCount: Number(x.active_member_count), orderCount: Number(x.order_count), paidOrderCount: Number(x.paid_order_count), revenueCents: Number(x.revenue_minor), todayRevenueCents: Number(x.today_revenue_minor), totalBalance: Number(x.total_balance), unusedCodes: Number(x.unused_codes) };
+  }
+
+  async function recordPaymentEvent(provider, input = {}) {
+    const providerEventId = String(input.eventId || input.id || '').trim().slice(0, 200);
+    const eventType = String(input.type || input.eventType || '').trim().slice(0, 120);
+    if (!providerEventId || !eventType) throw new Error('支付事件缺少事件编号或事件类型');
+    const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')) ? String(value) : null;
+    const orderId = uuid(input.orderId); const paymentId = uuid(input.paymentId);
+    const amount = input.amountMinor == null ? null : Math.floor(Number(input.amountMinor));
+    if (amount != null && (!Number.isSafeInteger(amount) || amount < 0)) throw new Error('支付事件金额无效');
+    const existing = await pool.query(`select id,status from app.payment_events where provider=$1 and provider_event_id=$2`, [provider, providerEventId]);
+    if (existing.rowCount) return { eventId: existing.rows[0].id, providerEventId, status: existing.rows[0].status, duplicate: true };
+    const row = await pool.query(`insert into app.payment_events(provider,provider_event_id,event_type,order_id,payment_id,amount_minor,currency,payload,signature_verified)
+      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true) returning id,status,received_at`, [String(provider).slice(0,64), providerEventId, eventType, orderId, paymentId, amount, String(input.currency || '').slice(0,3) || null, JSON.stringify(input)]);
+    const processed = await processPaymentEvent(provider, providerEventId);
+    return { eventId: row.rows[0].id, providerEventId, status: processed.status, duplicate: false, receivedAt: new Date(row.rows[0].received_at).toISOString(), error: processed.error || null };
+  }
+
+  // 将已经验签的支付事件幂等地推进到订单、支付记录、订阅和额度。
+  // 任何金额、币种或订单关系不一致都只记录失败，不发放权益。
+  async function processPaymentEvent(provider, providerEventId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const eventResult = await client.query(`select * from app.payment_events where provider=$1 and provider_event_id=$2 for update`, [String(provider).slice(0,64), String(providerEventId).slice(0,200)]);
+      if (!eventResult.rowCount) throw new Error('支付事件不存在');
+      const event = eventResult.rows[0];
+      if (['processed','ignored'].includes(event.status)) { await client.query('commit'); return { status: event.status, error: event.error_message || null }; }
+      const eventType = String(event.event_type || '').toLowerCase();
+      const successTypes = new Set(['payment.succeeded','payment.paid','trade.success','succeeded','paid']);
+      if (!successTypes.has(eventType)) {
+        await client.query(`update app.payment_events set status='ignored',processed_at=now(),error_message=$1 where id=$2`, ['非支付成功事件，不发放权益', event.id]);
+        await client.query('commit');
+        return { status: 'ignored', error: '非支付成功事件，不发放权益' };
+      }
+      if (!event.order_id || event.amount_minor == null) {
+        const message = '支付事件缺少订单或金额，等待人工核对';
+        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await client.query('commit');
+        return { status: 'failed', error: message };
+      }
+      const orderResult = await client.query(`select o.*,p.code plan_code,p.name plan_name,p.billing_interval,v.quota_snapshot,u.appwrite_user_id
+        from app.orders o join app.workspaces w on w.id=o.workspace_id
+        join app.user_accounts u on u.id=w.owner_user_id
+        join app.plans p on p.id=o.plan_id join app.plan_versions v on v.id=o.plan_version_id
+        where o.id=$1 for update`, [event.order_id]);
+      if (!orderResult.rowCount) {
+        const message = '支付事件关联的订单不存在，等待人工核对';
+        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await client.query('commit');
+        return { status: 'failed', error: message };
+      }
+      const order = orderResult.rows[0];
+      if (order.status === 'paid' || order.status === 'partially_refunded' || order.status === 'refunded') {
+        await client.query(`update app.payment_events set status='processed',processed_at=coalesce(processed_at,now()),error_message=null where id=$1`, [event.id]);
+        await client.query('commit');
+        return { status: 'processed', alreadyPaid: true };
+      }
+      if (order.status !== 'pending') {
+        const message = `订单当前状态为 ${order.status}，不能自动入账`;
+        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await client.query('commit');
+        return { status: 'failed', error: message };
+      }
+      if (Number(event.amount_minor) !== Number(order.amount_minor) || (event.currency && String(event.currency).toUpperCase() !== String(order.currency).toUpperCase())) {
+        const message = '支付事件金额或币种与订单不一致，拒绝发放权益';
+        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await client.query('commit');
+        return { status: 'failed', error: message };
+      }
+      const providerPaymentId = String(event.payload?.providerPaymentId || event.payload?.transactionId || event.payload?.tradeNo || `${provider}:${providerEventId}`).slice(0,160);
+      let payment = await client.query(`insert into app.payments(order_id,provider,provider_payment_id,status,amount_minor,paid_at,raw_reference)
+        values($1,$2,$3,'succeeded',$4,now(),$5::jsonb)
+        on conflict(provider,provider_payment_id) do nothing returning id,order_id`, [order.id, String(provider).slice(0,64), providerPaymentId, order.amount_minor, JSON.stringify(event.payload || {})]);
+      if (!payment.rowCount) {
+        payment = await client.query(`select id,order_id from app.payments where provider=$1 and provider_payment_id=$2 for update`, [String(provider).slice(0,64), providerPaymentId]);
+        if (!payment.rowCount || payment.rows[0].order_id !== order.id) {
+          const message = '支付平台交易号已经绑定其他订单，拒绝发放权益';
+          await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+          await client.query('commit');
+          return { status: 'failed', error: message };
+        }
+      }
+      await client.query(`update app.orders set status='paid',updated_at=now() where id=$1`, [order.id]);
+      const days = order.billing_interval === 'year' ? 365 : order.billing_interval === 'month' ? 30 : 0;
+      if (days > 0) await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end)
+        values($1,$2,$3,'active',now(),now()+make_interval(days=>$4))
+        on conflict(workspace_id) do update set plan_id=excluded.plan_id,plan_version_id=excluded.plan_version_id,status='active',current_period_start=excluded.current_period_start,current_period_end=excluded.current_period_end,updated_at=now()`, [order.workspace_id, order.plan_id, order.plan_version_id, days]);
+      const quota = Number(order.quota_snapshot?.monthly || 0);
+      if (quota > 0) {
+        const account = await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict(workspace_id,quota_code) do update set updated_at=now() returning id`, [order.workspace_id]);
+        await client.query(`update app.quota_accounts set granted=granted+$1,version=version+1,updated_at=now() where id=$2`, [quota, account.rows[0].id]);
+        await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata) values($1,$2,'grant',$3,$4,$5::jsonb) on conflict do nothing`, [account.rows[0].id, order.workspace_id, quota, `grant:order:${order.id}`, JSON.stringify({ order_id: order.id, payment_event_id: event.id })]);
+      }
+      await client.query(`update app.payment_events set status='processed',processed_at=now(),error_message=null where id=$1`, [event.id]);
+      await client.query('commit');
+      return { status: 'processed', paymentId: payment.rows[0].id, orderId: order.id };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function adminUsers() {
@@ -818,5 +1169,5 @@ export async function createPostgresBillingStore() {
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), plans, createOrder, payOrder, listOrders, listTransactions, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, close: () => pool.end() };
 }

@@ -3,10 +3,9 @@
  * - 画布源码整体位于 src/canvas，内部使用 @canvas/* 别名，自成模块。
  * - 复用画布自带的 AppProviders（antd ConfigProvider/Pro/App、react-query、ClientRootInit），
  *   但不再挂载独立 Router——路由由主站 react-router 提供，画布内部 useNavigate/useParams 直接生效。
- * - i18n、全局样式（antd reset、streamdown、画布 shadcn/tailwind 主题）在此一次性副作用引入。
+ * - i18n、streamdown 和画布 shadcn/tailwind 主题样式在此一次性副作用引入。
  */
 import "@canvas/i18n";
-import "antd/dist/reset.css";
 import "streamdown/styles.css";
 import "@canvas/styles/globals.css";
 

@@ -2,15 +2,21 @@ import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api, ApiError } from "@/lib/api";
-import { User, Crown, Shield, Mail, MoreHorizontal } from "lucide-react";
+import { User, Crown, Shield, Mail, MoreHorizontal, ShieldCheck, ShieldOff, UserMinus } from "lucide-react";
 
 interface Member {
   id: string;
   name: string;
   email: string;
   role: "owner" | "admin" | "member";
-  joinedAt: string;
+  status: string;
+  joinedAt: string | null;
 }
+
+type ConfirmAction =
+  | { kind: "setAdmin"; member: Member }
+  | { kind: "unsetAdmin"; member: Member }
+  | { kind: "remove"; member: Member };
 
 export default function TeamMembersPage() {
   const { t } = useTranslation()
@@ -21,6 +27,12 @@ export default function TeamMembersPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const myRole = currentTeam?.role;
+  const canManage = myRole === "owner" || myRole === "admin";
 
   useEffect(() => {
     if (currentTeam) {
@@ -63,6 +75,39 @@ export default function TeamMembersPage() {
     }
   };
 
+  const runConfirm = async () => {
+    if (!confirm || !currentTeam) return;
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const body =
+        confirm.kind === "remove"
+          ? { status: "left" }
+          : { role: confirm.kind === "setAdmin" ? "admin" : "member" };
+      await api.patch(`/teams/${currentTeam.id}/members/${confirm.member.id}`, body);
+      await fetchMembers();
+      setMessage({
+        type: "success",
+        text:
+          confirm.kind === "remove"
+            ? `已移除 ${confirm.member.name}`
+            : confirm.kind === "setAdmin"
+              ? `已将 ${confirm.member.name} 设为管理员`
+              : `已取消 ${confirm.member.name} 的管理员身份`,
+      });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setMessage({ type: "error", text: err.message });
+      } else {
+        setMessage({ type: "error", text: "操作失败，请稍后重试" });
+      }
+    } finally {
+      setSubmitting(false);
+      setConfirm(null);
+      setMenuFor(null);
+    }
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case "owner":
@@ -88,7 +133,7 @@ export default function TeamMembersPage() {
   if (!currentTeam) {
     return (
       <div className="flex items-center justify-center h-full text-text-muted">
-        t("pages.team.members.selectFirst")
+        {t("pages.team.members.selectFirst")}
       </div>
     );
   }
@@ -105,7 +150,7 @@ export default function TeamMembersPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white hover:bg-accent-hover transition-colors"
         >
           <Mail size={16} />
-          邀请t("pages.team.members.member")
+          邀请{t("pages.team.members.member")}
         </button>
       </div>
 
@@ -162,7 +207,7 @@ export default function TeamMembersPage() {
         </div>
       )}
 
-      {/* t("pages.team.members.member")列表 */}
+      {/* 成员列表 */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-muted">{t("pages.team.members.loading")}</div>
@@ -170,46 +215,130 @@ export default function TeamMembersPage() {
           <table className="w-full">
             <thead className="bg-card">
               <tr>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.member")</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.role")</th>
-                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.joinedAt")</th>
-                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">t("pages.team.members.action")</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.team.members.member")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.team.members.role")}</th>
+                <th className="text-left px-6 py-3 text-sm font-medium text-text-muted">{t("pages.team.members.joinedAt")}</th>
+                <th className="text-right px-6 py-3 text-sm font-medium text-text-muted">{t("pages.team.members.action")}</th>
               </tr>
             </thead>
             <tbody>
-              {members.map((member) => (
-                <tr key={member.id} className="border-t border-border">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-bold text-text">
-                        {member.name?.charAt(0).toUpperCase()}
+              {members.map((member) => {
+                const isOwner = member.role === "owner";
+                const canAct = canManage && !isOwner;
+                return (
+                  <tr key={member.id} className="border-t border-border">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-sm font-bold text-text">
+                          {member.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-medium text-text">{member.name}</div>
+                          <div className="text-sm text-text-muted">{member.email}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-medium text-text">{member.name}</div>
-                        <div className="text-sm text-text-muted">{member.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-secondary text-text-muted">
-                      {getRoleIcon(member.role)}
-                      {getRoleText(member.role)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-text-muted">
-                    {new Date(member.joinedAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-secondary text-text-muted">
+                        {getRoleIcon(member.role)}
+                        {getRoleText(member.role)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-text-muted">
+                      {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                      {canAct ? (
+                        <>
+                          <button
+                            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-secondary transition-colors"
+                            onClick={() => setMenuFor(menuFor === member.id ? null : member.id)}
+                          >
+                            <MoreHorizontal size={18} />
+                          </button>
+                          {menuFor === member.id && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setMenuFor(null)} />
+                              <div className="absolute right-6 top-10 z-40 w-44 rounded-xl bg-card shadow-xl overflow-hidden py-1">
+                                {member.role === "admin" ? (
+                                  <button
+                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-text hover:bg-secondary transition-colors"
+                                    onClick={() => { setMenuFor(null); setConfirm({ kind: "unsetAdmin", member }); }}
+                                  >
+                                    <ShieldOff size={14} className="text-text-muted" />
+                                    取消管理员
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-text hover:bg-secondary transition-colors"
+                                    onClick={() => { setMenuFor(null); setConfirm({ kind: "setAdmin", member }); }}
+                                  >
+                                    <ShieldCheck size={14} className="text-text-muted" />
+                                    设为管理员
+                                  </button>
+                                )}
+                                <button
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-secondary transition-colors"
+                                  onClick={() => { setMenuFor(null); setConfirm({ kind: "remove", member }); }}
+                                >
+                                  <UserMinus size={14} />
+                                  移除成员
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* 确认弹窗 */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => !submitting && setConfirm(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-card p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-text mb-2">
+              {confirm.kind === "remove"
+                ? "移除成员"
+                : confirm.kind === "setAdmin"
+                  ? "设为管理员"
+                  : "取消管理员"}
+            </h2>
+            <p className="text-sm text-text-muted mb-6">
+              {confirm.kind === "remove"
+                ? `确定将 ${confirm.member.name}（${confirm.member.email}）移出团队吗？移除后其将失去团队内所有资源访问权限。`
+                : confirm.kind === "setAdmin"
+                  ? `确定将 ${confirm.member.name} 设为团队管理员吗？管理员可邀请、移除成员并修改成员角色。`
+                  : `确定取消 ${confirm.member.name} 的管理员身份吗？其将变为普通成员。`}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirm(null)}
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg text-text-muted hover:text-text transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={runConfirm}
+                disabled={submitting}
+                className={`px-4 py-2 rounded-lg text-white transition-colors disabled:opacity-50 ${
+                  confirm.kind === "remove"
+                    ? "bg-red-500 hover:bg-red-600"
+                    : "bg-[#5051F8] hover:bg-accent-hover"
+                }`}
+              >
+                {submitting ? "处理中..." : "确认"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

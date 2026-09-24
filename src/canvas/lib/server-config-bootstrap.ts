@@ -19,6 +19,7 @@ let inFlight: Promise<void> | null = null;
 
 export function ensureServerConfig(): Promise<void> {
     if (inFlight) return inFlight;
+    useConfigStore.getState().setServerConfigStatus("loading");
     let loaded = false;
     inFlight = (async () => {
         try {
@@ -80,11 +81,16 @@ export function ensureServerConfig(): Promise<void> {
             });
             console.info("[CanvasConfig] 已从后端加载渠道", channels.length, "个，模型", allModels.length, "个");
             loaded = true;
+            useConfigStore.getState().setServerConfigStatus("ready");
         } catch (err) {
             console.warn("[CanvasConfig] 拉取后端配置失败，使用本地配置", err);
+            useConfigStore.getState().setServerConfigStatus("failed");
         } finally {
             // 首次失败（含非 200 / 空配置）后清空 inFlight，允许后续再次调用时重试，避免一次失败整局不可用。
-            if (!loaded) inFlight = null;
+            if (!loaded) {
+                useConfigStore.getState().setServerConfigStatus("failed");
+                inFlight = null;
+            }
         }
     })();
     return inFlight;

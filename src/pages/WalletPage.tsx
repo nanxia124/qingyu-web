@@ -97,7 +97,7 @@ export default function WalletPage() {
                 tab === k ? "border-accent text-text" : "border-transparent text-gray-500 hover:text-gray-600"
               }`}
             >
-              {label}
+              {t(label)}
             </button>
           )
         )}

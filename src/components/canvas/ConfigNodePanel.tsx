@@ -2,8 +2,6 @@ import { useRef } from 'react'
 import { ArrowUp, Copy, Maximize2, X } from 'lucide-react'
 import type { CanvasNode, NodeConfig } from './types'
 
-const MODEL_OPTIONS = ['gpt-image-2', 'gpt-image-1', 'flux']
-
 export function ConfigNodePanel({
   node,
   onClose,
@@ -23,7 +21,7 @@ export function ConfigNodePanel({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isImage = node.type === 'image'
-  const model = node.config?.model || 'gpt-image-2'
+  const model = node.config?.model || ''
   const ratio = node.config?.ratio || '1:1'
   const quality = node.config?.quality || '自动'
   const count = node.config?.count || 1
@@ -101,11 +99,7 @@ export function ConfigNodePanel({
           onChange={(e) => onChangeConfig(node.id, { model: e.target.value })}
           className="h-8 flex-1 cursor-pointer rounded-lg bg-[#272727] px-2 text-[13px] font-semibold text-[#bebebe] outline-none"
         >
-          {MODEL_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
+          {model ? <option value={model}>{model}</option> : <option value="">暂未获取到模型</option>}
         </select>
         <button
           type="button"

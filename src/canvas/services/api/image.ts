@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import i18n from "@canvas/i18n";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@canvas/stores/use-config-store";
+import { billingProxyHeaders, buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@canvas/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@canvas/lib/image-utils";
@@ -349,6 +349,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 function aiHeaders(config: AiConfig, contentType?: string) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
+        ...billingProxyHeaders(),
         ...(contentType ? { "Content-Type": contentType } : {}),
     };
 }

@@ -3,7 +3,7 @@ import axios from "axios";
 import i18n from "@canvas/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@canvas/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@canvas/services/file-storage";
-import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
+import { billingProxyHeaders, buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 
 type RequestOptions = { signal?: AbortSignal };
@@ -16,6 +16,7 @@ function aiApiUrl(config: AiConfig, path: string) {
 function aiHeaders(config: AiConfig) {
     return {
         Authorization: `Bearer ${config.apiKey}`,
+        ...billingProxyHeaders(),
         "Content-Type": "application/json",
     };
 }

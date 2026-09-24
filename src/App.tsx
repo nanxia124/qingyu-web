@@ -1,11 +1,11 @@
-﻿import { lazy, Suspense, Component } from 'react'
-import type { ReactElement, ReactNode } from 'react'
+﻿import { lazy, Suspense } from 'react'
+import type { ReactElement } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import AdminRoute from '@/components/AdminRoute'
-import { ErrorState } from '@/components/states/ErrorState'
-import { RouteSkeleton } from '@/components/states/RouteSkeleton'
+import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
+import { RouteSkeleton, type SkeletonVariant } from '@/components/states/RouteSkeleton'
 
 // 所有页面按需加载，减少首屏体积
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'))
@@ -34,33 +34,16 @@ const CanvasNewRoute = lazy(() => import('@canvas/index').then((m) => ({ default
 const CanvasProjectRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasProjectRoute })))
 const CanvasVideoRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasVideoRoute })))
 
-// 错误边界：任何组件渲染抛错时显示兜底页，避免整应用白屏
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
-  state = { hasError: false, error: null }
-  static getDerivedStateFromError(error: Error) { return { hasError: true, error } }
-  componentDidCatch(error: Error) { console.error('页面渲染错误:', error) }
-  render() {
-    if (this.state.hasError) {
-      return <ErrorState code="500" error={this.state.error} />
-    }
-    return this.props.children
-  }
+function lazyPage(el: ReactElement, variant: SkeletonVariant = 'grid') {
+  return <Suspense fallback={<RouteSkeleton variant={variant} />}>{el}</Suspense>
 }
 
-function PageFallback() {
-  return <RouteSkeleton />
-}
-
-function lazyPage(el: ReactElement) {
-  return <Suspense fallback={<PageFallback />}>{el}</Suspense>
-}
-
-// 画布路由用同一个lazyPage
-const lazyCanvas = lazyPage
+// 画布路由用 canvas 专用骨架（全屏画布 + 底部工具栏）
+const lazyCanvas = (el: ReactElement) => lazyPage(el, 'canvas')
 
 export default function App() {
   return (
-    <ErrorBoundary>
+    <RouteErrorBoundary>
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/reset-password" element={lazyPage(<ResetPasswordPage />)} />
@@ -73,33 +56,33 @@ export default function App() {
         <Route path="/admin/billing" element={<Navigate to="/admin-secret-8f3k2x7z?section=billing" replace />} />
         <Route path="/admin/monitor" element={<Navigate to="/admin-secret-8f3k2x7z?section=monitor" replace />} />
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-          <Route path="/" element={lazyPage(<WorkbenchPage />)} />
-          <Route path="/chat" element={lazyPage(<ChatPage />)} />
+          <Route path="/" element={lazyPage(<WorkbenchPage />, 'grid')} />
+          <Route path="/chat" element={lazyPage(<ChatPage />, 'chat')} />
           {/* /generate 重定向到真实生图页 */}
           <Route path="/generate" element={<Navigate to="/image" replace />} />
-          <Route path="/translate" element={lazyPage(<TranslatePage />)} />
-          <Route path="/plan" element={lazyPage(<PlanPage />)} />
+          <Route path="/translate" element={lazyPage(<TranslatePage />, 'workspace')} />
+          <Route path="/plan" element={lazyPage(<PlanPage />, 'workspace')} />
           <Route path="/canvas" element={lazyCanvas(<CanvasRoute />)} />
           <Route path="/canvas/new" element={lazyCanvas(<CanvasNewRoute />)} />
           <Route path="/canvas/:id" element={lazyCanvas(<CanvasProjectRoute />)} />
-          <Route path="/image" element={lazyPage(<ImageToolsPage />)} />
+          <Route path="/image" element={lazyPage(<ImageToolsPage />, 'workspace')} />
           <Route path="/video" element={lazyCanvas(<CanvasVideoRoute />)} />
-          <Route path="/assets" element={lazyPage(<AssetsPage />)} />
-          <Route path="/favorites" element={lazyPage(<FavoritesPage />)} />
-          <Route path="/feedback" element={lazyPage(<FeedbackPage />)} />
-          <Route path="/settings" element={lazyPage(<SettingsPage />)} />
-          <Route path="/subscription" element={lazyPage(<SubscriptionPage />)} />
-          <Route path="/wallet" element={lazyPage(<WalletPage />)} />
+          <Route path="/assets" element={lazyPage(<AssetsPage />, 'grid')} />
+          <Route path="/favorites" element={lazyPage(<FavoritesPage />, 'grid')} />
+          <Route path="/feedback" element={lazyPage(<FeedbackPage />, 'list')} />
+          <Route path="/settings" element={lazyPage(<SettingsPage />, 'settings')} />
+          <Route path="/subscription" element={lazyPage(<SubscriptionPage />, 'list')} />
+          <Route path="/wallet" element={lazyPage(<WalletPage />, 'list')} />
           {/* 个人中心 */}
-          <Route path="/account/profile" element={lazyPage(<ProfilePage />)} />
-          <Route path="/account/security" element={lazyPage(<SecurityPage />)} />
-          <Route path="/account/billing" element={lazyPage(<BillingPage />)} />
+          <Route path="/account/profile" element={lazyPage(<ProfilePage />, 'settings')} />
+          <Route path="/account/security" element={lazyPage(<SecurityPage />, 'settings')} />
+          <Route path="/account/billing" element={lazyPage(<BillingPage />, 'list')} />
           {/* 团队系统 */}
-          <Route path="/teams" element={lazyPage(<TeamsPage />)} />
-          <Route path="/teams/:id/members" element={lazyPage(<TeamMembersPage />)} />
+          <Route path="/teams" element={lazyPage(<TeamsPage />, 'list')} />
+          <Route path="/teams/:id/members" element={lazyPage(<TeamMembersPage />, 'list')} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
-    </ErrorBoundary>
+    </RouteErrorBoundary>
   )
 }

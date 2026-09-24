@@ -372,6 +372,25 @@
         description: "There is no page at this address. It may have moved or been merged into another section.",
         home: "Back to home",
     },
+    errorState: {
+        back: "Go back",
+        backHome: "Back to home",
+        refresh: "Refresh page",
+        retry: "Reload",
+        login: "Sign in",
+        detail: "Show error details",
+        codes: {
+            "404": { title: "Lost in space", desc: "The page you're looking for doesn't exist or has moved." },
+            "403": { title: "No access", desc: "This content belongs to someone else. Ask the owner for permission." },
+            "500": { title: "Something broke", desc: "We've logged the error. Try refreshing." },
+            "503": { title: "Service unavailable", desc: "Check your network, or try again in a moment." },
+            "401": { title: "Session expired", desc: "Please sign in again to continue." },
+            "gone": { title: "Content not found", desc: "It may have been deleted by the owner, or the link has expired." },
+        },
+    },
+    loading: {
+        boot: "Preparing your workspace…",
+    },
     workbench: {
         logs: "Generation history",
         settings: "Settings",

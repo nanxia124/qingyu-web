@@ -25,6 +25,7 @@ import EnvironmentBadge from '@/components/EnvironmentBadge'
 import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
 import InviteModal from '@/components/InviteModal'
+import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useThemeStore } from '@canvas/stores/use-theme-store'
 import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
@@ -141,13 +142,24 @@ export default function AppLayout() {
   }
 
   const LANG_LABELS: Record<string, string> = {
-    'zh-CN': '简体', 'zh-TW': '繁体', 'en-US': 'English', 'ja-JP': '日本語',
+    'zh-CN': '简体中文', 'zh-TW': '繁體中文', 'en-US': 'English', 'ja-JP': '日本語',
     'ko-KR': '한국어', 'es-ES': 'Español', 'fr-FR': 'Français', 'de-DE': 'Deutsch',
-    'ru-RU': 'Русский', 'pt-BR': 'Português',
+    'ru-RU': 'Русский', 'pt-BR': 'Português', 'it-IT': 'Italiano', 'ar-SA': 'العربية',
+    'tr-TR': 'Türkçe', 'hi-IN': 'हिन्दी', 'th-TH': 'ไทย', 'vi-VN': 'Tiếng Việt',
+    'id-ID': 'Bahasa Indonesia',
   }
-  const SHORT: Record<string, string> = {
-    'zh-CN': '中', 'zh-TW': '繁', 'en-US': 'EN', 'ja-JP': '日', 'ko-KR': '한',
+  const LANG_FLAGS: Record<string, string> = {
+    'zh-CN': '🇨🇳', 'zh-TW': '🇹🇼', 'en-US': '🇺🇸', 'ja-JP': '🇯🇵',
+    'ko-KR': '🇰🇷', 'es-ES': '🇪🇸', 'fr-FR': '🇫🇷', 'de-DE': '🇩🇪',
+    'ru-RU': '🇷🇺', 'pt-BR': '🇧🇷', 'it-IT': '🇮🇹', 'ar-SA': '🇸🇦',
+    'tr-TR': '🇹🇷', 'hi-IN': '🇮🇳', 'th-TH': '🇹🇭', 'vi-VN': '🇻🇳',
+    'id-ID': '🇮🇩',
   }
+  // 中文（简/繁）排到最下面，其余按 SUPPORTED_LOCALES 原顺序
+  const sortedLocales = [
+    ...SUPPORTED_LOCALES.filter((l) => !l.startsWith('zh-')),
+    ...SUPPORTED_LOCALES.filter((l) => l.startsWith('zh-')),
+  ]
 
   const isCanvas = location.pathname.startsWith('/canvas')
   const isVideo = location.pathname.startsWith('/video')
@@ -283,9 +295,14 @@ export default function AppLayout() {
             <QingyuLogoIcon className="absolute h-[28px] w-[28px] shrink-0 text-text transition-all duration-200 group-hover:opacity-0 group-hover:scale-75" />
             {expanded ? <PanelLeftClose size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" /> : <PanelLeftOpen size={18} className="absolute text-text-muted opacity-0 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100" />}
           </button>
-          <span className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap rounded-md transition-opacity hover:opacity-80"
+            title="返回首页"
+          >
             <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
-          </span>
+          </button>
           <span className="absolute left-[160px] top-1/2 -translate-y-1/2"><EnvironmentBadge /></span>
         </div>
         {location.pathname === '/' && (
@@ -393,10 +410,14 @@ export default function AppLayout() {
             )}
           </AnimatedThemeToggler>
 
-          {/* 语言切换 */}
-          <div className="relative">
+          {/* 语言切换：鼠标移入即展开，移出即关闭 */}
+          <div
+            className="relative"
+            onMouseEnter={() => setLangMenuOpen(true)}
+            onMouseLeave={() => setLangMenuOpen(false)}
+          >
             <button
-              onClick={() => setLangMenuOpen((v) => !v)}
+              onClick={() => setLangMenuOpen(true)}
               title={t("nav.language")}
               className="group relative flex h-[44px] w-full items-center outline-none transition-transform duration-200 ease-out active:scale-[0.96]"
             >
@@ -411,20 +432,23 @@ export default function AppLayout() {
               )}
             </button>
             {langMenuOpen && (
-              <div className="absolute left-0 bottom-full mb-2 z-50 w-[160px] rounded-xl border border-border bg-card p-1 shadow-xl">
-                {SUPPORTED_LOCALES.map((loc) => (
-                  <button
-                    key={loc}
-                    onClick={() => pickLocale(loc)}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors',
-                      loc === currentLocale ? 'bg-accent/10 text-accent' : 'text-text hover:bg-secondary',
-                    )}
-                  >
-                    <span>{LANG_LABELS[loc] ?? loc}</span>
-                    {SHORT[loc] && <span className="text-[11px] text-text-muted">{SHORT[loc]}</span>}
-                  </button>
-                ))}
+              <div className="absolute left-0 bottom-full z-50 w-[168px] pb-2">
+                <div className="rounded-xl border border-border bg-card p-1 shadow-xl">
+                  {sortedLocales.map((loc) => (
+                    <button
+                      key={loc}
+                      onClick={() => pickLocale(loc)}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors',
+                        loc === currentLocale ? 'bg-accent/10 text-accent' : 'text-text hover:bg-secondary',
+                      )}
+                    >
+                      <span className="text-[15px] leading-none">{LANG_FLAGS[loc]}</span>
+                      <span className="flex-1 truncate text-left">{LANG_LABELS[loc] ?? loc}</span>
+                      {loc === currentLocale && <span className="size-1.5 shrink-0 rounded-full bg-accent" />}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -438,7 +462,7 @@ export default function AppLayout() {
         !(isCanvas || isVideo) && 'app-brand',
       )}>
 
-        {/* 内容区 */}
+        {/* 内容区：页面级错误只替换内容区，保留侧栏和顶栏 */}
         <main
           className={cn(
             'relative flex-1 overflow-hidden',
@@ -446,7 +470,9 @@ export default function AppLayout() {
             !(isCanvas || isVideo) && 'rounded-tl-[16px]',
           )}
         >
-          <Outlet />
+          <RouteErrorBoundary inline>
+            <Outlet />
+          </RouteErrorBoundary>
         </main>
       </div>
       </div>

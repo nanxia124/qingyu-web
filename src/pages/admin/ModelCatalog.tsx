@@ -568,6 +568,7 @@ export default function ModelCatalog() {
             </div>
           </div>
         </div>
+      )}
 
       {/* 添加模型弹窗 */}
       {showAddDialog && (

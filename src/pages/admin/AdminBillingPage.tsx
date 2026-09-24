@@ -156,7 +156,7 @@ export default function AdminBillingPage() {
   };
 
   const saveSupplierConfig = () => {
-    showConfirm("确认保存供应商配置？", async () => {
+    showConfirm("确认保存API渠道配置？", async () => {
       try {
         await adminBillingApi.updateSettings({
           ...settings,
@@ -165,7 +165,7 @@ export default function AdminBillingPage() {
             maizitech: { ...supConfigDraft },
           },
         });
-        setMsg("供应商配置已保存");
+        setMsg("API渠道配置已保存");
         load("supplier");
       } catch (e: any) { setMsg(e.message); }
     });
@@ -265,7 +265,7 @@ export default function AdminBillingPage() {
     ["invoices", "发票审核", FileText],
     ["codes", t("pages.admin.billing.tabs.codes"), Ticket],
     ["plans", t("pages.admin.billing.tabs.plans"), Crown],
-    ["supplier", "供应商", Plug],
+    ["supplier", "API渠道", Plug],
   ];
 
   return (
@@ -559,12 +559,12 @@ export default function AdminBillingPage() {
         </div>
       )}
 
-      {/* 供应商 */}
+      {/* API渠道 */}
       {tab === "supplier" && settings && (
         <div className="space-y-4">
           {/* 配置区 */}
           <div className="rounded-xl bg-card p-5 space-y-4">
-            <div className="text-sm font-medium text-text">MaiziAI 供应商配置</div>
+            <div className="text-sm font-medium text-text">MaiziAI API渠道配置</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Base URL</label>
@@ -689,7 +689,7 @@ export default function AdminBillingPage() {
           {/* 公告 */}
           {announcements.length > 0 && (
             <div className="space-y-3">
-              <div className="text-sm font-medium text-text">供应商公告</div>
+              <div className="text-sm font-medium text-text">API渠道公告</div>
               {announcements.map((a: any) => (
                 <div key={a.id} className="rounded-xl bg-card p-4">
                   <div className="flex items-center gap-2 mb-2">

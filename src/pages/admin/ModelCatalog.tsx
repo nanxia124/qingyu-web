@@ -114,12 +114,12 @@ export default function ModelCatalog() {
     setAdding(true);
     try {
       const res = await fetch("/api/admin/models-catalog", {
-      const res = await fetch("/api/admin/models-catalog", {
         method: "POST",
+        headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
         },
-        body: JSON.stringify({ ...addForm, modelId: addForm.modelId.trim() || addForm.displayName.trim() || `model-${Date.now()}` }),
+        body: JSON.stringify(addForm),
       });
       const data = await res.json();
       if (!res.ok) {

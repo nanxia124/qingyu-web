@@ -83,6 +83,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const openAuthModal = useAuthStore((s) => s.openAuthModal)
   const refreshBillingUser = useBillingStore((s) => s.refreshMe)
+  const billingUser = useBillingStore((s) => s.user)
   const [prompt, setPrompt] = useState('')
   const [ratio, setRatio] = useState('16:9')
   const [quality, setQuality] = useState('1K')
@@ -299,9 +300,13 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     if (!prompt.trim() || generating) return
     const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
     await refreshBillingUser()
-    const billingUser = useBillingStore.getState().user
-    if (billingUser && billingUser.memberLevel !== 'free' && billingUser.balance < requestedCount) {
-      showToast(t('imageTools.insufficient', { need: requestedCount, balance: billingUser.balance }), 'error')
+    const latestBillingUser = useBillingStore.getState().user
+    if (!latestBillingUser) {
+      showToast(t('imageTools.submitFailed'), 'error')
+      return
+    }
+    if (latestBillingUser.memberLevel !== 'free' && latestBillingUser.balance < requestedCount) {
+      showToast(t('imageTools.insufficient', { need: requestedCount, balance: latestBillingUser.balance }), 'error')
       return
     }
     setGenerating(true)
@@ -337,9 +342,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             sourceGenerationTaskId = taskId
             const task = await pollImageTask(taskId)
             if (task.status === 'failed' || task.status === 'refunded') {
-              const msg = task.errorCode === 'timeout'
-                ? t('imageTools.toasts.timeoutRefunded')
-                : t('imageTools.toasts.failedRefunded');
+              const reason = task.errorMessage?.trim() || t('workbench.generationFailed')
+              const msg = task.status === 'refunded' && !reason.includes('退还') && !reason.includes('退款')
+                ? reason + '（已释放预占额度）'
+                : reason
               throw new Error(msg)
             }
             return taskOutputToDataUrls(task).map((dataUrl) => ({ id: nanoid(), dataUrl }))
@@ -387,6 +393,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
   const qualityCost = quality === '1K' ? 1 : quality === '2K' ? 3 : 8
   const estimatedCost = qualityCost * Number(count || 1)
+  const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
+  const isFreeUser = !billingUser || billingUser.memberLevel === 'free'
+  const insufficientBalance = !isFreeUser && billingUser.balance < requestedCount
 
   return (
     <div className="flex h-full gap-2">
@@ -618,9 +627,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
         {/* 生成按钮 */}
         <div className="shrink-0 px-5 pb-4 pt-1">
-          <button onClick={generate} disabled={!prompt.trim() || generating}
+          <button onClick={generate} disabled={!prompt.trim() || generating || insufficientBalance}
+            title={insufficientBalance ? t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 }) : undefined}
             className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45">
-            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
+            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : insufficientBalance ? t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 }) : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
           </button>
         </div>
       </div>

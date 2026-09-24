@@ -47,5 +47,7 @@
   "0046_async_generation_tasks.sql": "62959e66b7f86df034f6212870eaad3698ee6656f6afefdc7187576962b7c118",
   "0047_generation_task_idempotency_lock.sql": "e74644fbd449ea247bc56cbd29634f7615d89c4b0067a3508a2eb809d37a5161",
   "0048_database_role_schema_usage.sql": "0f1619efe9091396e13a48e4cee26b819a9685dd91de7553b57b65d2fad066b6",
-  "0049_reconciliation_drift_and_audit_query.sql": "ea219623f7571a8323056cc1503f34edb258f120c62e73a887b73c9b6c991c55"
+  "0049_reconciliation_drift_and_audit_query.sql": "ea219623f7571a8323056cc1503f34edb258f120c62e73a887b73c9b6c991c55",
+  "0050_feedback_submissions.sql": "122792f27a7be672560fe49ade60a4855be9d819cd0217431e3455d73e5e6f76",
+  "0051_admin_catalog_settings.sql": "4e35131cd041b355f80efc08626ac7a54676c2966248a1ef0973dc4f3912d703"
 }

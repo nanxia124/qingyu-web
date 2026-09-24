@@ -24,6 +24,10 @@
 
 `0048_database_role_schema_usage.sql` 把业务角色使用 `app` schema 的权限纳入迁移，保证空库重建、托管 PostgreSQL 和现有服务器的权限一致；它不增加普通角色直接修改敏感表的权限。
 
+`0050_feedback_submissions.sql` 把用户反馈保存为可追踪业务记录，限制反馈类型、内容长度和处理状态；反馈服务不可用时接口会返回失败，前端不会伪造提交成功。
+
+`0051_admin_catalog_settings.sql` 把管理后台的模型目录和系统设置从服务器 JSON 文件迁入 PostgreSQL，避免多实例或换机时配置不一致；模型目录使用唯一模型 ID，系统设置按键保存 JSON 配置。
+
 `0006_row_level_security.sql` 为业务表开启 PostgreSQL 行级安全。服务端完成身份校验后在事务内用 `SET LOCAL app.user_id` 设置内部用户 ID，连接池复用时不会残留；数据库再根据个人空间所有者或团队有效成员关系过滤读写。`tests/rls_isolation.sql` 已验证 A 用户只能看到 A 空间，直接写入 B 空间会被拒绝。
 
 `0007_security_boundary.sql` 收紧业务连接账号：内容表可以在行级安全保护下读写；身份、成员、权限、支付、配额、机密、审计和迁移记录不能被普通账号直接写入。以后这些敏感操作必须由后端事务或数据库受控函数完成。`tests/privilege_boundary.sql` 检查了这条边界。
@@ -91,7 +95,7 @@
 - 断言失败必须抛出异常并让 psql 返回失败，不能只输出含有 FAIL 的文字。
 - `generation_task_idempotency.sql` 验证免费用户顺序重复提交后任务、使用记录、每日额度预占各一条，且关联和数量一致；不代替付费额度、真实支付或并发测试。
 - `reconciliation_audit.sql` 验证有对应发放流水的未消费额度差额为 0，并确认管理员角色可以查询审计日志。
-- 本轮在隔离 PostgreSQL 测试容器中运行 23 个 SQL 测试均通过，测试容器随后清理；未修改线上业务数据。
+- 本轮在隔离 PostgreSQL 测试容器中运行 24 个 SQL 测试均通过，测试容器随后清理；线上反馈接口的部署冒烟记录已验证后删除，未留下测试业务数据。
 
 ## 数据库图展示规范
 

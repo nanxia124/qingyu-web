@@ -18,12 +18,16 @@ if [[ -z "$backup_file" || ! -f "$backup_file" ]]; then
   echo '备份脚本没有返回有效的数据库备份文件' >&2
   exit 1
 fi
+backup_stamp="$(basename "$backup_file" | sed -n "s/^${PGDATABASE}_\\(.*\\)\\.dump$/\\1/p")"
+if [[ -z "$backup_stamp" ]]; then
+  echo '无法从数据库备份文件名解析时间戳，拒绝生成无法自动配对的对象归档' >&2
+  exit 1
+fi
 
 # 文件本体和数据库元数据一起归档。数据库备份成功但对象归档失败时，后面的镜像步骤会明确失败，避免留下“记录在、文件不在”的假完整备份。
 object_archive=""
 if [[ -d "$OBJECT_DIR" ]]; then
-  object_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  object_archive="$BACKUP_DIR/qingyu_objects_${object_stamp}.tar.gz"
+  object_archive="$BACKUP_DIR/qingyu_objects_${backup_stamp}.tar.gz"
   tar -czf "$object_archive" -C "$OBJECT_DIR" .
   sha256sum "$object_archive" > "$object_archive.sha256"
 fi

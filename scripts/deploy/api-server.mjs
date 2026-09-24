@@ -106,6 +106,9 @@ if (process.env.BILLING_STORE === "postgres") {
     for (const legacyKey of keys) await postgresBilling.createPlatformApiKey(legacyKey);
   }
   keys = await postgresBilling.listPlatformApiKeys();
+  const storedBillingSettings = await postgresBilling.getSystemSetting("billing", null);
+  if (storedBillingSettings && typeof storedBillingSettings === "object") billingSettings = storedBillingSettings;
+  else await postgresBilling.setSystemSetting("billing", billingSettings);
   console.log("[billing] PostgreSQL 计费存储已启用");
 }
 
@@ -1035,10 +1038,15 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET/PUT /api/admin/billing/plans
     if (pathname === "/api/admin/billing/plans" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.plans());
       return sendJSON(res, 200, billingPlans);
     }
     if (pathname === "/api/admin/billing/plans" && method === "PUT") {
       const body = await parseBody(req);
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.updatePlan(body)); }
+        catch (error) { return sendJSON(res, error.message === "套餐不存在" ? 404 : 400, { error: error.message }); }
+      }
       const idx = billingPlans.findIndex(p => p.id === body.id);
       if (idx === -1) return sendJSON(res, 404, { error: "套餐不存在" });
       Object.assign(billingPlans[idx], body);
@@ -1048,12 +1056,17 @@ async function handleBilling(req, res, pathname, method, url) {
 
     // GET /api/admin/billing/settings
     if (pathname === "/api/admin/billing/settings" && method === "GET") {
+      if (postgresBilling) billingSettings = await postgresBilling.getSystemSetting("billing", billingSettings);
       return sendJSON(res, 200, billingSettings);
     }
     // PUT /api/admin/billing/settings
     if (pathname === "/api/admin/billing/settings" && method === "PUT") {
       const body = await parseBody(req);
       Object.assign(billingSettings, body);
+      if (postgresBilling) {
+        billingSettings = await postgresBilling.setSystemSetting("billing", billingSettings);
+        return sendJSON(res, 200, billingSettings);
+      }
       saveJSON(SETTINGS_FILE, billingSettings);
       return sendJSON(res, 200, billingSettings);
     }

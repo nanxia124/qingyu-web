@@ -16,10 +16,12 @@ export default function FeedbackPage() {
   const [contact, setContact] = useState('')
   const [sent, setSent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
   const submit = async () => {
     if (!content.trim() || submitting) return
     setSubmitting(true)
+    setError('')
     try {
       // 60秒超时
       const controller = new AbortController()
@@ -36,8 +38,7 @@ export default function FeedbackPage() {
       if (!res.ok) throw new Error(t('pages.feedback.failed'))
       setSent(true)
     } catch (err: any) {
-      // 后端接口未接入时，仍显示成功（临时方案）
-      setSent(true)
+      setError(err?.name === 'AbortError' ? t('pages.feedback.failed') : (err?.message || t('pages.feedback.failed')))
     } finally {
       setSubmitting(false)
     }
@@ -98,6 +99,7 @@ export default function FeedbackPage() {
       >
         <Send className="size-4" /> {submitting ? t('pages.feedback.submitting') : t('pages.feedback.submit')}
       </button>
+      {error ? <p className="mt-3 text-[13px] text-danger" role="alert">{error}</p> : null}
     </div>
   )
 }

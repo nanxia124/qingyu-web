@@ -1,6 +1,6 @@
 # 轻域数据库核心业务 ER 图
 
-> 这是核心业务 ER 图，共 60 张表、99 组关系。线上 `app` schema 目前共 85 张表，另有运行、备份和管理支撑表；最新迁移为 `0026_canvas_external_keys`。
+> 这是核心业务 ER 图，共 63 张表、101 组关系。线上 `app` schema 目前共 98 张表，另有运行、备份和管理支撑表；最新迁移为 `0051_admin_catalog_settings`。
 
 ```mermaid
 erDiagram
@@ -30,6 +30,8 @@ erDiagram
     departments ||--o{ team_memberships : "关联"
     file_objects ||--o{ asset_files : "关联"
     file_objects ||--o{ generation_outputs : "关联"
+    user_accounts ||--o{ feedback_submissions : "提交"
+    workspaces ||--o{ feedback_submissions : "接收"
     generation_tasks ||--o{ assets : "关联"
     generation_tasks ||--o{ generation_outputs : "关联"
     job_titles ||--o{ team_memberships : "关联"
@@ -353,6 +355,21 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    feedback_submissions {
+        uuid id PK
+        uuid user_id
+        uuid workspace_id
+        varchar_32_ feedback_type
+        text content
+        varchar_320_ contact
+        varchar_32_ status
+        uuid handled_by
+        timestamptz handled_at
+        text resolution
+        varchar_128_ request_id
+        timestamptz created_at
+        timestamptz updated_at
+    }
     file_objects {
         uuid id PK
         uuid workspace_id
@@ -427,6 +444,17 @@ erDiagram
         text reason
         uuid reviewer_user_id
         timestamptz created_at
+    }
+    model_catalog {
+        bigint id PK
+        varchar_160_ model_id UK
+        varchar_240_ display_name
+        varchar_80_ provider
+        varchar_32_ capability
+        boolean visible
+        integer sort_order
+        timestamptz created_at
+        timestamptz updated_at
     }
     notifications {
         uuid id PK
@@ -633,6 +661,11 @@ erDiagram
         boolean cancel_at_period_end
         bigint version
         timestamptz created_at
+        timestamptz updated_at
+    }
+    system_settings {
+        varchar_120_ setting_key PK
+        jsonb setting_value
         timestamptz updated_at
     }
     team_invitations {

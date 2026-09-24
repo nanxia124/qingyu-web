@@ -221,6 +221,26 @@ export async function createPostgresBillingStore() {
     return result.rows[0] || null;
   }
 
+  async function createFeedback(input = {}) {
+    const content = String(input.content || '').trim();
+    const feedbackType = String(input.feedbackType || 'other').trim();
+    const contact = String(input.contact || '').trim() || null;
+    if (!['suggestion', 'bug', 'other'].includes(feedbackType)) throw new Error('反馈类型无效');
+    if (!content || content.length > 10000) throw new Error('反馈内容长度无效');
+    if (contact && contact.length > 320) throw new Error('联系方式过长');
+    const r = await pool.query(`
+      with request_context as (select $1::text as appwrite_user_id)
+      insert into app.feedback_submissions(user_id,workspace_id,feedback_type,content,contact,request_id)
+      select u.id,w.id,$2,$3,$4,$5
+      from request_context c
+      left join app.user_accounts u on u.appwrite_user_id=c.appwrite_user_id and u.status='active'
+      left join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status<>'deleted'
+      returning id,created_at`,
+      [input.appwriteUserId ? String(input.appwriteUserId) : null, feedbackType, content, contact, input.requestId ? String(input.requestId).slice(0, 160) : null]);
+    if (!r.rowCount) throw new Error('反馈保存失败');
+    return { id: r.rows[0].id, status: 'pending', createdAt: new Date(r.rows[0].created_at).toISOString() };
+  }
+
   // 记录每次服务器代理调用的最小业务事实。精确 Token/金额仍以供应商回执为准，不能在这里臆算。
   async function recordProviderUsage(appwriteUserId, input = {}) {
     const client = await pool.connect();
@@ -294,6 +314,51 @@ export async function createPostgresBillingStore() {
       coalesce((select jsonb_agg(feature_code order by feature_code) from app.plan_features f where f.plan_id=p.id),'[]') features
       from app.plans p where p.status='active' order by p.price_minor`);
     return result.rows.map(apiPlan);
+  }
+
+  async function updatePlan(body = {}) {
+    const code = String(body.id || body.code || '').trim();
+    if (!code) throw new Error('套餐编号不能为空');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query('select * from app.plans where code=$1 for update', [code]);
+      if (!current.rowCount) throw new Error('套餐不存在');
+      const old = current.rows[0];
+      const price = Number.isSafeInteger(Number(body.priceCents)) ? Math.max(0, Number(body.priceCents)) : Number(old.price_minor);
+      const days = Number(body.durationDays);
+      const interval = days >= 365 ? 'year' : days > 0 ? 'month' : 'none';
+      const quota = Number.isFinite(Number(body.monthlyQuota)) ? Math.max(0, Number(body.monthlyQuota)) : 0;
+      const nextVersion = Number(old.version || 1) + 1;
+      const features = Array.isArray(body.features) ? body.features.map(x => String(x).slice(0, 120)).filter(Boolean) : [];
+      await client.query(`update app.plans set name=$2,description=$3,price_minor=$4,billing_interval=$5,version=$6,updated_at=now() where id=$1`, [old.id, String(body.name || old.name).slice(0, 120), String(body.description || old.description || ''), price, interval, nextVersion]);
+      await client.query(`insert into app.plan_versions(plan_id,version,currency,price_minor,billing_interval,feature_snapshot,quota_snapshot,effective_at)
+        values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,now())`, [old.id, nextVersion, old.currency, price, interval, JSON.stringify(features), JSON.stringify({ monthly: quota })]);
+      await client.query('delete from app.plan_features where plan_id=$1', [old.id]);
+      for (const feature of features) await client.query('insert into app.plan_features(plan_id,feature_code) values($1,$2)', [old.id, feature]);
+      await client.query(`insert into app.plan_quotas(plan_id,quota_code,amount,unit,reset_interval) values($1,'monthly',$2,'credits','month')
+        on conflict(plan_id,quota_code) do update set amount=excluded.amount`, [old.id, quota]);
+      await client.query('commit');
+      return (await plans()).find(p => p.id === code);
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function getSystemSetting(key, fallback = null) {
+    const settingKey = String(key || '').trim().slice(0, 120);
+    const r = await pool.query('select setting_value from app.system_settings where setting_key=$1', [settingKey]);
+    if (r.rowCount) return r.rows[0].setting_value;
+    if (fallback !== null) {
+      await pool.query(`insert into app.system_settings(setting_key,setting_value) values($1,$2::jsonb) on conflict(setting_key) do nothing`, [settingKey, JSON.stringify(fallback)]);
+    }
+    return fallback;
+  }
+
+  async function setSystemSetting(key, value) {
+    const settingKey = String(key || '').trim().slice(0, 120);
+    if (!settingKey) throw new Error('设置名称不能为空');
+    const r = await pool.query(`insert into app.system_settings(setting_key,setting_value) values($1,$2::jsonb)
+      on conflict(setting_key) do update set setting_value=excluded.setting_value,updated_at=now() returning setting_value`, [settingKey, JSON.stringify(value ?? {})]);
+    return r.rows[0].setting_value;
   }
 
   async function createOrder(appwriteUserId, planCode, idempotencyKey, paymentMethod = "mock") {
@@ -855,6 +920,69 @@ export async function createPostgresBillingStore() {
     return { api_key: r.rows[0].api_key_ciphertext ? decryptApiKey(r.rows[0].api_key_ciphertext) : String(r.rows[0].api_key || '') };
   }
 
+  function modelCatalogView(row) {
+    return {
+      id: Number(row.id),
+      modelId: row.model_id,
+      displayName: row.display_name,
+      provider: row.provider,
+      capability: row.capability,
+      visible: row.visible === true,
+      sortOrder: Number(row.sort_order),
+      createdAt: new Date(row.created_at).getTime(),
+      updatedAt: new Date(row.updated_at).getTime(),
+    };
+  }
+
+  async function listModelCatalog() {
+    const r = await pool.query(`select id,model_id,display_name,provider,capability,visible,sort_order,created_at,updated_at
+      from app.model_catalog order by sort_order asc,id asc`);
+    return r.rows.map(modelCatalogView);
+  }
+
+  async function createModelCatalog(body = {}) {
+    const modelId = String(body.modelId || '').trim().slice(0, 160);
+    if (!modelId) throw new Error('模型 ID 为必填项');
+    const displayName = String(body.displayName || modelId).trim().slice(0, 240) || modelId;
+    const r = await pool.query(`insert into app.model_catalog(model_id,display_name,provider,capability,visible,sort_order)
+      values($1,$2,$3,$4,$5,coalesce((select max(sort_order)+1 from app.model_catalog),0)) returning *`,
+      [modelId, displayName, String(body.provider || 'unknown').slice(0, 80), String(body.capability || 'text').slice(0, 32), body.visible !== false]);
+    return modelCatalogView(r.rows[0]);
+  }
+
+  async function bulkCreateModelCatalog(models = []) {
+    const client = await pool.connect();
+    let added = 0;
+    try {
+      await client.query('begin');
+      for (const body of Array.isArray(models) ? models.slice(0, 1000) : []) {
+        const modelId = String(body?.modelId || '').trim().slice(0, 160);
+        if (!modelId) continue;
+        const r = await client.query(`insert into app.model_catalog(model_id,display_name,provider,capability,visible,sort_order)
+          values($1,$2,$3,$4,$5,coalesce((select max(sort_order)+1 from app.model_catalog),0)) on conflict(model_id) do nothing`,
+          [modelId, String(body.displayName || modelId).trim().slice(0, 240) || modelId, String(body.provider || 'unknown').slice(0, 80), String(body.capability || 'text').slice(0, 32), body.visible !== false]);
+        added += r.rowCount;
+      }
+      await client.query('commit');
+      return { added, total: Number((await pool.query('select count(*)::int as count from app.model_catalog')).rows[0].count) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function updateModelCatalog(id, body = {}) {
+    const current = await pool.query('select * from app.model_catalog where id=$1', [id]);
+    if (!current.rowCount) throw new Error('模型不存在');
+    const old = current.rows[0];
+    const r = await pool.query(`update app.model_catalog set display_name=$2,capability=$3,visible=$4,sort_order=$5,updated_at=now()
+      where id=$1 returning *`, [id, body.displayName === undefined ? old.display_name : String(body.displayName).trim().slice(0, 240), body.capability === undefined ? old.capability : String(body.capability).slice(0, 32), body.visible === undefined ? old.visible : Boolean(body.visible), body.sortOrder === undefined ? old.sort_order : Math.max(0, Number(body.sortOrder) || 0)]);
+    return modelCatalogView(r.rows[0]);
+  }
+
+  async function deleteModelCatalog(id) {
+    const r = await pool.query('delete from app.model_catalog where id=$1 returning id', [id]);
+    if (!r.rowCount) throw new Error('模型不存在');
+    return { success: true };
+  }
+
   async function saveCanvasSnapshot(appwriteUserId, snapshot = {}) {
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects.slice(0, 100) : [];
     const client = await pool.connect();
@@ -1375,5 +1503,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

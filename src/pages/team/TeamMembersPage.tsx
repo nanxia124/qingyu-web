@@ -10,6 +10,8 @@ interface Member {
   email: string;
   role: "owner" | "admin" | "member";
   status: string;
+  departmentName?: string | null;
+  jobTitleName?: string | null;
   joinedAt: string | null;
 }
 
@@ -235,6 +237,7 @@ export default function TeamMembersPage() {
                         <div>
                           <div className="font-medium text-text">{member.name}</div>
                           <div className="text-sm text-text-muted">{member.email}</div>
+                          {(member.departmentName || member.jobTitleName) && <div className="text-xs text-text-muted">{[member.departmentName, member.jobTitleName].filter(Boolean).join(' · ')}</div>}
                         </div>
                       </div>
                     </td>

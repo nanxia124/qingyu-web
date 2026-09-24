@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { api, ApiError } from "@/lib/api";
+import { getInstallationId } from "@/lib/billing";
 import { Plus, Users, Crown, Settings } from "lucide-react";
 
 export default function TeamsPage() {
@@ -29,6 +30,7 @@ export default function TeamsPage() {
           const events = await api.get<Array<{ sequence: number; type: string }>>('/sync/events', { workspaceId, after: String(syncCursors.current[workspaceId] || 0), limit: '50' });
           if (events.length) {
             syncCursors.current[workspaceId] = events[events.length - 1].sequence;
+            await api.post('/sync/cursor', { deviceId: getInstallationId(), workspaceId, lastSequence: syncCursors.current[workspaceId] });
             changed = true;
           }
         } catch {

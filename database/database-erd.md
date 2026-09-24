@@ -1,6 +1,6 @@
 # 轻域数据库核心业务 ER 图
 
-> 这是核心业务 ER 图，共 63 张表、101 组关系。线上 `app` schema 目前共 98 张表，另有运行、备份和管理支撑表；最新迁移为 `0051_admin_catalog_settings`。
+> 这是核心业务 ER 图，共 64 张表、101 组关系。线上 `app` schema 目前共 99 张表，另有运行、备份和管理支撑表；最新迁移为 `0055_session_online_guard`。
 
 ```mermaid
 erDiagram
@@ -434,6 +434,8 @@ erDiagram
         text reason
         varchar_160_ request_id
         timestamptz occurred_at
+        timestamptz completed_at
+        integer latency_ms
         jsonb metadata
     }
     moderation_records {
@@ -620,6 +622,14 @@ erDiagram
         varchar_120_ name
         text description
         timestamptz created_at
+    }
+    admin_accounts {
+        varchar_64_ username PK
+        varchar_128_ password_hash
+        text status
+        timestamptz last_login_at
+        timestamptz created_at
+        timestamptz updated_at
     }
     schema_migrations {
         text version PK

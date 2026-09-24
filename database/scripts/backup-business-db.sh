@@ -41,8 +41,11 @@ sudo docker exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DATABASE" \
 sudo docker cp "$CONTAINER:/tmp/qingyu-business.dump" "$temp"
 sudo docker exec "$CONTAINER" rm -f /tmp/qingyu-business.dump
 
+# docker cp 生成的文件属于 root；先交给执行备份的用户，后续才能安全设置 600 权限。
+sudo chown -- "$(id -u):$(id -g)" "$temp"
 mv -- "$temp" "$target"
 sha256sum "$target" > "${target}.sha256"
+chmod 600 -- "$target" "${target}.sha256"
 size="$(stat -c '%s' "$target")"
 checksum="$(cut -d' ' -f1 "${target}.sha256")"
 sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_STOP=1 \

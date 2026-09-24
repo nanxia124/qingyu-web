@@ -4,7 +4,7 @@ import { account, teams } from "@/lib/appwrite";
 import { ID, AppwriteException } from "appwrite";
 import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
 import { api } from "@/lib/api";
-import { billingApi, setBillingToken } from "@/lib/billing";
+import { billingApi, clearBillingToken, setBillingToken } from "@/lib/billing";
 
 // 类型定义
 export interface User {
@@ -88,6 +88,7 @@ export const useAuthStore = create<AuthState>()(
           await get().fetchTeams();
         } catch {
           // 没有有效会话
+          clearBillingToken();
           set({
             user: null,
             isLoggedIn: false,
@@ -140,6 +141,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // 忽略错误
         }
+        clearBillingToken();
         set({
           user: null,
           isLoggedIn: false,
@@ -160,6 +162,8 @@ export const useAuthStore = create<AuthState>()(
       fetchTeams: async () => {
         // 业务团队以 PostgreSQL 为准；登录后先建立计费/业务会话，再读取团队。
         // 失败时保留 Appwrite 兜底，避免后端短暂不可用导致前台没有团队列表。
+        // 先清掉旧账号令牌，避免换账号时把上一个账号的业务请求带过来。
+        clearBillingToken();
         try {
           const authUser = get().user;
           if (authUser) {

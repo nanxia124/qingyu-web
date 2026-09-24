@@ -1,4 +1,4 @@
-﻿import { Pool } from "pg";
+import { Pool } from "pg";
 import crypto from "node:crypto";
 
 const DEFAULT_PLANS = [
@@ -201,7 +201,7 @@ export async function createPostgresBillingStore() {
     const r = await pool.query(`insert into app.sync_cursors(device_id,user_id,workspace_id,last_sequence)
       select d.id,u.id,w.id,$4 from app.user_devices d join app.user_accounts u on u.id=d.user_id and u.appwrite_user_id=$1
       join app.workspaces w on w.id=$3 and (w.owner_user_id=u.id or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=u.id and tm.status='active'))
-      where d.id=$2
+      where d.id::text=$2 or d.installation_id=$2
       on conflict(device_id,workspace_id) do update set last_sequence=greatest(app.sync_cursors.last_sequence,excluded.last_sequence),version=app.sync_cursors.version+1,updated_at=now()
       returning last_sequence`, [appwriteUserId, deviceId, workspaceId, next]);
     if (!r.rowCount) throw new Error('设备或工作空间不存在，无法保存同步游标');
@@ -1220,14 +1220,16 @@ export async function createPostgresBillingStore() {
   }
 
   async function listTeamMembers(appwriteUserId, teamId) {
-    const r = await pool.query(`select u.appwrite_user_id,u.email,u.display_name,tm.status,tm.joined_at,
+    const r = await pool.query(`select u.appwrite_user_id,u.email,u.display_name,tm.status,tm.joined_at,d.name department_name,j.name job_title_name,
       case when t.owner_user_id=tm.user_id then 'owner' else coalesce(rb.role_code,'member') end role
       from app.team_memberships tm join app.teams t on t.id=tm.team_id join app.user_accounts u on u.id=tm.user_id
+      left join app.departments d on d.id=tm.department_id and d.team_id=tm.team_id and d.status='active'
+      left join app.job_titles j on j.id=tm.job_title_id and j.team_id=tm.team_id and j.status='active'
       left join app.workspaces w on w.team_id=t.id and w.type='team'
       left join lateral (select r.code role_code from app.role_bindings b join app.roles r on r.id=b.role_id where b.workspace_id=w.id and b.user_id=tm.user_id limit 1) rb on true
       where tm.team_id=$1 and tm.status in ('active','invited') and exists (select 1 from app.team_memberships me join app.user_accounts mu on mu.id=me.user_id where me.team_id=t.id and me.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and me.status='active')
       order by tm.joined_at nulls last,tm.created_at`, [teamId, appwriteUserId]);
-    return r.rows.map(x => ({ id: x.appwrite_user_id, email: x.email || '', name: x.display_name || x.email || '', status: x.status, role: x.role, joinedAt: x.joined_at ? new Date(x.joined_at).toISOString() : null }));
+    return r.rows.map(x => ({ id: x.appwrite_user_id, email: x.email || '', name: x.display_name || x.email || '', status: x.status, role: x.role, departmentName: x.department_name || null, jobTitleName: x.job_title_name || null, joinedAt: x.joined_at ? new Date(x.joined_at).toISOString() : null }));
   }
 
   async function inviteToTeam(appwriteUserId, teamId, email) {
@@ -1290,8 +1292,19 @@ export async function createPostgresBillingStore() {
       const target = await client.query(`select u.id,tm.id membership_id,tm.status current_status,t.owner_user_id from app.user_accounts u join app.team_memberships tm on tm.user_id=u.id and tm.team_id=$2 join app.teams t on t.id=$2 where u.appwrite_user_id=$1 for update`, [targetAppwriteUserId, teamId]);
       if (!target.rowCount) throw new Error('成员不存在');
       if (target.rows[0].owner_user_id === target.rows[0].id) throw new Error('团队所有者不能通过成员接口修改');
+      if (departmentId) {
+        const department = await client.query(`select 1 from app.departments where id=$1 and team_id=$2 and status='active'`, [departmentId, teamId]);
+        if (!department.rowCount) throw new Error('部门不存在或不属于当前团队');
+      }
+      if (jobTitleId) {
+        const jobTitle = await client.query(`select 1 from app.job_titles where id=$1 and team_id=$2 and status='active'`, [jobTitleId, teamId]);
+        if (!jobTitle.rowCount) throw new Error('岗位不存在或不属于当前团队');
+      }
       const finalStatus = nextStatus || target.rows[0].current_status;
-      await client.query(`update app.team_memberships set status=$1::app.membership_status,left_at=case when $1='left' then now() else null end,department_id=coalesce($3,department_id),job_title_id=coalesce($4,job_title_id),updated_at=now() where id=$2`, [finalStatus, target.rows[0].membership_id, departmentId, jobTitleId]);
+      await client.query(`update app.team_memberships set status=$1::app.membership_status,left_at=case when $1='left' then now() else null end,
+        department_id=case when $3 then $4::uuid else department_id end,
+        job_title_id=case when $5 then $6::uuid else job_title_id end,
+        updated_at=now() where id=$2`, [finalStatus, target.rows[0].membership_id, departmentId !== undefined, departmentId, jobTitleId !== undefined, jobTitleId]);
       if (finalStatus === 'left' || finalStatus === 'suspended') {
         await client.query(`delete from app.role_bindings where user_id=$1 and workspace_id in (select id from app.workspaces where team_id=$2)`, [target.rows[0].id, teamId]);
       } else if (nextRole) {
@@ -1348,11 +1361,13 @@ export async function createPostgresBillingStore() {
 
   async function listAssets(appwriteUserId, type = 'all', keyword = '') {
     const r = await pool.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
-      coalesce((select sum(1) from app.asset_likes l where l.asset_id=a.id),0) like_count,
+      coalesce((select count(*) from app.asset_likes l where l.asset_id=a.id and l.workspace_id=a.workspace_id),0) like_count,
+      coalesce((select count(*) from app.asset_comments c where c.asset_id=a.id and c.workspace_id=a.workspace_id and c.deleted_at is null and c.moderation_status='approved'),0) comment_count,
+      exists(select 1 from app.asset_likes my_like where my_like.asset_id=a.id and my_like.workspace_id=a.workspace_id and my_like.user_id=(select id from app.user_accounts where appwrite_user_id=$1)) is_liked,
       coalesce((select v.metadata from app.asset_versions v where v.asset_id=a.id order by v.version_no desc limit 1),'{}'::jsonb) metadata,
       exists(select 1 from app.collections c join app.collection_items ci on ci.collection_id=c.id where c.workspace_id=a.workspace_id and c.created_by=(select id from app.user_accounts where appwrite_user_id=$1) and c.name='favorites' and ci.asset_id=a.id) is_favorite
       from app.assets a where a.status='active' and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword]);
-    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
+    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), commentCount: Number(x.comment_count), liked: Boolean(x.is_liked), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
   }
 
   async function listFavorites(appwriteUserId) { return listAssets(appwriteUserId, 'all', '').then(items => items.filter(x => x.favorited)); }
@@ -1371,6 +1386,64 @@ export async function createPostgresBillingStore() {
       else await client.query(`delete from app.collection_items where collection_id=$1 and asset_id=$2`, [collection.rows[0].id, assetId]);
       await client.query('commit');
       return { assetId, favorited: Boolean(favorite) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function toggleAssetLike(appwriteUserId, assetId, liked) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const access = await client.query(`select a.id,a.workspace_id from app.assets a
+        where a.id=$1 and a.status='active' and exists(
+          select 1 from app.workspaces w where w.id=a.workspace_id and
+          (w.owner_user_id=$2 or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=$2 and tm.status='active'))
+        )`, [assetId, user.rows[0].id]);
+      if (!access.rowCount) throw new Error('资产不存在或无权访问');
+      if (liked) await client.query(`insert into app.asset_likes(asset_id,user_id,workspace_id) values($1,$2,$3) on conflict (asset_id,user_id) do nothing`, [assetId, user.rows[0].id, access.rows[0].workspace_id]);
+      else await client.query(`delete from app.asset_likes where asset_id=$1 and user_id=$2 and workspace_id=$3`, [assetId, user.rows[0].id, access.rows[0].workspace_id]);
+      const count = await client.query(`select count(*)::int like_count from app.asset_likes where asset_id=$1 and workspace_id=$2`, [assetId, access.rows[0].workspace_id]);
+      await client.query('commit');
+      return { assetId, liked: Boolean(liked), likeCount: Number(count.rows[0].like_count) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listAssetComments(appwriteUserId, assetId) {
+    const r = await pool.query(`select c.id,c.parent_id,c.content,c.moderation_status,c.created_at,c.edited_at,
+        coalesce(u.email,'已删除用户') author_email
+      from app.asset_comments c
+      join app.assets a on a.id=c.asset_id and a.workspace_id=c.workspace_id
+      left join app.user_accounts u on u.id=c.author_user_id
+      where c.asset_id=$1 and c.deleted_at is null and c.moderation_status='approved'
+        and exists(select 1 from app.user_accounts viewer join app.workspaces w on w.id=a.workspace_id
+          where viewer.appwrite_user_id=$2 and viewer.status='active' and
+          (w.owner_user_id=viewer.id or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=viewer.id and tm.status='active')))
+      order by c.created_at asc`, [assetId, appwriteUserId]);
+    return r.rows.map(x => ({ id: x.id, parentId: x.parent_id, content: x.content, status: x.moderation_status, authorEmail: x.author_email, createdAt: new Date(x.created_at).toISOString(), editedAt: x.edited_at ? new Date(x.edited_at).toISOString() : null }));
+  }
+
+  async function createAssetComment(appwriteUserId, assetId, content, parentId = null) {
+    const clean = String(content || '').trim();
+    if (!clean || clean.length > 10000) throw new Error('评论不能为空且不能超过10000个字符');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const access = await client.query(`select a.id,a.workspace_id from app.assets a
+        where a.id=$1 and a.status='active' and exists(select 1 from app.workspaces w where w.id=a.workspace_id and
+          (w.owner_user_id=$2 or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=$2 and tm.status='active')))`, [assetId, user.rows[0].id]);
+      if (!access.rowCount) throw new Error('资产不存在或无权访问');
+      if (parentId) {
+        const parent = await client.query(`select 1 from app.asset_comments where id=$1 and asset_id=$2 and workspace_id=$3 and deleted_at is null`, [parentId, assetId, access.rows[0].workspace_id]);
+        if (!parent.rowCount) throw new Error('回复目标不存在或不属于当前资产');
+      }
+      const inserted = await client.query(`insert into app.asset_comments(asset_id,workspace_id,parent_id,author_user_id,content,moderation_status)
+        values($1,$2,$3,$4,$5,'approved') returning id,parent_id,content,moderation_status,created_at`, [assetId, access.rows[0].workspace_id, parentId || null, user.rows[0].id, clean]);
+      await client.query('commit');
+      const x = inserted.rows[0];
+      return { id: x.id, parentId: x.parent_id, content: x.content, status: x.moderation_status, createdAt: new Date(x.created_at).toISOString() };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
@@ -1528,6 +1601,68 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  // 生图 worker 把结果图落盘到对象存储后，登记 file_objects + generation_outputs。
+  async function recordGeneratedOutput(appwriteUserId, taskId, file) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const task = await client.query(
+        `select id, workspace_id, created_by from app.generation_tasks where id=$1 and workspace_id=$2`,
+        [taskId, me.workspace_id]
+      );
+      if (!task.rowCount) throw new Error('任务不存在或不属于当前工作空间');
+      const workspaceId = task.rows[0].workspace_id;
+      const ownerId = task.rows[0].created_by;
+      const fileRow = await client.query(
+        `insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status)
+         values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`,
+        [workspaceId, ownerId, file.storageProvider || 'local', file.bucket || 'qingyu-assets',
+         file.objectKey, file.sha256 || null, file.sizeBytes, file.contentType || 'application/octet-stream']
+      );
+      const fileId = fileRow.rows[0].id;
+      const meta = { source: 'image_generation', index: Number.isInteger(file.index) ? file.index : null };
+      await client.query(
+        `insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,width,height,content_status,metadata)
+         values($1,$2,$3,'image',$4,$5,'approved',$6::jsonb)`,
+        [taskId, workspaceId, fileId, file.width || null, file.height || null, JSON.stringify(meta)]
+      );
+      await client.query('commit');
+      return { fileId, objectKey: file.objectKey };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function listGeneratedOutputs(appwriteUserId, taskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const r = await client.query(
+        `select o.id as output_id, o.metadata, o.width, o.height,
+                f.id as file_id, f.storage_provider, f.bucket, f.object_key, f.mime_type, f.size_bytes
+           from app.generation_outputs o
+           join app.file_objects f on f.id = o.file_id and f.workspace_id = o.workspace_id
+          where o.task_id = $1 and o.workspace_id = $2 and o.output_type = 'image' and f.status = 'ready'
+          order by (o.metadata->>'index')::int nulls last, o.created_at asc`,
+        [taskId, me.workspace_id]
+      );
+      return r.rows.map(x => ({
+        index: x.metadata?.index != null ? Number(x.metadata.index) : null,
+        outputId: x.output_id,
+        fileId: x.file_id,
+        objectKey: x.object_key,
+        storageProvider: x.storage_provider,
+        bucket: x.bucket,
+        contentType: x.mime_type || 'application/octet-stream',
+        sizeBytes: Number(x.size_bytes || 0),
+        width: x.width,
+        height: x.height,
+      }));
+    } finally { client.release(); }
+  }
   // 超时自动回收：在途任务→refunded，过期预占→expired，守恒异常→告警。
   async function reapStaleTasks() {
     const r = await pool.query(`select app.reap_stale_generation_tasks() AS result`);
@@ -1602,5 +1737,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

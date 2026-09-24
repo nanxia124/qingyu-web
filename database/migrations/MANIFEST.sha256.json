@@ -19,7 +19,7 @@
   "0018_asset_share_target_integrity.sql": "83a73f58a23adfbdecc39520a6b6f340b0bdb5b73bd03e05bd9936ee8aff37c2",
   "0019_payment_idempotency.sql": "1a51c56b14623d97c023c2ca6ff45a38d819e3ad434c12a61b4d25b0bd3d1831",
   "0020_referrals_redeem_codes.sql": "a7fc1938ca2c79664d1f370710c595b39ed3e402f3296e757aff514f1671c46e",
-  "0021_session_limit_three.sql": "5e8a853102aa796723c4570080c0f1e23db34270547049368027b2959dd1ac1e",
+  "0021_session_limit_three.sql": "621a6a52654e0deebc4a1b6deb076ec525ac0ed7bce8a1abf965c949132c9f2d",
   "0022_single_online_session.sql": "e3690703b05bbc62fe7229562e79b6467018a4e4adc683866abe3edc2ffb9ea0",
   "0023_platform_api_keys.sql": "0f6c12021c9f533200b87353d66d86484748fad4b036b7af0710564be853e180",
   "0024_platform_api_model_length.sql": "877dd1e57bbbdc326e4fd8b3f9ee9457f89b57f25fad148ecec49f74f3e5ac98",
@@ -49,5 +49,9 @@
   "0048_database_role_schema_usage.sql": "0f1619efe9091396e13a48e4cee26b819a9685dd91de7553b57b65d2fad066b6",
   "0049_reconciliation_drift_and_audit_query.sql": "ea219623f7571a8323056cc1503f34edb258f120c62e73a887b73c9b6c991c55",
   "0050_feedback_submissions.sql": "122792f27a7be672560fe49ade60a4855be9d819cd0217431e3455d73e5e6f76",
-  "0051_admin_catalog_settings.sql": "4e35131cd041b355f80efc08626ac7a54676c2966248a1ef0973dc4f3912d703"
+  "0051_admin_catalog_settings.sql": "4e35131cd041b355f80efc08626ac7a54676c2966248a1ef0973dc4f3912d703",
+  "0052_usage_completion_metrics.sql": "3e6989a6a10caad4654aac8a515d84310c14c38fb29d338eb149bc5b67477dc4",
+  "0053_usage_completion_guard.sql": "6af1f61b96c8a8177c1a187793b608fc204fae34f4f87d312bab1f6df7535f5f",
+  "0054_admin_accounts.sql": "5867862ddcbd7f778350fdbe447e6076162391dc8dfb32e9b7c4bd5b9369062b",
+  "0055_session_online_guard.sql": "b91731937bcb9e9849c4314f11ad038eb0ce0ea4233cc733bdd03be59329c4cc"
 }

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$MigrationDirectory = (Join-Path $PSScriptRoot '..\migrations'),
     [string]$ManifestPath = (Join-Path $PSScriptRoot '..\migrations\MANIFEST.sha256.json')
 )

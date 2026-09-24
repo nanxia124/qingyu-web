@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 轻域AI API 后端服务
  * 功能：API 密钥管理、公开模型配置、AI 请求代理（服务端注入密钥）
  * 零依赖，仅用 Node.js 内置模块
@@ -12,10 +12,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { writeAssetUpload } from './asset-upload.mjs';
+import { createObjectStore, sniffImageMime, extForMime } from './object-store.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
 const OBJECT_DATA_DIR = process.env.OBJECT_DATA_DIR || path.join(DATA_DIR, "objects");
+// 生图结果是否落盘到对象存储（而非塞 base64 进 Postgres outputs jsonb）。
+// 出问题设 GEN_OUTPUTS_TO_STORAGE=off 可立即回滚到旧行为。
+const GEN_OUTPUTS_TO_STORAGE = String(process.env.GEN_OUTPUTS_TO_STORAGE || 'on').trim().toLowerCase() !== 'off';
+const objectStore = createObjectStore({ dataDir: OBJECT_DATA_DIR });
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const ADMIN_FILE = path.join(DATA_DIR, "admin.json");
 // ===== 计费系统数据文件 =====
@@ -525,6 +530,46 @@ async function fetchUrlAsBase64(imageUrl) {
     req.end();
   });
 }
+// 与 fetchUrlAsBase64 同源，返回 Buffer 而非 base64 字符串，供对象存储落盘使用。
+async function fetchUrlAsBuffer(imageUrl) {
+  return await new Promise((resolve, reject) => {
+    let target;
+    try { target = new URL(imageUrl); } catch { return reject(new Error("无效图片 URL")); }
+    const lib = target.protocol === "https:" ? https : http;
+    const req = lib.request({
+      hostname: target.hostname,
+      port: target.port || (target.protocol === "https:" ? 443 : 80),
+      path: target.pathname + target.search,
+      method: "GET",
+      timeout: 30000,
+    }, (upstreamRes) => {
+      if (upstreamRes.statusCode >= 300) { upstreamRes.resume(); return reject(new Error("图片下载失败: " + upstreamRes.statusCode)); }
+      const chunks = [];
+      upstreamRes.on("data", c => chunks.push(c));
+      upstreamRes.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("图片下载超时")); });
+    req.end();
+  });
+}
+
+// 把一张生成图持久化：落盘到对象存储 + 登记 file_objects/generation_outputs。
+// 返回的 outputs 条目里不带 b64_json，只带 fileId/objectKey。
+// GEN_OUTPUTS_TO_STORAGE=off 时回退到老行为（base64 塞 outputs），用于紧急回滚。
+async function persistGeneratedImage(identity, task, index, buffer, revisedPrompt) {
+  if (!GEN_OUTPUTS_TO_STORAGE || !postgresBilling || !postgresBilling.recordGeneratedOutput) {
+    return { type: "image", index, b64_json: buffer.toString("base64"), url: null, revisedPrompt: revisedPrompt || null };
+  }
+  const mime = sniffImageMime(buffer);
+  const ext = extForMime(mime);
+  const objectKey = `gen/${task.id}/${index}${ext}`;
+  const put = await objectStore.putObject({ key: objectKey, buffer, contentType: mime });
+  const rec = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
+    ...put, index,
+  });
+  return { type: "image", index, b64_json: null, url: null, fileId: rec.fileId, objectKey: rec.objectKey, revisedPrompt: revisedPrompt || null };
+}
 
 // 部分上游（如麦子 nano-banana 系列）提交后返回 task_id，需要轮询查询接口拿结果。
 // 探测到 data[0].task_id 且无 b64_json/url 时自动走这个分支。
@@ -587,7 +632,10 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
         }
         const outputs = [];
         for (let i = 0; i < urls.length; i++) {
-          try { outputs.push({ type: "image", index: i, b64_json: await fetchUrlAsBase64(urls[i]), url: urls[i], revisedPrompt: null }); }
+          try {
+            const buffer = await fetchUrlAsBuffer(urls[i]);
+            outputs.push(await persistGeneratedImage(identity, task, i, buffer, null));
+          }
           catch (dlErr) { console.error("[async task] image download failed", task.id, dlErr.message); }
         }
         if (!outputs.length) {
@@ -607,13 +655,13 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
         await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游返回成功但未包含任何图片", true);
         return;
       }
-      // 统一成 base64：缺 b64_json 的条目从 URL 下载补齐。单张下载失败不影响其他图。
+      // 统一落盘到对象存储：上游给 b64_json 的直接解码成 buffer，给 url 的下载下来；
+      // 单张失败不影响其他图。
       const outputs = [];
       for (const o of raw) {
-        if (o.b64_json) { outputs.push(o); continue; }
         try {
-          const b64 = await fetchUrlAsBase64(o.url);
-          outputs.push({ ...o, b64_json: b64 });
+          const buffer = o.b64_json ? Buffer.from(o.b64_json, "base64") : await fetchUrlAsBuffer(o.url);
+          outputs.push(await persistGeneratedImage(identity, task, o.index, buffer, o.revisedPrompt || null));
         } catch (dlErr) {
           console.error("[task worker] image url download failed", task.id, dlErr.message);
         }
@@ -1320,6 +1368,18 @@ async function handleAssets(req, res, pathname, method, url) {
     }
     if (pathname === "/assets" && method === "GET") return sendJSON(res, 200, await postgresBilling.listAssets(identity.sub, url.searchParams.get('type') || 'all', url.searchParams.get('keyword') || ''));
     if (pathname === "/favorites" && method === "GET") return sendJSON(res, 200, await postgresBilling.listFavorites(identity.sub));
+    const likeMatch = pathname.match(/^\/assets\/([^/]+)\/like$/);
+    if (likeMatch && (method === "PUT" || method === "DELETE")) {
+      return sendJSON(res, 200, await postgresBilling.toggleAssetLike(identity.sub, likeMatch[1], method === "PUT"));
+    }
+    const commentsMatch = pathname.match(/^\/assets\/([^/]+)\/comments$/);
+    if (commentsMatch && method === "GET") {
+      return sendJSON(res, 200, await postgresBilling.listAssetComments(identity.sub, commentsMatch[1]));
+    }
+    if (commentsMatch && method === "POST") {
+      const body = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.createAssetComment(identity.sub, commentsMatch[1], body.content, body.parentId || null));
+    }
     const match = pathname.match(/^\/favorites\/([^/]+)$/);
     if (match && (method === "PUT" || method === "DELETE")) return sendJSON(res, 200, await postgresBilling.toggleFavorite(identity.sub, match[1], method === "PUT"));
     sendJSON(res, 404, { error: "资产接口不存在" });
@@ -1466,6 +1526,44 @@ const server = http.createServer(async (req, res) => {
       try { return sendJSON(res, 200, await postgresBilling.getGenerationTask(identity.sub, taskMatch[1])); }
       catch (e) { return sendJSON(res, 404, { error: e.message }); }
     }
+    // GET /api/generation-tasks/:id/outputs/:index/content — 流式返回生图结果文件。
+    // 私有权限：必须登录且任务属于当前用户；后端校验通过后才从对象存储读流回。
+    const outputMatch = pathname.match(/^\/api\/generation-tasks\/([^/]+)\/outputs\/(\d+)\/content$/);
+    if (outputMatch && req.method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      // <img> 标签带不了 Authorization header，额外允许 ?token=xxx。
+      // 仅限生图结果这种"页面内嵌 <img>"场景；不开放给其他接口。
+      let identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") {
+        const qToken = url.searchParams.get("token");
+        if (qToken) {
+          const p = verifyJWT(qToken);
+          if (p && p.role === "customer") identity = p;
+        }
+      }
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      const taskId = outputMatch[1];
+      const wantIndex = parseInt(outputMatch[2], 10);
+      try {
+        const outputs = await postgresBilling.listGeneratedOutputs(identity.sub, taskId);
+        const found = outputs.find(o => o.index === wantIndex)
+                   || (wantIndex === 0 ? outputs[0] : null);
+        if (!found) return sendJSON(res, 404, { error: "图片不存在" });
+        if (found.storageProvider !== "local") return sendJSON(res, 501, { error: "当前存储提供商暂不支持直接读取" });
+        let stat;
+        try { stat = objectStore.stat(found.objectKey); }
+        catch { return sendJSON(res, 404, { error: "图片文件已失效" }); }
+        res.writeHead(200, {
+          "Content-Type": found.contentType || "image/png",
+          "Content-Length": stat.size,
+          "Cache-Control": "private, max-age=31536000, immutable",
+        });
+        objectStore.createReadStream(found.objectKey).pipe(res);
+        return;
+      } catch (e) {
+        return sendJSON(res, 404, { error: e.message });
+      }
+    }
 
     // POST /api/admin/login — 管理员登录
     if (pathname === "/api/admin/login" && req.method === "POST") {
@@ -1505,11 +1603,24 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 新版业务 Token 带数据库会话编号；会话被撤销后立即拒绝后续请求。
+    // 设备管理是离线设备的保留入口：离线设备不能使用业务功能，但仍要能查看设备状态、踢出设备。
+    // 这样“同时登录、只有一台在线”的规则不会把用户锁在无法自助恢复的状态里。
+    if (postgresBilling && (pathname === "/api/account/sessions" || pathname.startsWith("/api/account/sessions/"))) {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try {
+        if (pathname === "/api/account/sessions" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listSessions(identity.sub));
+        const sessionMatch = pathname.match(/^\/api\/account\/sessions\/([^/]+)$/);
+        if (sessionMatch && req.method === "DELETE") return sendJSON(res, 200, await postgresBilling.revokeSession(identity.sub, sessionMatch[1]));
+        return sendJSON(res, 404, { error: "会话接口不存在" });
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
+    }
+
+    // 新版业务 Token 带数据库会话编号；会话被撤销或被另一台设备接管后，业务请求立即拒绝。
     const requestIdentity = getBillingIdentity(req);
     if (postgresBilling && requestIdentity?.role === "customer" && requestIdentity.sid) {
       if (!(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
-        return sendJSON(res, 401, { error: "当前账号已在其他设备在线，请重新登录以接管本设备" });
+        return sendJSON(res, 401, { error: "当前设备处于离线状态，请在本设备重新登录后接管在线状态" });
       }
     }
 
@@ -1521,17 +1632,6 @@ const server = http.createServer(async (req, res) => {
     // ===== 团队路由（客户身份，数据来自 PostgreSQL）=====
     if (await handleTeams(req, res, pathname, req.method)) {
       return;
-    }
-
-    if (postgresBilling && (pathname === "/api/account/sessions" || pathname.startsWith("/api/account/sessions/"))) {
-      const identity = getBillingIdentity(req);
-      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
-      try {
-        if (pathname === "/api/account/sessions" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listSessions(identity.sub));
-        const sessionMatch = pathname.match(/^\/api\/account\/sessions\/([^/]+)$/);
-        if (sessionMatch && req.method === "DELETE") return sendJSON(res, 200, await postgresBilling.revokeSession(identity.sub, sessionMatch[1]));
-        return sendJSON(res, 404, { error: "会话接口不存在" });
-      } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
     }
 
     if (postgresBilling && (pathname === "/api/sync/events" || pathname === "/api/sync/cursor")) {

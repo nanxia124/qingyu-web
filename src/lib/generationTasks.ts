@@ -16,6 +16,8 @@ export interface GenTaskOutput {
   index: number;
   b64_json?: string | null;
   url?: string | null;
+  fileId?: string | null;
+  objectKey?: string | null;
   revisedPrompt?: string | null;
 }
 
@@ -165,9 +167,23 @@ export async function pollImageTask(
   }
 }
 
-/** 把任务输出转成可直接渲染的 dataUrl 列表 */
+/** 把任务输出转成可直接渲染的图片 URL 列表。
+ *  - 新数据：fileId 存在时走后端流式接口（带 ?token= 供 <img> 标签鉴权）
+ *  - 老数据 fallback：b64_json 拼成 dataURL，或直接用上游返回的 url
+ */
 export function taskOutputToDataUrls(task: GenTask): string[] {
+  const token =
+    localStorage.getItem('billing_token') ||
+    localStorage.getItem('token') ||
+    localStorage.getItem('admin_token') ||
+    '';
   return (task.outputs || [])
-    .filter((o) => o.b64_json || o.url)
-    .map((o) => o.b64_json ? `data:image/png;base64,${o.b64_json}` : (o.url as string));
+    .filter((o) => o.b64_json || o.url || o.fileId)
+    .map((o) => {
+      if (o.fileId) {
+        const q = token ? `?token=${encodeURIComponent(token)}` : '';
+        return `${API}/api/generation-tasks/${task.id}/outputs/${o.index}/content${q}`;
+      }
+      return o.b64_json ? `data:image/png;base64,${o.b64_json}` : (o.url as string);
+    });
 }

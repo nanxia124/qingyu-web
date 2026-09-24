@@ -46,7 +46,7 @@ export default function SubscriptionPage() {
       }
       checkoutKeysRef.current.set(storageKey, idempotencyKey);
       const order = await billingApi.createOrder(plan.id, idempotencyKey);
-      // v1：模拟支付直接成功；接微信/支付宝后这里改为跳转收银台
+      // 只有服务端确认收到支付回调后才会发放权益；未配置支付渠道时由服务端明确返回提示。
       if (order.status !== "paid") await billingApi.payOrder(order.id);
       await refreshMe();
       // 保留编号，刷新或响应延迟时仍能认出原单；明确续费时应另开购买流程。

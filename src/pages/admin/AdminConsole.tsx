@@ -28,7 +28,7 @@ export default function AdminConsole({ token, onLogout }: { token: string; onLog
   const [section, setSection] = useState<Section>(nav.some((item) => item.id === initialSection) ? initialSection : "api");
   const [mobileOpen, setMobileOpen] = useState(false);
   const current = nav.find((item) => item.id === section)!;
-  const content = { api: <AdminDashboard token={token} onLogout={onLogout} />, "open-source": <OpenSourceDataPage />, users: <AdminUsersPage />, tenants: <AdminTenantsPage />, billing: <AdminBillingPage />, audits: <AdminAuditsPage />, ops: <AdminOpsPage />, monitor: <MonitorPage /> }[section];
+  const content = { api: <AdminDashboard token={token} onLogout={onLogout} />, "open-source": <OpenSourceDataPage />, users: <AdminUsersPage />, tenants: <AdminTenantsPage />, billing: <AdminBillingPage />, audits: <AdminAuditsPage />, ops: <AdminOpsPage />, monitor: <MonitorPage token={token} /> }[section];
   const select = (id: Section) => { setSection(id); setSearchParams(id === "api" ? {} : { section: id }); setMobileOpen(false); };
   return <div className="min-h-screen bg-bg text-text">
     <header className="flex h-16 items-center justify-between bg-card px-5 shadow-sm md:px-7">

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$MigrationDirectory = (Join-Path $PSScriptRoot '..\migrations'),
     [string]$TestDirectory = (Join-Path $PSScriptRoot '..\tests'),
     [string]$Image = 'postgres:16',

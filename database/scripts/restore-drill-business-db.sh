@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # 在隔离数据库中恢复一份业务备份，验证备份真的可读、可恢复，然后删除演练库。
 CONTAINER="${PG_DOCKER_CONTAINER:-appwrite-postgresql}"
@@ -21,7 +22,7 @@ if [[ -z "$OBJECT_ARCHIVE_FILE" ]]; then
 fi
 if [[ -n "$OBJECT_ARCHIVE_FILE" ]]; then
   test -r "$OBJECT_ARCHIVE_FILE"
-  sha256sum -c "${OBJECT_ARCHIVE_FILE}.sha256"
+  bash "$SCRIPT_DIR/verify-backup-file.sh" "$OBJECT_ARCHIVE_FILE"
   tar -tzf "$OBJECT_ARCHIVE_FILE" >/dev/null
 elif [[ "$REQUIRE_OBJECT_ARCHIVE" == '1' ]]; then
   echo '要求对象归档，但没有找到对应的对象归档文件' >&2
@@ -29,7 +30,7 @@ elif [[ "$REQUIRE_OBJECT_ARCHIVE" == '1' ]]; then
 fi
 
 test -r "$BACKUP_FILE"
-sha256sum -c "${BACKUP_FILE}.sha256"
+bash "$SCRIPT_DIR/verify-backup-file.sh" "$BACKUP_FILE"
 
 backup_id="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
   "select id from app.backup_runs where storage_key = '$BACKUP_FILE' and status in ('succeeded','verified') order by created_at desc limit 1")"

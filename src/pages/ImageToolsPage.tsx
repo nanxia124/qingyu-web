@@ -125,6 +125,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
   const counts = ['1', '2', '3', '4']
+  // 模型能力限制：nano-banana 系列只支持 n=1、不支持 hd 画质
+  const currentModelName = model.split('::').pop() || model
+  const isNanoBanana = currentModelName.includes('nano-banana')
+  const disabledCounts = isNanoBanana ? ['2', '3', '4'] : []
+  const disabledQualities = isNanoBanana ? ['2K', '4K'] : []
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success', action?: { label: string; onClick: () => void }, pos: 'top' | 'input' = 'top') => {
     setToast({ msg, type, action, pos })
@@ -407,7 +412,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <ModelPicker
               config={config}
               value={model}
-              onChange={setModel}
+              onChange={(m: string) => {
+                setModel(m);
+                const mn = (m || '').split('::').pop() || '';
+                if (mn.includes('nano-banana')) {
+                  setCount('1');
+                  setQuality('1K');
+                }
+              }}
               capability="image"
               fullWidth
             />
@@ -473,8 +485,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <label className="mb-2 block text-[14px] text-text">{t("imageTools.quality")}</label>
             <div className="grid grid-cols-3 gap-1.5 max-w-[300px]">
               {qualities.map((q) => (
-                <button key={q} onClick={() => setQuality(q)}
+                <button key={q} onClick={() => !disabledQualities.includes(q) && setQuality(q)} disabled={disabledQualities.includes(q)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
+                    disabledQualities.includes(q) ? 'opacity-30 cursor-not-allowed bg-transparent dark:bg-secondary text-text-muted' :
                     quality === q ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {q}
                 </button>
@@ -487,8 +500,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             <label className="mb-2 block text-[14px] text-text">{t("imageTools.count")}</label>
             <div className="grid grid-cols-4 gap-1.5 max-w-[400px]">
               {counts.map((c) => (
-                <button key={c} onClick={() => setCount(c)}
+                <button key={c} onClick={() => !disabledCounts.includes(c) && setCount(c)} disabled={disabledCounts.includes(c)}
                   className={cn('h-[30px] rounded-md text-[12px] transition-colors',
+                    disabledCounts.includes(c) ? 'opacity-30 cursor-not-allowed bg-transparent dark:bg-secondary text-text-muted' :
                     count === c ? 'bg-accent text-accent-foreground' : 'border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-secondary hover:bg-surface-hover hover:text-text')}>
                   {c}
                 </button>

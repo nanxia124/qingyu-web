@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setBillingToken } from '@/lib/billing'
+import { setBillingToken, getInstallationId } from '@/lib/billing'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 /**
@@ -17,7 +17,9 @@ export default function DevLoginPage() {
     setRunning(true)
     setError(null)
     try {
-      const res = await fetch('/api/dev-login?format=json', { headers: { Accept: 'application/json' } })
+      // 带上本机固定设备编号，后端据此复用同一会话，避免重复登录互相踢下线
+      const loginUrl = `/api/dev-login?format=json&installationId=${encodeURIComponent(getInstallationId())}`
+      const res = await fetch(loginUrl, { headers: { Accept: 'application/json' } })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`)
       const { token, uid, email } = data as { token: string; uid: string; email: string }

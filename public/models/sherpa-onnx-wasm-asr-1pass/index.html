@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Next-gen Kaldi WebAssembly with sherpa-onnx for ASR</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0a0a0a;
+        --surface: #141414;
+        --surface-elevated: #1a1a1a;
+        --border: rgba(255, 255, 255, 0.08);
+        --border-hover: rgba(255, 255, 255, 0.12);
+        --text-primary: #ffffff;
+        --text-secondary: #a0a0a0;
+        --text-tertiary: #6b6b6b;
+        --accent: #00d4ff;
+        --accent-hover: #00b8e6;
+        --accent-bg: rgba(0, 212, 255, 0.1);
+        --success: #00ff88;
+        --danger: #ff4444;
+        --warning: #ffaa00;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      label {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'Helvetica Neue', sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        background: var(--bg);
+        color: var(--text-primary);
+        min-height: 100vh;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .page {
+        width: 100%;
+        max-width: 1440px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 24px 32px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .page-title-group {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .page-logo {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, var(--accent) 0%, #00a8cc 100%);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 18px;
+        color: #000;
+      }
+      .page-title {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .page-subtitle {
+        display: none;
+      }
+      .tab-switcher {
+        display: inline-flex;
+        padding: 4px;
+        border-radius: 12px;
+        background: var(--surface-elevated);
+        border: 1px solid var(--border);
+        gap: 4px;
+      }
+      .tab-btn {
+        border: none;
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-weight: 500;
+        font-size: 13px;
+        cursor: pointer;
+        background: transparent;
+        color: var(--text-secondary);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .tab-btn.active {
+        background: var(--accent);
+        color: #000;
+        font-weight: 600;
+      }
+      .tab-btn:hover:not(.active):not(:disabled) {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .tab-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+      }
+      .tab-content {
+        display: none !important;
+        flex: 1;
+        overflow: hidden;
+      }
+      .tab-content.active {
+        display: flex !important;
+      }
+      .workspace {
+        display: flex;
+        height: 100%;
+        overflow: hidden;
+      }
+      .sidebar {
+        width: 320px;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      .sidebar::-webkit-scrollbar {
+        width: 8px;
+      }
+      .sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+      }
+      .sidebar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .sidebar.collapsed {
+        display: none;
+      }
+      .sidebar-toggle {
+        border: 1px solid var(--border);
+        background: var(--surface-elevated);
+        color: var(--text-primary);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+      }
+      .sidebar-toggle:hover {
+        border-color: var(--border-hover);
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .sidebar-toggle[aria-pressed="true"] {
+        background: var(--accent);
+        color: #000;
+        border-color: transparent;
+      }
+      .sidebar-section {
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar-section:last-child {
+        border-bottom: none;
+      }
+      .hero-eyebrow {
+        display: none;
+      }
+      .hero-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-tertiary);
+        margin-bottom: 12px;
+      }
+      .hero-description {
+        display: none;
+      }
+      .status-block {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .status-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-tertiary);
+      }
+      #status {
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: var(--accent-bg);
+        color: var(--accent);
+        font-weight: 500;
+        font-size: 13px;
+        border: 1px solid rgba(0, 212, 255, 0.2);
+      }
+.control-card,
+.translation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.translation-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+      .panel-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      .panel-hint {
+        font-size: 12px;
+        color: var(--text-tertiary);
+        line-height: 1.4;
+      }
+      .control-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .vad-card {
+        gap: 12px;
+      }
+      .vad-mode-group {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .radio-pill {
+        position: relative;
+      }
+      .radio-pill input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .radio-pill span {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        border-radius: 8px;
+        padding: 10px 8px;
+        border: 1px solid var(--border);
+        background: transparent;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        text-align: center;
+      }
+      .radio-pill span strong {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .radio-pill span em {
+        font-style: normal;
+        font-size: 10px;
+        color: var(--text-tertiary);
+      }
+      .radio-pill input:checked + span {
+        border-color: var(--accent);
+        background: var(--accent-bg);
+        color: var(--accent);
+      }
+      .radio-pill input:checked + span strong {
+        color: var(--accent);
+      }
+      .radio-pill input:disabled + span {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .vad-status {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .btn {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        font-family: inherit;
+      }
+      .btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.3;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: #000;
+        font-weight: 600;
+      }
+      .btn.primary:not(:disabled):hover {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+      }
+      .btn.danger {
+        background: rgba(255, 68, 68, 0.1);
+        color: var(--danger);
+        border: 1px solid rgba(255, 68, 68, 0.2);
+      }
+      .btn.danger:not(:disabled):hover {
+        background: rgba(255, 68, 68, 0.15);
+        border-color: rgba(255, 68, 68, 0.3);
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+      }
+      .btn.ghost:hover:not(:disabled) {
+        background: var(--surface-elevated);
+        border-color: var(--border-hover);
+        color: var(--text-primary);
+      }
+      .btn.compact {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+.translation-header {
+  display: none;
+}
+.translation-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.translation-header-row .hero-title {
+  margin-bottom: 0;
+}
+.translation-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.translation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.translation-toggle .switch-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+    .translation-toggle .switch-copy strong {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .save-toggle {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .save-toggle .switch-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+    }
+    .save-toggle .switch-copy strong {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .save-toggle .switch-copy small {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-weight: 400;
+    }
+    .translation-toggle .switch-copy small {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-weight: 400;
+    }
+.translation-direction {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.translation-direction-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+      .waveform-panel {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px;
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .waveform-panel canvas {
+        width: 100%;
+        height: 48px;
+        display: block;
+        border-radius: 4px;
+      }
+      .waveform-caption {
+        font-size: 10px;
+        color: var(--text-tertiary);
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 500;
+        color: var(--text-primary);
+        position: relative;
+        cursor: pointer;
+        flex-shrink: 0;
+        background: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        background: transparent !important;
+        border-radius: 11px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 1.5px solid var(--border);
+        flex-shrink: 0;
+      }
+      .slider::before {
+        display: none !important;
+      }
+      .slider::after {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 2px;
+        top: 2px;
+        border-radius: 50%;
+        background: var(--text-tertiary) !important;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .switch input:checked + .slider {
+        background: transparent !important;
+        border-color: var(--accent);
+      }
+      .switch input:checked + .slider::after {
+        transform: translateX(18px);
+        background: var(--accent) !important;
+        box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
+      }
+      .translation-direction {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      select {
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 8px 12px;
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--text-primary);
+        font-family: inherit;
+        width: 100%;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      select:hover {
+        border-color: var(--border-hover);
+      }
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .status-pill {
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        border: 1px solid transparent;
+      }
+      .status-pill.muted {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-tertiary);
+        border-color: var(--border);
+      }
+      .status-pill.active {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border-color: rgba(0, 212, 255, 0.2);
+      }
+      .status-pill.error {
+        background: rgba(255, 68, 68, 0.1);
+        color: var(--danger);
+        border-color: rgba(255, 68, 68, 0.2);
+      }
+      .main-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .transcript-panel,
+      .clips-panel {
+        padding: 24px;
+        overflow-y: auto;
+      }
+      .transcript-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .transcript-panel textarea {
+        flex: 1;
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        background: var(--surface);
+        color: var(--text-primary);
+        font-size: 14px;
+        line-height: 1.6;
+        resize: none;
+        outline: none;
+        transition: border-color 0.2s ease;
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+      }
+      .transcript-panel textarea:focus {
+        border-color: var(--accent);
+      }
+      .transcript-panel textarea::placeholder {
+        color: var(--text-tertiary);
+      }
+      #sound-clips {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      #sound-clips:empty::before {
+        content: 'No recordings yet';
+        color: var(--text-tertiary);
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 40px 20px;
+        text-align: center;
+        display: block;
+        font-size: 13px;
+      }
+      #sound-clips article.clip {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: border-color 0.2s ease;
+      }
+      #sound-clips .clip:hover {
+        border-color: var(--border-hover);
+      }
+      #sound-clips .clip p {
+        margin: 0;
+        font-weight: 500;
+        color: var(--text-primary);
+        font-size: 13px;
+      }
+      #sound-clips .clip button {
+        align-self: flex-start;
+        border: none;
+        border-radius: 6px;
+        background: rgba(255, 68, 68, 0.1);
+        color: var(--danger);
+        padding: 6px 12px;
+        font-weight: 500;
+        cursor: pointer;
+        font-size: 12px;
+        border: 1px solid rgba(255, 68, 68, 0.2);
+        transition: all 0.2s ease;
+      }
+      #sound-clips .clip button:hover {
+        background: rgba(255, 68, 68, 0.15);
+      }
+      .modal-mask {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 16px;
+      }
+      .modal-mask.show {
+        display: flex;
+      }
+      .modal {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px;
+        max-width: 420px;
+        width: 100%;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      }
+      .modal h3 {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .modal p {
+        margin: 0 0 16px 0;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .modal .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+      .modal .btn {
+        min-width: 96px;
+      }
+      @media (max-width: 900px) {
+        .workspace {
+          flex-direction: column;
+        }
+        .sidebar {
+          width: 100%;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .sidebar.collapsed {
+          display: none;
+        }
+        .main-column {
+          min-height: 50vh;
+        }
+        .transcript-panel,
+        .clips-panel {
+          padding: 16px;
+        }
+        .transcript-panel textarea {
+          min-height: 50vh;
+          font-size: 15px;
+        }
+      }
+      .file-sidebar {
+        gap: 0;
+      }
+      .file-meta-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-left: 20px;
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+      .file-meta-list li {
+        list-style: disc;
+        line-height: 1.5;
+      }
+      .file-status-card {
+        border-top: 1px solid var(--border);
+        padding: 16px;
+        background: var(--surface-elevated);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .file-drop-panel {
+        padding: 24px;
+      }
+      .file-dropzone {
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        padding: 48px 24px;
+        text-align: center;
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        align-items: center;
+      }
+      .file-dropzone:hover {
+        border-color: var(--accent);
+        background: var(--surface-elevated);
+      }
+      .file-dropzone.drag-over {
+        border-color: var(--accent);
+        background: var(--accent-bg);
+        transform: scale(0.98);
+      }
+      .file-support-row {
+        display: inline-flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .format-chip {
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background: var(--surface-elevated);
+      }
+      .file-tasks-card {
+        padding: 24px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .file-task-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .file-task {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        background: var(--surface);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        transition: border-color 0.2s ease;
+      }
+      .file-task:hover {
+        border-color: var(--border-hover);
+      }
+      .file-task-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .file-task-name {
+        margin: 0;
+        font-weight: 500;
+        font-size: 13px;
+        color: var(--text-primary);
+      }
+      .file-task-meta {
+        margin: 4px 0 0;
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+      .file-task-progress {
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+      }
+      .file-task-progress-bar {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: var(--accent);
+        transition: width 0.3s ease;
+      }
+      .file-task-text {
+        width: 100%;
+        min-height: 100px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 12px;
+        resize: vertical;
+        font-size: 13px;
+        line-height: 1.5;
+        background: var(--surface-elevated);
+        color: var(--text-primary);
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+      }
+      .file-task-text:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .file-task-audio {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface-elevated);
+        padding: 4px;
+      }
+      .file-task-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .loading {
+        display: none !important;
+      }
+      @media (max-width: 960px) {
+        body {
+          padding: 0;
+        }
+        .page-header {
+          flex-direction: column;
+          align-items: flex-start;
+          padding: 16px 20px;
+        }
+        .workspace {
+          flex-direction: column;
+        }
+        .sidebar {
+          width: 100%;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          max-height: 50vh;
+        }
+        .transcript-panel,
+        .clips-panel,
+        .file-drop-panel,
+        .file-tasks-card {
+          padding: 16px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+      <div class="page">
+      <div id="mobileNoticeMask" class="modal-mask" role="dialog" aria-modal="true" aria-labelledby="mobileNoticeTitle" aria-describedby="mobileNoticeBody">
+        <div class="modal">
+          <h3 id="mobileNoticeTitle">移动端提示</h3>
+          <p id="mobileNoticeBody">检测到您正在使用手机，已自动启用移动布局。建议竖屏使用以获得更好的体验。</p>
+          <div class="modal-actions">
+            <button id="mobileNoticeClose" class="btn primary" type="button">好的</button>
+          </div>
+        </div>
+      </div>
+
+      <header class="page-header">
+        <div class="page-title-group">
+          <div class="page-logo">A</div>
+          <h1 class="page-title">Speech Console</h1>
+        </div>
+        <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-pressed="false">
+          Toggle Panel
+        </button>
+        <div class="tab-switcher" role="tablist" aria-label="ASR modes">
+          <button
+            id="tabRealtime"
+            class="tab-btn active"
+            type="button"
+            role="tab"
+            aria-controls="singleAudioContent"
+            data-tab-target="realtime"
+          >
+            Realtime
+          </button>
+          <button
+            id="tabFile"
+            class="tab-btn"
+            type="button"
+            role="tab"
+            aria-controls="fileAudioContent"
+            data-tab-target="file"
+          >
+            File Upload
+          </button>
+        </div>
+      </header>
+
+      <div
+        id="singleAudioContent"
+        class="tab-content loading workspace active"
+        data-tab-panel="realtime"
+        role="tabpanel"
+        aria-labelledby="tabRealtime"
+      >
+        <aside class="sidebar">
+          <div class="sidebar-section">
+            <div class="control-card">
+              <div>
+                <p class="panel-title">Audio Capture</p>
+                <p class="panel-hint">Record and transcribe in realtime</p>
+              </div>
+              <div class="waveform-panel">
+                <canvas id="waveformCanvas"></canvas>
+              </div>
+              <div class="control-buttons">
+                <button id="startBtn" class="btn primary" disabled>Start Recording</button>
+                <button id="stopBtn" class="btn danger" disabled>Stop</button>
+                <button id="clearBtn" class="btn ghost">Clear Transcript</button>
+              </div>
+              <div class="save-toggle">
+                <label class="switch">
+                  <input id="saveRecordingToggle" type="checkbox" />
+                  <span class="slider"></span>
+                </label>
+                <div class="switch-copy">
+                  <strong>保存录音文件</strong>
+                  <small>默认不保留，如需下载请开启</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sidebar-section">
+            <h2 class="hero-title">Engine Status</h2>
+            <div id="status">Loading...</div>
+          </div>
+          
+          <div class="sidebar-section">
+            <div class="control-card">
+              <div>
+                <p class="panel-title">Streaming Model</p>
+                <p class="panel-hint">Switch between Zipformer &amp; Paraformer</p>
+              </div>
+              <div class="vad-mode-group" role="radiogroup" aria-label="Streaming model">
+                <label class="radio-pill">
+                  <input type="radio" name="onlineModel" value="zipformer" checked />
+                  <span>
+                    <strong>Zipformer</strong>
+                    <em>Default</em>
+                  </span>
+                </label>
+                <label class="radio-pill">
+                  <input type="radio" name="onlineModel" value="paraformer" />
+                  <span>
+                    <strong>Paraformer</strong>
+                    <em>Int8</em>
+                  </span>
+                </label>
+              </div>
+              <div class="vad-status">
+                <span id="onlineModelStatus" class="status-pill muted">Selecting…</span>
+                <p id="onlineModelAssetHint" class="panel-hint">Will load encoder/decoder from assets</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="sidebar-section">
+              <div class="control-card vad-card">
+                <div>
+                  <p class="panel-title">Voice Activity Detection</p>
+                  <p class="panel-hint">Choose detection mode</p>
+                </div>
+                <div class="vad-mode-group" role="radiogroup" aria-label="VAD mode">
+                  <label class="radio-pill">
+                    <input type="radio" name="vadMode" value="silero" checked />
+                    <span>
+                      <strong>Silero</strong>
+                      <em>Fast</em>
+                    </span>
+                  </label>
+                <label class="radio-pill">
+                  <input type="radio" name="vadMode" value="ten" />
+                  <span>
+                    <strong>TEN</strong>
+                    <em>Precise</em>
+                  </span>
+                </label>
+              </div>
+              <div class="vad-status">
+                <span id="vadModeStatus" class="status-pill muted">Initializing…</span>
+                <p id="vadAssetHint" class="panel-hint">Loading VAD assets</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="sidebar-section">
+            <div class="translation-card">
+              <div class="translation-header-row">
+                <h2 class="hero-title">Two-Pass Recognition</h2>
+                <label class="switch">
+                  <input id="twoPassToggle" type="checkbox" checked />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="translation-body">
+                <div class="translation-toggle">
+                  <div class="switch-copy">
+                    <strong>Offline Enhancement</strong>
+                    <small>Use SenseVoice for better accuracy</small>
+                  </div>
+                </div>
+                <div class="translation-direction">
+                  <span class="translation-direction-label">Backend</span>
+                  <select id="twoPassBackend">
+                    <option value="wasm">WASM</option>
+                    <option value="ort-webgpu">WebGPU (ORT)</option>
+                  </select>
+                </div>
+              </div>
+              <span id="twoPassStatusPill" class="status-pill active">Enabled</span>
+            </div>
+          </div>
+          
+          <div class="sidebar-section">
+            <div class="translation-card">
+              <div class="translation-header-row">
+                <h2 class="hero-title">Translation</h2>
+                <label class="switch">
+                  <input id="translationToggle" type="checkbox" />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="translation-direction">
+                <span class="translation-direction-label">Direction</span>
+                <select id="translationDirection">
+                  <option value="en-zh">EN → 中文</option>
+                  <option value="zh-en">中文 → EN</option>
+                </select>
+              </div>
+              <span id="translationStatusPill" class="status-pill muted">Off</span>
+            </div>
+          </div>
+        </aside>
+
+        <div class="main-column">
+          <section class="transcript-panel">
+            <textarea
+              id="results"
+              rows="20"
+              placeholder="Transcript will appear here..."
+              readonly
+            ></textarea>
+          </section>
+
+          <section class="clips-panel">
+            <div id="sound-clips"></div>
+          </section>
+        </div>
+      </div>
+
+      <div
+        id="fileAudioContent"
+        class="tab-content loading workspace"
+        data-tab-panel="file"
+        role="tabpanel"
+        aria-labelledby="tabFile"
+      >
+        <aside class="sidebar file-sidebar">
+          <div class="sidebar-section">
+            <h2 class="hero-title">Batch Transcription</h2>
+            <p class="panel-hint" style="margin-bottom: 12px;">Drop audio files for automatic transcription</p>
+            <ul class="file-meta-list">
+              <li>Supports MP3, MP4, WAV formats</li>
+              <li>Processes locally in browser</li>
+              <li>No data uploaded to servers</li>
+            </ul>
+          </div>
+          
+          <div class="file-status-card">
+            <div>
+              <p class="panel-title">Queue Status</p>
+              <p class="panel-hint">All processing happens locally</p>
+            </div>
+            <span id="fileStatusLabel" class="status-pill muted">Loading…</span>
+            <button id="fileClearBtn" class="btn ghost" type="button" disabled>Clear Completed</button>
+          </div>
+        </aside>
+        <div class="main-column">
+          <section class="file-drop-panel">
+            <div id="fileDropzone" class="file-dropzone">
+              <div>
+                <p class="panel-title" style="margin-bottom: 8px;">Drop files or click to upload</p>
+                <p class="panel-hint">All processing happens locally in your browser</p>
+              </div>
+              <div class="file-support-row">
+                <span class="format-chip">MP3</span>
+                <span class="format-chip">MP4</span>
+                <span class="format-chip">WAV</span>
+                <span class="format-chip">M4A</span>
+              </div>
+              <div>
+                <button id="fileBrowseBtn" class="btn primary" type="button">Choose Files</button>
+                <input id="filePicker" type="file" accept=".mp3,.mp4,.m4a,.wav,audio/*,video/mp4" multiple hidden />
+              </div>
+            </div>
+          </section>
+          <section class="file-tasks-card">
+            <div id="fileTaskList" class="file-task-list">
+              <p class="panel-hint" id="fileEmptyHint" style="text-align: center; margin: 40px 0; color: var(--text-tertiary);">
+                No files yet. Drop audio files to begin.
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script src="sherpa-onnx-asr.js"></script>
+    <script src="sherpa-onnx-vad.js"></script>
+    <script src="app-asr.js"></script>
+    <script src="sherpa-onnx-wasm-main-asr.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./service-worker.js')
+              .catch((err) => console.error('SW registration failed', err));
+        });
+      }
+    </script>
+  </body>
+</html>

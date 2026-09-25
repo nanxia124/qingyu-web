@@ -108,7 +108,7 @@ export default function AdminOpsPage() {
                 <div className="text-[11px] text-text-muted mt-1">{new Date(a.createdAt).toLocaleString()}</div>
               </div>
               {a.status === "open" ? (
-                <button onClick={() => ackmessage.error(a.id)} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-90">确认</button>
+                <button onClick={() => ackAlert(a.id)} className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:opacity-90">确认</button>
               ) : (
                 <span className="text-xs text-text-muted flex items-center gap-1"><ShieldCheck size={13} /> 已确认{a.acknowledgedBy ? `: ${a.acknowledgedBy}` : ""}</span>
               )}

@@ -142,6 +142,7 @@ const DEFAULT_BLEND_PROMPT = `请对这张图片进行光影融合优化，保�
 5. 不要添加任何新元素，不要移除任何现有内容，仅做光影层面的自然融合`
 
 function PromptConfig() {
+    const { message } = App.useApp()
     const [blendPrompt, setBlendPrompt] = useState('')
     const [originalPrompt, setOriginalPrompt] = useState('')
     const [isEditing, setIsEditing] = useState(false)

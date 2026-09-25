@@ -1496,7 +1496,10 @@ const server = http.createServer(async (req, res) => {
       const email = url.searchParams.get("email") || `${uid}@local.dev`;
       try {
         const user = await postgresBilling.ensureUser(uid, email, "");
-        const session = await postgresBilling.registerSession(uid, { clientType: "dev-login" });
+        const session = await postgresBilling.registerSession(uid, {
+          clientType: "dev-login",
+          installationId: url.searchParams.get("installationId") || "",
+        });
         const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
         const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
         // JSON 模式：供前端 /dev-login 页面用 fetch 拿 token，避免临时 HTML 页跳转丢登录态

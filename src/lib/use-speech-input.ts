@@ -24,11 +24,17 @@ export function useSpeechInput(options: UseSpeechInputOptions = {}) {
 
     setIsLoading(true);
     try {
-      const asr = new SpeechASR({
-        vadMode: 'silero',
+      const modelPath = '/models/sherpa-onnx-wasm-asr-1pass';
+      // 发布包的类型声明未包含标点配置，独立配置对象保留运行时支持的选项。
+      const speechOptions = {
+        vadMode: 'silero' as const,
         punctuation: { enabled: true },
         modelPaths: {
-          m_path: '/models/sherpa-onnx-wasm-asr-1pass',
+          data: `${modelPath}/sherpa-onnx-wasm-main-asr.data`,
+          wasmJs: `${modelPath}/sherpa-onnx-wasm-main-asr.js`,
+          wasm: `${modelPath}/sherpa-onnx-wasm-main-asr.wasm`,
+          asrJs: `${modelPath}/sherpa-onnx-asr.js`,
+          vadJs: `${modelPath}/sherpa-onnx-vad.js`,
         },
         onReady: () => {
           setIsReady(true);
@@ -48,7 +54,8 @@ export function useSpeechInput(options: UseSpeechInputOptions = {}) {
           setIsListening(false);
           callbacksRef.current.onError?.(error);
         },
-      });
+      };
+      const asr = new SpeechASR(speechOptions);
 
       asrRef.current = asr;
       await asr.init();

@@ -134,7 +134,7 @@ export function ModelPicker({ config, value, onChange, capability, className: _c
             >
                 <SelectTrigger
                     className={cn(
-                        "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-md !border !border-border !bg-transparent dark:!border-0 dark:!bg-secondary px-3 text-[13px] font-normal !shadow-none transition-colors",
+                        "canvas-composer-model-picker !h-[34px] w-fit max-w-full gap-2 !rounded-md !border !border-border !bg-transparent dark:!border-0 dark:!bg-secondary px-3 text-[13px] text-text font-normal !shadow-none transition-colors",
                         fullWidth ? "w-full min-w-0 justify-between" : "min-w-[9rem] justify-start",
                         "data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/20",
                     )}

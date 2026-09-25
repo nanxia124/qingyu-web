@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { FolderOpen, Search, Upload, MoreVertical, Heart, MessageCircle } from 'lucide-react'
-import { App, Tooltip } from 'antd'
+import { FolderOpen, Search, Upload, MoreVertical, Heart, MessageCircle, Download } from 'lucide-react'
+import { App, Modal, Tooltip } from 'antd'
+import { saveAs } from 'file-saver'
 import { cn } from '@/lib/utils'
+import { SearchInput } from '@/components/SearchInput'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import { useBillingStore } from '@/stores/useBillingStore'
 import { getInstallationId } from '@/lib/billing'
 
-type AssetType = 'image' | 'video' | 'doc' | 'all'
+type AssetType = 'image' | 'video' | 'audio' | 'doc' | 'file' | 'all'
 
 const typeTabs: { id: AssetType; label: string }[] = [
   { id: 'all', label: 'pages.assets.all' },
   { id: 'image', label: 'pages.assets.image' },
   { id: 'video', label: 'pages.assets.video' },
+  { id: 'audio', label: 'pages.assets.audio' },
   { id: 'doc', label: 'pages.assets.doc' },
+  { id: 'file', label: 'pages.assets.file' },
 ]
 
-type Asset = { id: string; name: string; type: string; createdAt: string; favorited: boolean; liked?: boolean; likeCount?: number; commentCount?: number }
+type Asset = { id: string; name: string; type: string; createdAt: string; favorited: boolean; liked?: boolean; likeCount?: number; commentCount?: number; metadata?: { mimeType?: string; sizeBytes?: number; sourceKind?: string } }
 type AssetComment = { id: string; content: string; authorEmail?: string; createdAt: string; parentId?: string | null }
 
 export default function AssetsPage() {
@@ -34,6 +38,10 @@ export default function AssetsPage() {
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [previewAsset, setPreviewAsset] = useState<Asset | null>(null)
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [previewText, setPreviewText] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
   const workspaceId = useBillingStore((state) => state.user?.workspaceId)
   const syncCursor = useRef(0)
 
@@ -93,19 +101,84 @@ export default function AssetsPage() {
     }
   }, [assets])
 
-  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    setUploading(true)
-    try {
-      await api.uploadAsset(file)
-      setReloadSeq((value) => value + 1)
-    } catch {
-      // 页面保持当前数据，上传失败由后续提示组件统一承接。
-    } finally {
-      setUploading(false)
+  useEffect(() => {
+    if (!previewAsset) return
+    let cancelled = false
+    setPreviewUrl('')
+    setPreviewText('')
+    setPreviewLoading(true)
+    let objectUrl = ''
+    const mimeType = previewAsset.metadata?.mimeType || ''
+    const usesDirectStreaming = previewAsset.type === 'image' || previewAsset.type === 'video' || previewAsset.type === 'audio' || mimeType === 'application/pdf'
+    const loadPreview = async () => {
+      if (usesDirectStreaming) {
+        try {
+          const result = await api.get<{ url: string }>(`/assets/${encodeURIComponent(previewAsset.id)}/read-url`)
+          if (!cancelled) setPreviewUrl(result.url)
+          return
+        } catch {
+          // 仅兼容尚未迁移到 COS 的历史文件，优先使用受保护的内容接口。
+        }
+      }
+      const blob = await api.fetchAssetBlob(previewAsset.id)
+      if (cancelled) return
+      const contentType = mimeType || blob.type
+      if (contentType.startsWith('text/')) {
+        const text = await blob.text()
+        if (!cancelled) setPreviewText(text)
+      } else {
+        objectUrl = URL.createObjectURL(blob)
+        setPreviewUrl(objectUrl)
+      }
     }
+    void loadPreview().catch((error) => {
+      if (!cancelled) message.error(error instanceof Error ? error.message : '文件读取失败，请重试')
+    }).finally(() => { if (!cancelled) setPreviewLoading(false) })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [previewAsset])
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    setUploading(true)
+    const uploadBatchId = crypto.randomUUID()
+    const results = await Promise.all(files.map(async (file) => {
+      try {
+        await api.uploadAsset(file, { uploadBatchId })
+        return { name: file.name, ok: true }
+      } catch (error) {
+        console.error('[assets] upload failed', file.name, error)
+        return { name: file.name, ok: false }
+      }
+    }))
+    const uploadedCount = results.filter((result) => result.ok).length
+    const failed = results.filter((result) => !result.ok)
+    if (uploadedCount) {
+      message.success(t('pages.assets.uploaded', { count: uploadedCount }))
+      setReloadSeq((value) => value + 1)
+    }
+    if (failed.length) message.error(t('pages.assets.uploadFailed', { count: failed.length, names: failed.slice(0, 3).map((result) => result.name).join('、') }))
+    setUploading(false)
+  }
+
+  const downloadAsset = async (asset: Asset) => {
+    try {
+      const blob = await api.fetchAssetBlob(asset.id)
+      saveAs(blob, asset.name || 'asset')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t('assets.downloadFailed'))
+    }
+  }
+
+  const closePreview = () => {
+    setPreviewAsset(null)
+    setPreviewUrl('')
+    setPreviewText('')
+    setPreviewLoading(false)
   }
 
   const handleLike = async (asset: Asset) => {
@@ -170,19 +243,11 @@ export default function AssetsPage() {
             </button>
           ))}
         </div>
-        <div className="relative ml-auto">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-muted" />
-          <input
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder={t("pages.assets.search")}
-            className="w-56 rounded-lg bg-input py-2 pl-9 pr-3 text-[14px] text-text outline-none placeholder:text-text-muted focus:ring-1 focus:ring-accent"
-          />
-        </div>
+        <SearchInput value={keyword} onChange={setKeyword} placeholder={t("pages.assets.search")} mode="collapsible" className="ml-auto" />
         <Tooltip title="上传到当前个人空间">
           <label className={cn('flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover', uploading && 'pointer-events-none opacity-50')}>
             <Upload className="size-4" /> {t('pages.assets.upload')}
-            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            <input type="file" className="hidden" accept="image/*,video/*,audio/*,text/plain,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple onChange={handleUpload} disabled={uploading} />
           </label>
         </Tooltip>
       </div>
@@ -191,15 +256,17 @@ export default function AssetsPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? <div className="col-span-full rounded-xl bg-card p-12 text-center text-[14px] text-text-muted">正在读取资产…</div> : filtered.map((a) => (
           <div key={a.id} className="group relative overflow-hidden rounded-xl bg-card transition-colors hover:bg-card-hover">
-            <div className="flex aspect-square items-center justify-center">
+            <button type="button" onClick={() => setPreviewAsset(a)} className="flex aspect-square w-full items-center justify-center">
               {previewUrls[a.id] ? <img src={previewUrls[a.id]} alt={a.name} className="size-full object-cover" loading="lazy" /> : <FolderOpen className="size-8 text-text-muted" />}
-            </div>
+            </button>
             <div className="p-3">
               <div className="truncate text-[14px] text-text">{a.name}</div>
               <div className="mt-1 text-[12px] text-text-muted">
                 {a.type} · {new Date(a.createdAt).toLocaleDateString()}
               </div>
               <div className="mt-3 flex items-center gap-2 text-[12px] text-text-muted">
+                <button onClick={() => setPreviewAsset(a)} className="rounded-md px-2 py-1 hover:bg-surface-hover">{t('pages.assets.view')}</button>
+                <button onClick={() => void downloadAsset(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover"><Download className="size-3.5" />{t('pages.assets.download')}</button>
                 <Tooltip title="点赞">
                   <button onClick={() => void handleLike(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover">
                     <Heart className={cn('size-3.5', a.liked && 'fill-red-400 text-red-400')} /> {a.likeCount || 0}
@@ -218,6 +285,10 @@ export default function AssetsPage() {
           </div>
         ))}
       </div>
+
+      <Modal title={previewAsset?.name || t('pages.assets.preview')} open={Boolean(previewAsset)} onCancel={closePreview} footer={previewAsset ? <button type="button" onClick={() => void downloadAsset(previewAsset)} className="rounded-lg bg-accent px-4 py-2 text-sm text-accent-foreground">{t('pages.assets.download')}</button> : null} width={900} destroyOnHidden>
+        {previewLoading ? <div className="py-16 text-center text-sm text-text-muted">{t('pages.assets.loading')}</div> : previewAsset?.type === 'image' && previewUrl ? <img src={previewUrl} alt={previewAsset.name} className="max-h-[70vh] w-full object-contain" /> : previewAsset?.type === 'video' && previewUrl ? <video src={previewUrl} controls className="max-h-[70vh] w-full bg-black" /> : previewAsset?.type === 'audio' && previewUrl ? <audio src={previewUrl} controls className="w-full" /> : previewAsset?.metadata?.mimeType === 'application/pdf' && previewUrl ? <iframe src={previewUrl} title={previewAsset.name} className="h-[70vh] w-full" /> : previewText ? <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap break-words text-sm">{previewText}</pre> : <div className="py-16 text-center text-sm text-text-muted">{t('pages.assets.unsupportedPreview')} {previewAsset ? ` ${previewAsset.metadata?.mimeType || ''}` : ''}</div>}
+      </Modal>
 
       {filtered.length === 0 && (
         <div className="mt-8 rounded-xl bg-card p-12 text-center text-[14px] text-text-muted">

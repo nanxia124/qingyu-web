@@ -81,9 +81,9 @@ async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
     return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
 }
 
-export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<UploadedFile> {
+export async function storeGeneratedAudio(blob: Blob, format = "mp3", assetMetadata: Record<string, unknown> = {}): Promise<UploadedFile> {
     const audio = blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
-    return uploadMediaFile(audio, "audio");
+    return uploadMediaFile(audio, "audio", { sourceKind: "generated", originalFilename: `generated-audio.${format}`, assetMetadata });
 }
 
 function assertAudioConfig(config: AiConfig, model: string) {

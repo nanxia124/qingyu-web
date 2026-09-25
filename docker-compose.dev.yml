@@ -1,0 +1,57 @@
+# 本地开发环境一键启动：数据库 + 后端
+# 用法：docker compose -f docker-compose.dev.yml up
+# 停止：docker compose -f docker-compose.dev.yml down
+
+services:
+  db:
+    image: postgres:16
+    container_name: qingyu-local-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: qingyu_local_dev
+      POSTGRES_DB: qingyu_business
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d qingyu_business"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./scripts/deploy
+      dockerfile: Dockerfile.dev
+    container_name: qingyu-local-api
+    environment:
+      PORT: "3001"
+      BILLING_STORE: postgres
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: qingyu_business
+      PGUSER: user
+      PGPASSWORD: qingyu_local_dev
+      NODE_ENV: development
+      DEV_LOGIN: "1"
+      # 本地直连独立测试桶；在根目录被 .gitignore 忽略的 .env 中填写，不要使用生产桶或提交密钥
+      COS_BUCKET_TEST: ${COS_BUCKET_TEST:-}
+      COS_REGION: ${COS_REGION:-ap-singapore}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+    ports:
+      - "3001:3001"
+    volumes:
+      # 挂载后端代码，改完自动生效
+      - ./scripts/deploy:/app
+      # node_modules 不挂载 Windows 目录，避免权限和性能问题
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

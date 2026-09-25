@@ -19,6 +19,7 @@ export default function BillingPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [automaticRenewalEnabled, setAutomaticRenewalEnabled] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showApply, setShowApply] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -33,6 +34,7 @@ export default function BillingPage() {
   useEffect(() => {
     if (isLoggedIn && authUser) {
       initFromAuth({ id: authUser.id, email: authUser.email }).then(() => refreshMe());
+      billingApi.renewalStatus().then((status) => setAutomaticRenewalEnabled(status.automaticRenewalEnabled)).catch(() => setAutomaticRenewalEnabled(false));
     }
   }, [isLoggedIn, authUser?.id]);
 
@@ -120,7 +122,8 @@ export default function BillingPage() {
           <div>
             <h2 className="text-lg font-medium text-text">当前订阅</h2>
             <p className="text-sm text-text-muted mt-1">
-              {planText} · {billingUser?.memberActive ? `下次续费：${expireText}` : "当前无生效订阅"}
+              {planText} · {billingUser?.memberActive ? `有效期至：${expireText}` : "当前无生效订阅"}
+              {billingUser?.memberActive && <span className="block">自动续费：{automaticRenewalEnabled ? "已开启" : "未开启，不会自动扣款"}</span>}
             </p>
           </div>
           <CreditCard size={28} className="text-accent" />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setBillingToken, getInstallationId } from '@/lib/billing'
+import { clearBillingToken, getInstallationId } from '@/lib/billing'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 /**
@@ -19,14 +19,14 @@ export default function DevLoginPage() {
     try {
       // 带上本机固定设备编号，后端据此复用同一会话，避免重复登录互相踢下线
       const loginUrl = `/api/dev-login?format=json&installationId=${encodeURIComponent(getInstallationId())}`
-      const res = await fetch(loginUrl, { headers: { Accept: 'application/json' } })
+      const res = await fetch(loginUrl, { headers: { Accept: 'application/json' }, credentials: 'include' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`)
-      const { token, uid, email } = data as { token: string; uid: string; email: string }
-      // 登录态全部在当前页面（localhost:5173 同源）写入，不会因跳转丢失
-      setBillingToken(token)
-      localStorage.setItem('token', token)
+      const { uid, email } = data as { uid: string; email: string }
+      // 登录票由服务端以 HttpOnly Cookie 写入；本地只保存非敏感的演示账号标记。
+      clearBillingToken()
       localStorage.setItem('appwrite_uid', uid)
+      localStorage.setItem('billing_token_user', uid)
       localStorage.setItem('dev_login', '1')
       localStorage.setItem('infinite-canvas:locale', 'zh-CN')
       localStorage.removeItem('infinite-canvas:locale-manual')

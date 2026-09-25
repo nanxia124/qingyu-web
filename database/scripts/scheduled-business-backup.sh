@@ -10,6 +10,9 @@ export PGUSER="${PGUSER:-user}"
 export BACKUP_DIR="${BACKUP_DIR:-/home/ubuntu/backups/qingyu}"
 export BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 export OBJECT_DIR="${OBJECT_DIR:-/home/ubuntu/qingyu-api/api-data/objects}"
+: "${BACKUP_AGE_RECIPIENT:?请设置 age 公钥 BACKUP_AGE_RECIPIENT}"
+: "${BACKUP_AGE_KEY_VERSION:?请设置密钥版本标记 BACKUP_AGE_KEY_VERSION}"
+command -v age >/dev/null || { echo '未安装 age，拒绝生成未加密备份' >&2; exit 1; }
 
 # 备份失败既要让 systemd 失败，也要在后台留下告警，避免只看日志才发现问题。
 # 告警按类型和 UTC 小时去重；告警写入失败不能掩盖原始备份失败。
@@ -50,7 +53,7 @@ if [[ -z "$backup_file" || ! -f "$backup_file" ]]; then
   record_backup_alert 'backup_failed' '数据库备份文件无效' '{"stage":"database_file"}'
   exit 1
 fi
-backup_stamp="$(basename "$backup_file" | sed -n "s/^${PGDATABASE}_\\(.*\\)\\.dump$/\\1/p")"
+backup_stamp="$(basename "$backup_file" | sed -n "s/^${PGDATABASE}_\\(.*\\)\\.dump\\.age$/\\1/p")"
 if [[ -z "$backup_stamp" ]]; then
   echo '无法从数据库备份文件名解析时间戳，拒绝生成无法自动配对的对象归档' >&2
   record_backup_alert 'backup_failed' '数据库备份时间戳无效' '{"stage":"timestamp"}'
@@ -60,11 +63,15 @@ fi
 # 文件本体和数据库元数据一起归档。数据库备份成功但对象归档失败时，后面的镜像步骤会明确失败，避免留下“记录在、文件不在”的假完整备份。
 object_archive=""
 if [[ -d "$OBJECT_DIR" ]]; then
-  object_archive="$BACKUP_DIR/qingyu_objects_${backup_stamp}.tar.gz"
-  if ! tar -czf "$object_archive" -C "$OBJECT_DIR" .; then
+  object_archive="$BACKUP_DIR/qingyu_objects_${backup_stamp}.tar.gz.age"
+  object_partial="${object_archive}.partial"
+  rm -f -- "$object_partial"
+  if ! tar -czf - -C "$OBJECT_DIR" . | age -r "$BACKUP_AGE_RECIPIENT" -o "$object_partial"; then
+    rm -f -- "$object_partial"
     record_backup_alert 'backup_failed' '对象归档生成失败' '{"stage":"object_archive"}'
     exit 1
   fi
+  mv -- "$object_partial" "$object_archive"
   sha256sum "$object_archive" > "$object_archive.sha256"
   chmod 600 -- "$object_archive" "$object_archive.sha256"
 fi
@@ -150,5 +157,6 @@ if [[ -n "${BACKUP_MIRROR_DIR:-}" ]]; then
 fi
 
 find "$BACKUP_DIR" -maxdepth 1 -type f \
-  \( -name "${PGDATABASE}_*.dump" -o -name "${PGDATABASE}_*.dump.sha256" -o -name "qingyu_objects_*.tar.gz" -o -name "qingyu_objects_*.tar.gz.sha256" \) \
+  \( -name "${PGDATABASE}_*.dump" -o -name "${PGDATABASE}_*.dump.sha256" -o -name "${PGDATABASE}_*.dump.age" -o -name "${PGDATABASE}_*.dump.age.sha256" \
+     -o -name "qingyu_objects_*.tar.gz" -o -name "qingyu_objects_*.tar.gz.sha256" -o -name "qingyu_objects_*.tar.gz.age" -o -name "qingyu_objects_*.tar.gz.age.sha256" \) \
   -mtime "+$BACKUP_RETENTION_DAYS" -print -delete

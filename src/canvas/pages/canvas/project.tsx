@@ -15,7 +15,7 @@ import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@canvas/lib/image-utils";
 import { imageReferenceLabel } from "@canvas/lib/image-reference-prompt";
 import { canvasThemes, type CanvasBackgroundMode } from "@canvas/lib/canvas-theme";
-import { useAssetStore } from "@canvas/stores/use-asset-store";
+import { externalizeTextAsset, useAssetStore } from "@canvas/stores/use-asset-store";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { ImageViewer } from "@/components/ImageViewer";
@@ -1879,46 +1879,48 @@ function InfiniteCanvasPage() {
 
     const saveNodeAsset = useCallback(
         async (node: CanvasNodeData) => {
-            if (node.type === CanvasNodeType.Text) {
-                const content = node.metadata?.content?.trim();
-                if (!content) return message.error(t("canvas.projectPage.noTextToSave"));
-                addAsset({ kind: "text", title: node.metadata?.prompt?.slice(0, 24) || t("canvas.projectPage.canvasText"), coverUrl: "", tags: [], source: "Canvas", data: { content }, metadata: { source: "canvas", nodeId: node.id } });
+            try {
+                const title = node.metadata?.prompt?.slice(0, 24) || (
+                    node.type === CanvasNodeType.Text ? t("canvas.projectPage.canvasText")
+                        : node.type === CanvasNodeType.Video ? t("canvas.projectPage.canvasVideo")
+                            : t("canvas.projectPage.canvasImage")
+                );
+                const metadata = { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt };
+
+                if (node.type === CanvasNodeType.Text) {
+                    const content = node.metadata?.content?.trim();
+                    if (!content) return message.error(t("canvas.projectPage.noTextToSave"));
+                    const stored = await externalizeTextAsset({
+                        id: "draft", kind: "text", title, coverUrl: "", tags: [], source: "Canvas",
+                        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), metadata,
+                        data: { content },
+                    });
+                    addAsset({ ...stored, data: { ...stored.data, content } });
+                } else if (node.type === CanvasNodeType.Video) {
+                    if (!node.metadata?.content) return message.error(t("canvas.projectPage.noVideoToSave"));
+                    const stored = node.metadata.storageKey
+                        ? { url: node.metadata.content, storageKey: node.metadata.storageKey, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" }
+                        : await uploadMediaFile(node.metadata.content, "video", { sourceKind: "generated", originalFilename: `${title}.mp4` });
+                    addAsset({
+                        kind: "video", title, coverUrl: "", tags: [], source: "Canvas",
+                        data: { url: stored.url, storageKey: stored.storageKey, width: node.width, height: node.height, bytes: stored.bytes, mimeType: stored.mimeType },
+                        metadata,
+                    });
+                } else {
+                    if (!node.metadata?.content) return message.error(t("canvas.projectPage.noImageToSave"));
+                    const stored = node.metadata.storageKey
+                        ? { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.metadata.naturalWidth || node.width, height: node.metadata.naturalHeight || node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "image/png" }
+                        : await uploadImage(node.metadata.content, { sourceKind: "generated", originalFilename: `${title}.png` });
+                    addAsset({
+                        kind: "image", title, coverUrl: stored.url, tags: [], source: "Canvas",
+                        data: { dataUrl: stored.url, storageKey: stored.storageKey, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType },
+                        metadata,
+                    });
+                }
                 message.success(t("common.addedToAssets"));
-                return;
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : t("canvas.sidePanel.addFailed"));
             }
-            if (node.type === CanvasNodeType.Video) {
-                if (!node.metadata?.content) return message.error(t("canvas.projectPage.noVideoToSave"));
-                addAsset({
-                    kind: "video",
-                    title: node.metadata?.prompt?.slice(0, 24) || t("canvas.projectPage.canvasVideo"),
-                    coverUrl: "",
-                    tags: [],
-                    source: "Canvas",
-                    data: { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.width, height: node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" },
-                    metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt },
-                });
-                message.success(t("common.addedToAssets"));
-                return;
-            }
-            if (!node.metadata?.content) return message.error(t("canvas.projectPage.noImageToSave"));
-            const dataUrl = node.metadata.storageKey ? "" : node.metadata.content;
-            addAsset({
-                kind: "image",
-                title: node.metadata?.prompt?.slice(0, 24) || t("canvas.projectPage.canvasImage"),
-                coverUrl: node.metadata.content,
-                tags: [],
-                source: "Canvas",
-                data: {
-                    dataUrl,
-                    storageKey: node.metadata.storageKey,
-                    width: node.metadata.naturalWidth || node.width,
-                    height: node.metadata.naturalHeight || node.height,
-                    bytes: node.metadata.bytes || getDataUrlByteSize(dataUrl),
-                    mimeType: node.metadata.mimeType || "image/png",
-                },
-                metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt },
-            });
-            message.success(t("common.addedToAssets"));
         },
         [addAsset, message, t],
     );

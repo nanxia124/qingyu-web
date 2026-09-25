@@ -20,6 +20,24 @@ interface ApiKey {
     created_at: number;
 }
 
+type UsageRange = "today" | "d7" | "d30";
+type ApiUsageEntry = {
+    id: string;
+    requestId: string | null;
+    occurredAt: string;
+    completedAt: string | null;
+    userEmail: string;
+    provider: string;
+    model: string;
+    quantity: number;
+    status: "reserved" | "committed" | "released" | "failed" | "unknown";
+    latencyMs: number | null;
+    targetPath: string;
+    statusCode: number | null;
+    phase: string;
+};
+type ApiUsagePage = { total: number; limit: number; offset: number; items: ApiUsageEntry[] };
+
 // 仅用于卡片展示：把模型 id 转成更美观的写法，不改原始值
 const MODEL_TOKEN: Record<string, string> = {
     "gpt": "GPT", "grok": "Grok", "gemini": "Gemini", "claude": "Claude",
@@ -255,6 +273,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     const providerRef = useRef<HTMLDivElement>(null);
     const [keyStats, setKeyStats] = useState<Record<number, any>>({});
     const [keyHistory, setKeyHistory] = useState<Record<number, any>>({});
+    const [expandedUsageKey, setExpandedUsageKey] = useState<string | null>(null);
+    const [usagePages, setUsagePages] = useState<Record<string, ApiUsagePage>>({});
+    const [usageErrors, setUsageErrors] = useState<Record<string, string>>({});
+    const [loadingUsageKey, setLoadingUsageKey] = useState<string | null>(null);
     // 卡片模型分组折叠状态：key 为 `${cardId}:${brand}`，未记录即默认折叠
     const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({});
     // 卡片级折叠：key 为卡片 id，默认折叠；折叠后整张卡片下方模型区全部收起
@@ -278,6 +300,79 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             });
             if (res.ok) setKeyHistory(await res.json());
         } catch { /* 忽略 */ }
+    };
+
+    const usageDetailKey = (channelId: number, range: UsageRange, capability: string) => `${channelId}:${range}:${capability}`;
+
+    const loadKeyUsage = async (channelId: number, range: UsageRange, capability: string, offset = 0) => {
+        const detailKey = usageDetailKey(channelId, range, capability);
+        setLoadingUsageKey(detailKey);
+        setUsageErrors(current => ({ ...current, [detailKey]: "" }));
+        try {
+            const params = new URLSearchParams({ range, capability, limit: "50", offset: String(offset) });
+            const response = await fetch(`${API}/api/admin/api-keys/${channelId}/usage?${params}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            setUsagePages(current => ({ ...current, [detailKey]: data }));
+        } catch (error: any) {
+            setUsageErrors(current => ({ ...current, [detailKey]: error?.message || "调用明细读取失败" }));
+        } finally {
+            setLoadingUsageKey(current => current === detailKey ? null : current);
+        }
+    };
+
+    const toggleKeyUsage = (channelId: number, range: UsageRange, capability = "全部") => {
+        const detailKey = usageDetailKey(channelId, range, capability);
+        if (expandedUsageKey === detailKey) {
+            setExpandedUsageKey(null);
+            return;
+        }
+        setExpandedUsageKey(detailKey);
+        void loadKeyUsage(channelId, range, capability);
+    };
+
+    const renderKeyUsageDetails = (channelId: number, range: UsageRange, capability: string) => {
+        const detailKey = usageDetailKey(channelId, range, capability);
+        if (expandedUsageKey !== detailKey) return null;
+        const page = usagePages[detailKey];
+        const formatUsageTime = (value: string | null) => value
+            ? new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "short", timeStyle: "medium" }).format(new Date(value))
+            : "尚未完成";
+        const statusLabel: Record<ApiUsageEntry["status"], string> = {
+            reserved: "进行中", committed: "成功", released: "已释放", failed: "失败", unknown: "结果未知",
+        };
+        return (
+            <div className="mt-2 w-full basis-full space-y-2 rounded-lg bg-secondary p-3 text-xs text-gray-400">
+                {loadingUsageKey === detailKey && <div>正在读取调用明细…</div>}
+                {usageErrors[detailKey] && <div role="alert" className="flex items-center justify-between gap-2 text-red-300"><span>{usageErrors[detailKey]}</span><button type="button" onClick={() => void loadKeyUsage(channelId, range, capability, page?.offset || 0)} className="rounded px-2 py-1 hover:bg-border">重试</button></div>}
+                {page && page.items.map(entry => (
+                    <div key={entry.id} className="space-y-1 rounded-md bg-input px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span>{formatUsageTime(entry.occurredAt)}</span>
+                            <span className={entry.status === "committed" ? "text-emerald-300" : entry.status === "failed" ? "text-red-300" : "text-amber-300"}>{statusLabel[entry.status]}</span>
+                            <span>{entry.userEmail}</span>
+                            <span>{entry.model || "未记录模型"}</span>
+                            <span>{entry.targetPath || "未记录路径"}</span>
+                            {entry.statusCode !== null && <span>HTTP {entry.statusCode}</span>}
+                            {entry.latencyMs !== null && <span>{entry.latencyMs}ms</span>}
+                        </div>
+                        <div className="break-all font-mono text-[10px] text-gray-600" title={entry.id}>记录 {entry.id} · 请求 {entry.requestId || "无外部请求编号"} · 完成 {formatUsageTime(entry.completedAt)}</div>
+                    </div>
+                ))}
+                {page && page.total === 0 && <div>所选时间和类型没有调用记录。</div>}
+                {page && page.total > page.limit && (
+                    <div className="flex items-center justify-between pt-1">
+                        <span>{page.offset + 1}–{Math.min(page.offset + page.limit, page.total)} / {page.total}</span>
+                        <div className="flex gap-2">
+                            <button type="button" disabled={page.offset === 0 || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, Math.max(0, page.offset - page.limit))} className="rounded bg-input px-2 py-1 disabled:opacity-40">上一页</button>
+                            <button type="button" disabled={page.offset + page.limit >= page.total || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, page.offset + page.limit)} className="rounded bg-input px-2 py-1 disabled:opacity-40">下一页</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
     };
 
     useEffect(() => {
@@ -887,11 +982,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                             <div key={c} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
                                                                                 <span className="w-8 shrink-0 text-gray-500">{c}</span>
                                                                                 <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(m.calls)}</span></span>
+                                                                                <span className="text-gray-500">成功 <span className="text-emerald-300">{m.successes}</span></span>
+                                                                                <span className="text-gray-500">失败 <span className={failCls(m.failures)}>{m.failures}</span></span>
                                                                                 <span className="text-gray-500">成功率 <span className={rateCls(m.successRate)}>{pct(m.successRate)}</span></span>
                                                                                 <span className="text-gray-500">失败率 <span className={rateCls(m.failRate)}>{pct(m.failRate)}</span></span>
                                                                                 <span className="text-gray-500">连接率 <span className={rateCls(m.connRate)}>{pct(m.connRate)}</span></span>
                                                                                 {showLatency && <span className="text-gray-500">日均连接率 <span className={rateCls(m.avgConnRate)}>{pct(m.avgConnRate)}</span></span>}
                                                                                 {showLatency && m.avgLatencyMs != null && <span className="text-gray-500">平均延迟 <span className="text-gray-200">{m.avgLatencyMs}ms</span></span>}
+                                                                                <button type="button" onClick={() => toggleKeyUsage(k.id, showLatency ? "d7" : "d30", c)} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
+                                                                                {renderKeyUsageDetails(k.id, showLatency ? "d7" : "d30", c)}
                                                                             </div>
                                                                         );
                                                                     })}
@@ -907,21 +1006,33 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                 {hasSummary && (
                                                                     <div className="space-y-0.5">
                                                                         {today && today.calls > 0 && (
-                                                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.todayCalls")}</span>
-                                                                                <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(today.calls)}</span></span>
-                                                                                <span className="text-gray-500">成功 <span className="text-emerald-300">{today.successes}</span></span>
-                                                                                <span className="text-gray-500">失败 <span className={failCls(today.failures)}>{today.failures}</span></span>
+                                                                            <div>
+                                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
+                                                                                    <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.todayCalls")}（上海时间）</span>
+                                                                                    <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(today.calls)}</span></span>
+                                                                                    <span className="text-gray-500">成功 <span className="text-emerald-300">{today.successes}</span></span>
+                                                                                    <span className="text-gray-500">失败 <span className={failCls(today.failures)}>{today.failures}</span></span>
+                                                                                    <span className="text-gray-500">进行中 <span className="text-amber-300">{today.inFlight}</span></span>
+                                                                                    <span className="text-gray-500">已释放 <span>{today.released}</span></span>
+                                                                                    <span className="text-gray-500">结果未知 <span className="text-amber-300">{today.unknown}</span></span>
+                                                                                    <button type="button" onClick={() => toggleKeyUsage(k.id, "today")} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
+                                                                                </div>
+                                                                                {renderKeyUsageDetails(k.id, "today", "全部")}
                                                                             </div>
                                                                         )}
                                                                         {week && week.calls > 0 && (
-                                                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.weekCalls")}</span>
-                                                                                <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(week.calls)}</span></span>
-                                                                                <span className="text-gray-500">成功 <span className="text-emerald-300">{week.successes}</span></span>
-                                                                                <span className="text-gray-500">失败 <span className={failCls(week.failures)}>{week.failures}</span></span>
-                                                                                <span className="text-gray-500">成功率 <span className={rateCls(week.successRate)}>{pct(week.successRate)}</span></span>
-                                                                                <span className="text-gray-500">失败率 <span className={rateCls(week.failRate)}>{pct(week.failRate)}</span></span>
+                                                                            <div>
+                                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
+                                                                                    <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.weekCalls")}</span>
+                                                                                    <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(week.calls)}</span></span>
+                                                                                    <span className="text-gray-500">成功 <span className="text-emerald-300">{week.successes}</span></span>
+                                                                                    <span className="text-gray-500">失败 <span className={failCls(week.failures)}>{week.failures}</span></span>
+                                                                                    <span className="text-gray-500">进行中 <span className="text-amber-300">{week.inFlight}</span></span>
+                                                                                    <span className="text-gray-500">已释放 <span>{week.released}</span></span>
+                                                                                    <span className="text-gray-500">结果未知 <span className="text-amber-300">{week.unknown}</span></span>
+                                                                                    <button type="button" onClick={() => toggleKeyUsage(k.id, "d7")} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
+                                                                                </div>
+                                                                                {renderKeyUsageDetails(k.id, "d7", "全部")}
                                                                             </div>
                                                                         )}
                                                                     </div>

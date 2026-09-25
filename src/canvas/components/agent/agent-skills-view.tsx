@@ -3,6 +3,7 @@ import { App, Button, Collapse, Dropdown, Form, Input, Modal, Select, Switch, To
 import type { MenuProps } from "antd";
 import { Check, ChevronDown, CircleAlert, FilePenLine, LoaderCircle, LockKeyhole, MessageSquareText, Plus, RefreshCw, Search, Sparkles, Trash2, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { SearchInput } from "@/components/SearchInput";
 
 import { canvasThemes } from "@canvas/lib/canvas-theme";
 import { createCodexSkill, createCodexSkillDraft, deleteCodexSkill, fetchCodexSkill, postState, setCodexSkillEnabled, updateCodexSkill, type AgentSkillDetail, type AgentSkillDraft, type AgentSkillInterface, type AgentSkillScope, type AgentSkillSummary } from "@canvas/services/api/canvas-agent";
@@ -288,7 +289,7 @@ export function AgentSkillsView({ clientId }: { clientId: string }) {
                     </div>
                 </div>
                 <div className="mt-3 flex gap-2">
-                    <Input aria-label={t("agent.skills.search")} className="min-w-0 flex-1" allowClear disabled={!connected} value={query} onChange={(event) => setQuery(event.target.value)} prefix={<Search className="size-3.5" />} placeholder={t("agent.skills.search")} />
+                    <SearchInput value={query} onChange={setQuery} placeholder={t("agent.skills.search")} mode="expanded" className="min-w-0 flex-1" disabled={!connected} />
                     <Select<ScopeFilter>
                         size="small"
                         variant="borderless"

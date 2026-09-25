@@ -41,7 +41,9 @@ export type CanvasNodeText = {
     id: string;
     status: CanvasNodeStatus;
     errorDetails?: string;
-    content: string;
+    content?: string;
+    storageKey?: string;
+    textChecksum?: string;
 };
 
 export type CanvasNodeMetadata = {
@@ -73,12 +75,14 @@ export type CanvasNodeMetadata = {
     audioInstructions?: string;
     references?: string[];
     uploadedImages?: string[];
+    uploadedImageStorageKeys?: string[];
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
     images?: CanvasNodeImage[];
     primaryImageId?: string;
     storageKey?: string;
+    textChecksum?: string;
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
@@ -110,6 +114,7 @@ export type CanvasAssistantReference = {
     title: string;
     dataUrl?: string;
     storageKey?: string;
+    textChecksum?: string;
     text?: string;
 };
 
@@ -125,6 +130,8 @@ export type CanvasAssistantMessage = {
     role: "user" | "assistant" | "system" | "tool" | "error";
     title?: string;
     text: string;
+    textStorageKey?: string;
+    textChecksum?: string;
     meta?: string;
     detail?: unknown;
     references?: CanvasAssistantReference[];

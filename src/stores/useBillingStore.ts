@@ -1,22 +1,22 @@
 import { create } from "zustand";
-import { account } from "@/lib/appwrite";
 import {
   billingApi,
-  setBillingToken,
   clearBillingToken,
   type BillingUser,
   type Plan,
 } from "@/lib/billing";
 
+const BILLING_TOKEN_USER_KEY = "billing_token_user";
+
 interface BillingState {
   user: BillingUser | null;
   plans: Plan[];
   loading: boolean;
-  // 用 Appwrite 登录态初始化计费会话
-  initFromAuth: (authUser: { id: string; email?: string }, inviteCode?: string) => Promise<void>;
+  // 用当前已有的计费会话读取用户信息，不负责登录或接管在线设备
+  initFromAuth: (authUser: { id: string; email?: string }) => Promise<void>;
   refreshMe: () => Promise<void>;
   refreshPlans: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 export const useBillingStore = create<BillingState>((set) => ({
@@ -24,22 +24,28 @@ export const useBillingStore = create<BillingState>((set) => ({
   plans: [],
   loading: false,
 
-  initFromAuth: async (authUser, inviteCode) => {
-    if (!authUser?.id) return;
+  initFromAuth: async (authUser) => {
+    if (!authUser?.id) {
+      set({ user: null });
+      return;
+    }
     set({ loading: true });
     try {
-      // 未显式传入时，从链接 ?invite= 读取一次
-      let code = inviteCode;
-      if (!code) {
-        const m = window.location.search.match(/[?&]invite=([^&]+)/);
-        if (m) code = decodeURIComponent(m[1]);
+      // 只允许读取当前 Appwrite 账号对应的服务端会话，避免切换账号后展示旧账号资料。
+      if (localStorage.getItem(BILLING_TOKEN_USER_KEY) !== authUser.id) {
+        await billingApi.logout().catch(() => undefined);
+        clearBillingToken();
+        set({ user: null });
+        return;
       }
-      const appwriteJwt = await account.createJWT();
-      const res = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode: code, appwriteJwt: appwriteJwt.jwt });
-      setBillingToken(res.token);
+      const res = await billingApi.me();
       set({ user: res.user });
     } catch (e) {
-      console.error("[billing] 初始化失败", e);
+      console.error("[billing] 读取当前会话失败", e);
+      await billingApi.logout().catch(() => undefined);
+      clearBillingToken();
+      localStorage.removeItem(BILLING_TOKEN_USER_KEY);
+      set({ user: null });
     } finally {
       set({ loading: false });
     }
@@ -51,7 +57,9 @@ export const useBillingStore = create<BillingState>((set) => ({
       set({ user: res.user });
     } catch (e) {
       // token 失效则清掉
+      await billingApi.logout().catch(() => undefined);
       clearBillingToken();
+      localStorage.removeItem(BILLING_TOKEN_USER_KEY);
       set({ user: null });
     }
   },
@@ -100,8 +108,10 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  logout: () => {
+  logout: async () => {
+    await billingApi.logout().catch(() => undefined);
     clearBillingToken();
+    localStorage.removeItem(BILLING_TOKEN_USER_KEY);
     set({ user: null, plans: [] });
   },
 }));

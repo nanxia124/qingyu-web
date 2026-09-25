@@ -313,7 +313,7 @@ export default function AppLayout() {
               onClick={() => navigate("/")}
               className="flex h-8 w-[104px] items-center overflow-hidden whitespace-nowrap rounded-md transition-opacity hover:opacity-80"
             >
-              <img src="/litzone-wordmark.svg" alt="litzone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
+              <img src="/litzone-wordmark.svg" alt="LitZone" className="mt-[2px] h-[38px] w-auto max-w-none object-contain dark:invert" />
             </button>
           </Tooltip>
           <span className="absolute left-[160px] top-1/2 -translate-y-1/2"><EnvironmentBadge /></span>

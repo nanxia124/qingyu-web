@@ -1,0 +1,14 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# 先装依赖，利用 Docker 层缓存
+COPY package.json package-lock.json ./
+RUN npm install --omit=dev
+
+# 复制后端代码
+COPY . .
+
+EXPOSE 3001
+
+CMD ["node", "api-server.mjs"]

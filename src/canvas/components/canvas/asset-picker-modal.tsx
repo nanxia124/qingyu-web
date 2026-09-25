@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Empty, Input, Modal, Pagination, Tag } from "antd";
+import { App, Empty, Input, Modal, Pagination, Tag } from "antd";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@canvas/lib/utils";
-import { getImagePreviewRevision, subscribeImagePreviews } from "@canvas/services/image-storage";
-import { assetCoverUrl, useAssetStore, type Asset } from "@canvas/stores/use-asset-store";
+import { getImagePreviewRevision, resolveImageUrl, subscribeImagePreviews } from "@canvas/services/image-storage";
+import { readMediaText, resolveMediaUrl } from "@canvas/services/file-storage";
+import { api } from "@/lib/api";
+import { assetCoverUrl, useAssetStore, type Asset, type ImageAsset, type TextAsset, type VideoAsset } from "@canvas/stores/use-asset-store";
+
+type InsertableAsset = TextAsset | ImageAsset | VideoAsset;
+type RemoteAsset = { id: string; name: string; type: string; createdAt: string; metadata?: Record<string, unknown> };
 
 export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
 
@@ -28,6 +33,26 @@ export function AssetPickerModal({ open, onInsert, onClose }: Props) {
 const PAGE_SIZE = 8;
 
 const kindOptions = ["all", "text", "image", "video"];
+
+function remoteAssetForPicker(asset: RemoteAsset): InsertableAsset | null {
+    const metadata = asset.metadata || {};
+    const mimeType = typeof metadata.mimeType === "string" ? metadata.mimeType : "application/octet-stream";
+    const storageKey = `${asset.type === "image" ? "image" : asset.type === "video" ? "video" : "text"}:${asset.id}`;
+    const base = {
+        id: asset.id,
+        title: asset.name,
+        coverUrl: "",
+        tags: [],
+        source: typeof metadata.sourceKind === "string" ? metadata.sourceKind : "",
+        metadata,
+        createdAt: asset.createdAt,
+        updatedAt: asset.createdAt,
+    };
+    if (asset.type === "image") return { ...base, kind: "image", data: { dataUrl: "", storageKey, width: Number(metadata.width) || 0, height: Number(metadata.height) || 0, bytes: Number(metadata.sizeBytes) || 0, mimeType } };
+    if (asset.type === "video") return { ...base, kind: "video", data: { url: "", storageKey, width: Number(metadata.width) || 0, height: Number(metadata.height) || 0, bytes: Number(metadata.sizeBytes) || 0, mimeType } };
+    if ((asset.type === "file" || asset.type === "doc") && mimeType.startsWith("text/")) return { ...base, kind: "text", data: { content: "", storageKey } };
+    return null;
+}
 
 function PickerCard({ title, kind, cover, onClick }: { title: string; kind: string; cover: string; onClick: () => void }) {
     const { t } = useTranslation();
@@ -54,20 +79,38 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
 }
 
 function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => void }) {
+    const { message } = App.useApp();
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const assets = useAssetStore((state) => state.assets);
+    const [remoteAssets, setRemoteAssets] = useState<RemoteAsset[]>([]);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState("all");
     const [page, setPage] = useState(1);
 
+    useEffect(() => {
+        let cancelled = false;
+        void api.get<RemoteAsset[]>("/assets", { type: "all" }).then((items) => {
+            if (!cancelled) setRemoteAssets(items);
+        }).catch(() => {
+            if (!cancelled) setRemoteAssets([]);
+        });
+        return () => { cancelled = true; };
+    }, []);
+
+    const allAssets = useMemo(() => {
+        const localIds = new Set(assets.map((asset) => asset.data.storageKey?.split(":").at(-1)).filter(Boolean));
+        const remote = remoteAssets.map(remoteAssetForPicker).filter((asset): asset is InsertableAsset => Boolean(asset) && !localIds.has(asset.data.storageKey?.split(":").at(-1)));
+        return [...assets, ...remote];
+    }, [assets, remoteAssets]);
+
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return assets
-            .filter((a) => a.kind === "text" || a.kind === "image" || a.kind === "video")
+        return allAssets
+            .filter((a): a is InsertableAsset => a.kind === "text" || a.kind === "image" || a.kind === "video")
             .filter((a) => kindFilter === "all" || a.kind === kindFilter)
             .filter((a) => !query || [a.title, ...(a.tags || [])].join(" ").toLowerCase().includes(query));
-    }, [assets, keyword, kindFilter]);
+    }, [allAssets, keyword, kindFilter]);
 
     const visible = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
@@ -76,11 +119,23 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
         setPage((v) => Math.min(v, maxPage));
     }, [filtered.length]);
 
-    const handleInsert = (asset: Asset) => {
-        if (asset.kind === "text") {
-            onInsert({ kind: "text", content: asset.data.content, title: asset.title });
-        } else {
-            onInsert(asset.kind === "video" ? { kind: "video", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height } : { kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title });
+    const handleInsert = async (asset: InsertableAsset) => {
+        try {
+            if (asset.kind === "text") {
+                const content = asset.data.content || (asset.data.storageKey ? await readMediaText(asset.data.storageKey) : "");
+                if (content === null) throw new Error("无法读取这份文本素材");
+                onInsert({ kind: "text", content, title: asset.title });
+            } else if (asset.kind === "video") {
+                const url = asset.data.url || (asset.data.storageKey ? await resolveMediaUrl(asset.data.storageKey) : "");
+                if (!url) throw new Error("无法读取这段视频素材");
+                onInsert({ kind: "video", url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height });
+            } else {
+                const dataUrl = asset.data.dataUrl || (asset.data.storageKey ? await resolveImageUrl(asset.data.storageKey) : "");
+                if (!dataUrl) throw new Error("无法读取这张图片素材");
+                onInsert({ kind: "image", dataUrl, storageKey: asset.data.storageKey, title: asset.title });
+            }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "读取素材失败，请重试");
         }
     };
 
@@ -119,7 +174,7 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
             {visible.length ? (
                 <div className="grid grid-cols-4 gap-3">
                     {visible.map((asset) => (
-                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={assetCoverUrl(asset)} onClick={() => handleInsert(asset)} />
+                        <PickerCard key={asset.id} title={asset.title} kind={asset.kind} cover={assetCoverUrl(asset)} onClick={() => void handleInsert(asset)} />
                     ))}
                 </div>
             ) : (

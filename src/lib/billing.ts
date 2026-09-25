@@ -1,21 +1,23 @@
 ﻿/**
  * 计费系统 API 客户端
- * 客户接口用 billing_token，管理端接口用 admin_token
+ * 客户身份由服务端 HttpOnly Cookie 管理；管理端仍使用 admin_token。
  */
 const API = import.meta.env.VITE_API_URL || "";
 
-const BILLING_TOKEN_KEY = "billing_token";
 const ADMIN_TOKEN_KEY = "admin_token";
 
-export function getBillingToken(): string | null {
-  return localStorage.getItem(BILLING_TOKEN_KEY);
-}
-export function setBillingToken(t: string) {
-  localStorage.setItem(BILLING_TOKEN_KEY, t);
-}
 export function clearBillingToken() {
-  localStorage.removeItem(BILLING_TOKEN_KEY);
+  if (typeof window === "undefined") return;
+  try {
+    // 清除旧版本可被网页脚本读取的客户票；管理员令牌和 Agent 本地令牌不在此范围。
+    localStorage.removeItem("billing_token");
+    localStorage.removeItem("token");
+  } catch {
+    // 浏览器禁用本地存储时，Cookie 登录仍可正常工作。
+  }
 }
+
+clearBillingToken();
 
 export function getInstallationId() {
   const key = "qingyu-installation-id";
@@ -29,12 +31,12 @@ export function getInstallationId() {
 
 async function request<T = any>(path: string, options: { method?: string; body?: any; token?: string } = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const tok = options.token || getBillingToken();
-  if (tok) headers["Authorization"] = `Bearer ${tok}`;
+  if (options.token) headers["Authorization"] = `Bearer ${options.token}`;
   const res = await fetch(`${API}${path}`, {
     method: options.method || "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    credentials: options.token ? "omit" : "include",
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : data.error?.message || `请求失败 (${res.status})`);
@@ -61,10 +63,18 @@ export interface Plan {
   name: string;
   priceCents: number;
   durationDays: number;
+  billingInterval?: "none" | "month" | "year";
   monthlyQuota: number;
   level: string;
   description: string;
   features: string[];
+}
+export interface RenewalStatus {
+  automaticRenewalEnabled: boolean;
+  collectionMode: "manual" | "provider_managed" | "merchant_managed";
+  mandateStatus: string | null;
+  subscriptionStatus: string | null;
+  currentPeriodEnd: number | null;
 }
 export interface Order {
   id: string;
@@ -109,11 +119,28 @@ export interface InvoiceRequest {
 }
 
 // ---------------- 客户接口 ----------------
+// 从完整浏览器信息生成设备名称，避免截断后丢失浏览器标识。
+export function getBrowserDeviceInfo(userAgent: string, platform: string) {
+  const osFamily = /iPhone|iPad|iPod/i.test(userAgent) ? 'iOS'
+    : /Android/i.test(userAgent) ? 'Android'
+    : /Windows|Win32|Win64/i.test(`${userAgent} ${platform}`) ? 'Windows'
+    : /Mac/i.test(`${userAgent} ${platform}`) ? 'macOS'
+    : /Linux/i.test(`${userAgent} ${platform}`) ? 'Linux' : '未知系统';
+  const browserFamily = /Edg(?:e|A|iOS)?\//i.test(userAgent) ? 'Edge'
+    : /OPR\/|Opera\//i.test(userAgent) ? 'Opera'
+    : /Firefox\/|FxiOS\//i.test(userAgent) ? 'Firefox'
+    : /Chrome\/|CriOS\//i.test(userAgent) ? 'Chrome'
+    : /Version\/.*Safari\//i.test(userAgent) ? 'Safari' : '浏览器';
+  return { displayName: `${osFamily} · ${browserFamily}`, osFamily, browserFamily };
+}
+
 export const billingApi = {
-  // 用 Appwrite 用户 ID 换计费 JWT
+  // 用 Appwrite 用户 ID 登录；服务端通过 HttpOnly Cookie 保存客户会话。
   login: (body: { userId: string; email?: string; inviteCode?: string; appwriteJwt?: string; installationId?: string; displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }) =>
-    request("/api/billing/login", { method: "POST", body: { ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web", displayName: body.displayName || navigator.userAgent.slice(0, 100), osFamily: body.osFamily || navigator.platform || "unknown", browserFamily: body.browserFamily || navigator.userAgent.slice(0, 64) } }),
+    request("/api/billing/login", { method: "POST", body: { ...getBrowserDeviceInfo(navigator.userAgent, navigator.platform), ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web" } }),
+  logout: () => request<{ success: boolean }>("/api/billing/logout", { method: "POST", body: {} }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
+  renewalStatus: () => request<RenewalStatus>("/api/billing/renewal-status"),
   plans: () => request<Plan[]>("/api/billing/plans"),
   createOrder: (planId: string, idempotencyKey: string) =>
     request<Order>("/api/billing/orders", { method: "POST", body: { planId, idempotencyKey } }),

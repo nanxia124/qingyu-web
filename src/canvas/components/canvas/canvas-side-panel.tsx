@@ -9,11 +9,12 @@ import { canvasThemes, type CanvasTheme } from "@canvas/lib/canvas-theme";
 import { exportCanvasNodes } from "@canvas/lib/canvas/canvas-export";
 import { getNodeDefinition } from "@canvas/lib/canvas/node-registry";
 import { cn } from "@canvas/lib/utils";
+import { SearchInput } from "@/components/SearchInput";
 import { PromptDetailDialog } from "@canvas/pages/prompts/components/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@canvas/services/api/prompts";
 import { uploadMediaFile } from "@canvas/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@canvas/services/image-storage";
-import { useAssetStore, type Asset, type AssetKind } from "@canvas/stores/use-asset-store";
+import { checksumTextAsset, useAssetStore, type Asset, type AssetKind, type ImageAsset, type TextAsset, type VideoAsset } from "@canvas/stores/use-asset-store";
 import { usePromptSourceStore } from "@canvas/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@canvas/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
@@ -220,7 +221,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                 {selectMode ? null : <Select size="small" variant="borderless" className="w-20" value={typeFilter} onChange={setTypeFilter} options={NODE_FILTER_VALUES.map((value) => ({ value, label: value === "all" ? t("common.all") : t(`canvas.sidePanel.filter.${value}`) }))} />}
             </div>
             <div className="px-3 pb-2.5">
-                <Input size="small" allowClear prefix={<Search className="size-3.5 text-zinc-400" />} placeholder={t("canvas.sidePanel.searchNodes")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+                <SearchInput value={keyword} onChange={setKeyword} placeholder={t("canvas.sidePanel.searchNodes")} mode="expanded" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {treeRows.length ? (
@@ -301,10 +302,14 @@ function CheckMark({ checked, theme }: { checked: boolean; theme: CanvasTheme })
 const ASSET_GROUPS: { kind: AssetKind; icon: typeof Square }[] = [
     { kind: "image", icon: ImageIcon },
     { kind: "video", icon: Video },
+    { kind: "audio", icon: Music2 },
     { kind: "text", icon: FileText },
+    { kind: "file", icon: FileText },
 ];
 
-function buildInsertPayload(asset: Asset): InsertAssetPayload {
+type InsertableAsset = TextAsset | ImageAsset | VideoAsset;
+
+function buildInsertPayload(asset: InsertableAsset): InsertAssetPayload {
     if (asset.kind === "text") return { kind: "text", content: asset.data.content, title: asset.title };
     if (asset.kind === "video") return { kind: "video", url: asset.data.url, storageKey: asset.data.storageKey, title: asset.title, width: asset.data.width, height: asset.data.height };
     return { kind: "image", dataUrl: asset.data.dataUrl, storageKey: asset.data.storageKey, title: asset.title };
@@ -336,21 +341,44 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
         if (!files.length) return;
         setUploading(true);
         const hide = message.loading(t("canvas.sidePanel.addingAssets"), 0);
+        const uploadBatchId = crypto.randomUUID();
         let added = 0;
+        const failed: string[] = [];
         try {
-            for (const file of files) {
+            await Promise.all(files.map(async (file) => {
+              try {
                 if (file.type.startsWith("image/")) {
-                    const image = await uploadImage(file);
+                    const image = await uploadImage(file, { sourceKind: "manual_upload", uploadBatchId, originalFilename: file.name });
                     addAsset({ kind: "image", title: file.name || t("assets.kinds.image"), coverUrl: image.url, tags: [], data: { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType } });
                     added += 1;
                 } else if (file.type.startsWith("video/")) {
-                    const media = await uploadMediaFile(file, "video");
+                    const media = await uploadMediaFile(file, "video", { sourceKind: "manual_upload", uploadBatchId, originalFilename: file.name });
                     addAsset({ kind: "video", title: file.name || t("assets.kinds.video"), coverUrl: "", tags: [], data: { url: media.url, storageKey: media.storageKey, width: media.width || 0, height: media.height || 0, bytes: media.bytes, mimeType: media.mimeType } });
                     added += 1;
+                } else if (file.type.startsWith("audio/")) {
+                    const media = await uploadMediaFile(file, "audio", { sourceKind: "manual_upload", uploadBatchId, originalFilename: file.name });
+                    addAsset({ kind: "audio", title: file.name || t("assets.kinds.audio"), coverUrl: "", tags: [], data: { url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType } });
+                    added += 1;
+                } else if (file.type.startsWith("text/")) {
+                    const media = await uploadMediaFile(file, "text", { sourceKind: "manual_upload", uploadBatchId, originalFilename: file.name });
+                    const content = await file.text();
+                    addAsset({ kind: "text", title: file.name || t("assets.kinds.text"), coverUrl: "", tags: [], data: { content, storageKey: media.storageKey, textChecksum: await checksumTextAsset(content) } });
+                    added += 1;
+                } else if (["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"].includes(file.type)) {
+                    const media = await uploadMediaFile(file, "file", { sourceKind: "manual_upload", uploadBatchId, originalFilename: file.name });
+                    addAsset({ kind: "file", title: file.name || t("assets.kinds.file"), coverUrl: "", tags: [], data: { url: media.url, storageKey: media.storageKey, bytes: media.bytes, mimeType: media.mimeType } });
+                    added += 1;
+                } else {
+                    throw new Error(t("canvas.sidePanel.unsupportedAssetType"));
                 }
-            }
+              } catch (error) {
+                console.error("[canvas/assets] upload failed", file.name, error);
+                failed.push(file.name || t("canvas.sidePanel.unnamedAsset"));
+              }
+            }));
             if (added) message.success(t("canvas.sidePanel.addedAssets", { count: added }));
-            else message.warning(t("canvas.sidePanel.mediaOnly"));
+            if (failed.length) message.error(t("canvas.sidePanel.someAssetsFailed", { count: failed.length, names: failed.slice(0, 3).join(", ") }));
+            if (!added && !failed.length) message.warning(t("canvas.sidePanel.mediaOnly"));
         } catch (error) {
             console.error(error);
             message.error(t("canvas.sidePanel.addFailed"));
@@ -364,7 +392,7 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
     return (
         <div className="flex h-full flex-col">
             <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-                <Input size="small" allowClear prefix={<Search className="size-3.5 text-zinc-400" />} placeholder={t("canvas.sidePanel.searchAssets")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+                <SearchInput value={keyword} onChange={setKeyword} placeholder={t("canvas.sidePanel.searchAssets")} mode="expanded" />
                 <button
                     type="button"
                     disabled={uploading}
@@ -375,7 +403,7 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                     <Plus className="size-3.5" />
                     {t("canvas.sidePanel.add")}
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => void handleFiles(e.target.files)} />
+                <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,text/plain,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple className="hidden" onChange={(e) => void handleFiles(e.target.files)} />
             </div>
             {allTags.length ? (
                 <div className="flex flex-wrap gap-1.5 px-3 pb-2">
@@ -409,7 +437,9 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                     {isCollapsed ? null : (
                                         <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => (
-                                                <AssetCard key={asset.id} asset={asset} theme={theme} onInsert={() => onInsert(buildInsertPayload(asset))} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
+                                                <AssetCard key={asset.id} asset={asset} theme={theme} canInsert={asset.kind === "image" || asset.kind === "video" || asset.kind === "text"} onInsert={() => {
+                                                    if (asset.kind === "image" || asset.kind === "video" || asset.kind === "text") onInsert(buildInsertPayload(asset));
+                                                }} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
                                             ))}
                                         </div>
                                     )}
@@ -425,20 +455,20 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
     );
 });
 
-function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; onInsert: () => void; onRemove: () => void }) {
+function AssetCard({ asset, theme, canInsert, onInsert, onRemove }: { asset: Asset; theme: CanvasTheme; canInsert: boolean; onInsert: () => void; onRemove: () => void }) {
     const { t } = useTranslation();
     return (
         <div className="group relative aspect-square overflow-hidden rounded-xl border transition duration-200 hover:-translate-y-0.5" style={{ borderColor: theme.node.stroke, background: theme.node.panel }}>
             <AssetCover asset={asset} />
             <div className="absolute inset-0 flex items-center justify-center gap-2.5 opacity-0 transition duration-200 group-hover:opacity-100">
-                <button
+                {canInsert ? <button
                     type="button"
                     onClick={onInsert}
                     className="grid size-8 place-items-center rounded-full bg-white/90 text-zinc-700 backdrop-blur transition hover:bg-white hover:text-zinc-900 dark:bg-black/60 dark:text-zinc-100 dark:hover:bg-black/80"
                     aria-label={t("canvas.sidePanel.inserted")}
                 >
                     <Plus className="size-4" />
-                </button>
+                </button> : null}
                 <Popconfirm title={t("canvas.sidePanel.removeAssetTitle")} okText={t("canvas.sidePanel.remove")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={onRemove}>
                     <button
                         type="button"
@@ -455,6 +485,8 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
 
 function AssetCover({ asset }: { asset: Asset }) {
     if (asset.kind === "text") return <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{asset.data.content}</div>;
+    if (asset.kind === "audio") return <div className="flex size-full flex-col items-center justify-center gap-2 p-2"><Music2 className="size-7 opacity-60" /><audio src={asset.data.url} controls preload="metadata" className="w-full" /></div>;
+    if (asset.kind === "file") return <div className="flex size-full flex-col items-center justify-center gap-2 p-3 text-center"><FileText className="size-7 opacity-60" /><span className="line-clamp-3 text-xs opacity-70">{asset.title}</span></div>;
     if (asset.kind === "video") {
         if (asset.coverUrl) return <img src={asset.coverUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
         return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
@@ -487,7 +519,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert, theme }: { o
     return (
         <div className="flex h-full flex-col">
             <div className="px-3 pb-2.5 pt-1">
-                <Input size="small" allowClear prefix={<Search className="size-3.5 text-zinc-400" />} placeholder={t("canvas.sidePanel.searchPrompts")} value={keyword} onChange={(e) => setKeyword(e.target.value)} />
+                <SearchInput value={keyword} onChange={setKeyword} placeholder={t("canvas.sidePanel.searchPrompts")} mode="expanded" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <div className="space-y-1">

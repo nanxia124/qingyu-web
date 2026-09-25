@@ -146,19 +146,15 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
     throw new Error(apiText("scriptNoVideo"));
 }
 
-export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile & { sourceUrl?: string }> {
+export async function storeGeneratedVideo(result: VideoGenerationResult, assetMetadata: Record<string, unknown> = {}): Promise<UploadedFile & { sourceUrl?: string }> {
     const sourceUrl = result.sourceUrl || result.url;
     if (result.blob) {
-        const stored = await uploadMediaFile(result.blob, "video");
+        const stored = await uploadMediaFile(result.blob, "video", { sourceKind: "generated", originalFilename: "generated-video.mp4", assetMetadata });
         return { ...stored, sourceUrl };
     }
     if (result.url) {
-        try {
-            const stored = await uploadMediaFile(result.url, "video");
-            return { ...stored, sourceUrl };
-        } catch {
-            return { url: result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4", sourceUrl };
-        }
+        const stored = await uploadMediaFile(result.url, "video", { sourceKind: "generated", originalFilename: "generated-video.mp4", assetMetadata });
+        return { ...stored, sourceUrl };
     }
     throw new Error(apiText("noPlayableVideo"));
 }

@@ -22,6 +22,12 @@ BEGIN
   IF NOT has_table_privilege(current_user, 'app.assets', 'INSERT') THEN
     RAISE EXCEPTION '内容表没有保留业务写入权限';
   END IF;
+  IF has_function_privilege(current_user, 'app.record_payment_alert(varchar,varchar,uuid,text,jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION '普通应用角色不能写入支付告警';
+  END IF;
+  IF NOT has_function_privilege('qingyu_api', 'app.record_payment_alert(varchar,varchar,uuid,text,jsonb)', 'EXECUTE') THEN
+    RAISE EXCEPTION '业务 API 角色缺少受控支付告警写入权限';
+  END IF;
   RAISE NOTICE 'PASS: 身份、成员、权限、支付、配额和审计表已禁止普通账号直接写入';
 END $$;
 

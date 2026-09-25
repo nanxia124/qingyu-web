@@ -3,12 +3,13 @@ import type { NavigateFunction } from "react-router-dom";
 import i18n from "@canvas/i18n";
 import { fetchPrompts } from "@canvas/services/api/prompts";
 import { uploadImage } from "@canvas/services/image-storage";
+import { uploadMediaFile } from "@canvas/services/file-storage";
 import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@canvas/components/image-settings-panel";
 import { videoResolutionOptions, videoSizeOptions } from "@canvas/components/video-settings-panel";
 import type { CanvasAgentSnapshot } from "@canvas/lib/canvas/canvas-agent-ops";
 import { clampVideoSecondsToModel, getVideoDurationRule } from "@canvas/lib/media-size";
 import { useCanvasStore } from "@canvas/stores/canvas/use-canvas-store";
-import { useAssetStore } from "@canvas/stores/use-asset-store";
+import { checksumTextAsset, useAssetStore } from "@canvas/stores/use-asset-store";
 import { modelOptionLabel, modelOptionName, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore } from "@canvas/stores/use-config-store";
 import { useWorkbenchAgentStore } from "@canvas/stores/use-workbench-agent-store";
 
@@ -312,7 +313,14 @@ async function addAsset(input: SiteToolInput) {
     if (kind === "text") {
         const content = String(input.content || "").trim();
         if (!content) throw new Error(siteText("textContentRequired"));
-        const id = store.addAsset({ kind: "text", title, coverUrl: "", tags, source, note, data: { content } });
+        const textChecksum = await checksumTextAsset(content);
+        const stored = await uploadMediaFile(new Blob([content], { type: "text/plain;charset=utf-8" }), "text", {
+            sourceKind: "generated",
+            originalFilename: `${title.slice(0, 100)}.txt`,
+            completeness: "complete",
+            writeIdempotencyKey: `agent-asset-text:${title.slice(0, 70)}:${textChecksum}`,
+        });
+        const id = store.addAsset({ kind: "text", title, coverUrl: "", tags, source, note, data: { content, storageKey: stored.storageKey, textChecksum } });
         return { ok: true, id, kind: "text" };
     }
     if (kind === "image") {
@@ -320,7 +328,7 @@ async function addAsset(input: SiteToolInput) {
         if (!imageUrl) throw new Error(siteText("imageUrlRequired"));
         let stored;
         try {
-            stored = await uploadImage(imageUrl);
+            stored = await uploadImage(imageUrl, { sourceKind: "generated", originalFilename: `${title.slice(0, 100)}.png` });
         } catch {
             throw new Error(siteText("imageReadFailed"));
         }

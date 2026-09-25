@@ -1,13 +1,49 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icons/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LITZONE · 创作者工作台</title>
+    <title>LitZone · 全球视觉设计师、创作者/团队的智能AI创意助手 ~</title>
+    <script>
+      // 首屏主题：React 挂载前根据本地偏好 + 系统偏好挂 .dark，避免闪一下错主题
+      (function () {
+        try {
+          var mode = "system";
+          var raw = localStorage.getItem("infinite-canvas:theme_store");
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var state = parsed && parsed.state ? parsed.state : {};
+            if (state.mode === "light" || state.mode === "dark" || state.mode === "system") {
+              mode = state.mode;
+            } else if (state.theme === "light" || state.theme === "dark") {
+              mode = state.theme; // 老版本数据迁移
+            }
+          }
+          var dark =
+            mode === "dark" ||
+            (mode === "system" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          root.classList.toggle("dark", dark);
+          root.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
     <style>
-      html { color-scheme: dark; }
-      body { margin: 0; background-color: #171717; }
+      html { color-scheme: light; }
+      html.dark { color-scheme: dark; }
+      body { margin: 0; background-color: #fafafa; }
+      html.dark body { background-color: #171717; }
+      #boot-splash { background: #fafafa !important; }
+      html.dark #boot-splash { background: #151515 !important; }
+      #boot-splash .boot-logo-svg { fill: #222; }
+      html.dark #boot-splash .boot-logo-svg { fill: #e8e8e8; }
+      #boot-splash .boot-wordmark { filter: none; }
+      html.dark #boot-splash .boot-wordmark { filter: invert(1); }
+      #boot-splash .boot-hint { color: #666; }
+      html.dark #boot-splash .boot-hint { color: #8a8a8a; }
     </style>
     <!-- Umami 网站访问统计（PV/UV/来源/页面路径自动采集）。
          走 nginx 同源反代 /umami/（后端容器只监听 127.0.0.1:3000，不直接暴露公网），
@@ -18,26 +54,48 @@
       src="/umami/script.js"
       data-website-id="2d28207e-d490-420f-8490-c2375db2d4eb"
     ></script>
-    <script type="module" crossorigin src="/assets/index-8rgCq2uq.js"></script>
+    <script type="module" crossorigin src="/assets/index-Chh0p3b7.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-DCLhPuXT.js">
-    <link rel="modulepreload" crossorigin href="/assets/bundle-mjs-DLNybEZ9.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-Cj1ZP70o.css">
+    <link rel="modulepreload" crossorigin href="/assets/react-dom-BXTyMK70.js">
+    <link rel="modulepreload" crossorigin href="/assets/clsx-DGmyc38b.js">
+    <link rel="modulepreload" crossorigin href="/assets/ContextIsolator-Bonit31e.js">
+    <link rel="modulepreload" crossorigin href="/assets/preload-helper-CZgWQFsJ.js">
+    <link rel="modulepreload" crossorigin href="/assets/chunk-OB3PAWPO-D2Un-acT.js">
+    <link rel="modulepreload" crossorigin href="/assets/jsx-runtime-DkndrBI1.js">
+    <link rel="modulepreload" crossorigin href="/assets/i18nInstance-DuAUdJZQ.js">
+    <link rel="modulepreload" crossorigin href="/assets/file-storage-CftnGEXn.js">
+    <link rel="modulepreload" crossorigin href="/assets/useTranslation-BDgxeMvB.js">
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-B-ee2oPo.js">
+    <link rel="modulepreload" crossorigin href="/assets/bundle-mjs-BtkjxxEO.js">
+    <link rel="modulepreload" crossorigin href="/assets/server-config-bootstrap-DMBDSpLN.js">
+    <link rel="modulepreload" crossorigin href="/assets/animated-theme-toggler-DVD4Rxwl.js">
+    <link rel="modulepreload" crossorigin href="/assets/tooltip-CpH1EEzm.js">
+    <link rel="modulepreload" crossorigin href="/assets/app-BcCREZrX.js">
+    <link rel="modulepreload" crossorigin href="/assets/check-CmrhWZvq.js">
+    <link rel="modulepreload" crossorigin href="/assets/copy-DTl_likK.js">
+    <link rel="modulepreload" crossorigin href="/assets/refresh-cw-BuXipsXr.js">
+    <link rel="modulepreload" crossorigin href="/assets/search-Cy_j-rSe.js">
+    <link rel="modulepreload" crossorigin href="/assets/utils-xa--W1Rj.js">
+    <link rel="modulepreload" crossorigin href="/assets/api-BQ9qKm6G.js">
+    <link rel="modulepreload" crossorigin href="/assets/billing-CN6env3I.js">
+    <link rel="modulepreload" crossorigin href="/assets/useAuthStore-DQI7hTt3.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-Dm06AX_-.css">
   </head>
   <body>
     <div id="root">
       <!-- 首屏静态壳：React 挂载前显示品牌启动动画，挂载后自动被替换 -->
-      <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#151515;z-index:9999;">
+      <div id="boot-splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;">
         <!-- 小怪兽 logo（上下浮动 + 呼吸发光） -->
         <div style="animation:boot-float 2.4s ease-in-out infinite;">
-          <svg width="64" height="64" viewBox="0 0 1024 1024" fill="#e8e8e8" aria-hidden
+          <svg class="boot-logo-svg" width="64" height="64" viewBox="0 0 1024 1024" aria-hidden
                style="animation:boot-glow 2.4s ease-in-out infinite;">
             <path fillRule="evenodd" d="M185 582.45C189.03 579.59 175.64 580.97 173 580.24C165.33 578.11 160.01 571.06 160.85 563C162.82 544.18 191.34 533.94 207 540.59C240.13 554.67 214.22 586.14 217.57 599C218.62 603 238.72 620.76 239.52 618C243.66 603.72 233.25 537.92 231.53 519C225.06 447.86 218.78 376.28 214.38 305C213.26 286.69 201.07 214.53 210 203.13C219.39 191.15 252 191.81 266 189.77C294.17 185.65 417.73 178.28 432 172.3C456.17 162.16 511.87 115.33 533 113.61C549.22 112.29 559.34 159.22 567 159.22C589.15 159.23 642.13 111.73 669 108.77C687 106.78 688.66 162.05 700 166.97C722.79 176.86 822.54 147.92 840 161.44C851.84 170.62 828.78 239.5 827.82 256C823.61 328.03 817.97 400.01 813 472C811.71 490.75 802.12 552.78 806.44 567C811.15 582.51 887.33 610.07 877.12 669C872.11 697.93 849.4 708.44 832.06 728C830.88 729.33 837.08 730.2 838 730.49C841.65 731.66 845.37 734.71 847.34 738C852.36 746.35 849.92 756.52 843.06 763C821.42 783.4 800.24 759.61 792.07 762C790.45 762.48 790.74 770.62 790.7 772C790.46 780.8 791.13 790.36 784 796.57C780.83 799.33 764.71 799.04 764.15 801C758.96 819.28 836.05 881 808 901.5C797.79 908.97 678.9 904.96 658 904.56C646.37 904.34 622.76 909 614.65 898C603.07 882.29 589.25 807 577 800.49C567.62 795.51 520.85 800.03 508 800C497.4 799.97 476.61 795.94 467 800.53C454.92 806.3 443 884.92 429 898.89C416.49 911.36 301 904.77 277 904.72C264.45 904.7 242.63 909 233 899.17C213.5 879.24 283.52 820.1 279.69 801C279.23 798.73 268.94 799.84 267 799.67C259.71 799.03 254.85 793.86 253.23 787C246.88 760.08 254.6 701.68 244.62 680C243.87 678.38 234.81 679.53 233 679.46C221.22 679.01 209.98 676.29 199 672.27C167.21 660.63 160.89 635.32 144 625.05C131.72 617.58 118.73 625.82 104.69 609C92.85 594.82 90.47 573.28 104 559.21C108.13 554.91 113.37 551.55 119 549.7C120.16 549.32 127.46 548.61 126.93 547C120.22 526.8 72.26 510.58 91.7 482C114.19 448.94 158.39 529.38 161 528.49C162.22 528.07 159.5 516.45 159.32 515C157.49 500.55 153.68 485.69 155.43 471C157.51 453.47 177.2 438.89 190.43 457C196.21 464.9 205.46 526.96 200 532.79C194.1 539.11 168.25 531.63 158 554.9C150.8 571.24 166.95 594.33 185 582.45Z M687.37 490C686.49 496.16 706.16 492.38 706.6 497C706.84 499.46 667.58 517.72 658 521.47C604.64 542.34 548.34 557.24 491 563.11C469.1 565.36 447.04 566.77 425 566.39C421.14 566.32 390.48 564.87 391.27 567C397.97 585.27 449.31 608.69 467 613.8C546.15 636.67 631.58 604.38 685.3 544C697.47 530.32 705.48 513.84 716.93 500C723.13 492.49 747.3 509.73 751.95 502C754.42 497.89 740.7 491.55 738 490.43C726.66 485.74 697.33 479.37 687.37 490Z M501.77 400C499.54 397.82 492.12 399.07 489 398.97C485.5 398.87 472.5 396.38 470.13 399C460.27 409.91 466.98 443.38 425 439.86C411.87 438.76 396.7 431 391.55 418C390.2 414.59 386.46 396.32 385 396.29C373.66 396.09 287.16 391.97 284 394.89C270.82 407.06 309.71 462.36 319.54 471C376.16 520.74 462.35 497.77 493.87 433C498.19 424.12 503.06 410.09 501.77 400Z M759.31 391C756.3 387.24 735.05 391.19 730 391.33C717.99 391.66 694.74 388.43 684 393.68C683.89 393.73 681.24 411.63 680.23 414C674.57 427.37 661.22 436.78 647 438.42C602.31 443.56 606.82 402.06 600.18 397C597.98 395.32 559.78 398.45 554 398.68C551.69 398.77 541.39 397.85 540.33 400C536.96 406.88 545.14 422.48 547.61 429C583.2 523.1 767.73 466.67 759.31 391Z M466.6 331C456.39 296.06 418.66 265.08 382 269.41C364.98 271.41 350.02 279.36 336 288.66C333.43 290.36 320.71 298.24 326 301.58C330.02 304.11 342.6 295.13 347 293.67C365.71 287.43 385.98 284.48 405 291.79C420.41 297.71 433.72 307.11 446.85 317C449.28 318.83 464.98 332.69 466.6 331Z M560.23 343C563.2 346.25 643.59 333.16 654.66 332C668.75 330.52 682.77 329.04 697 329.5C699.23 329.57 720.39 330.62 720.46 329C720.7 323.37 688.83 314.91 684 313.25C661.86 305.62 578.21 328.01 560.23 343Z M798 681.62C817.17 676.68 818.39 652.9 807 641.33C796.5 630.66 799.83 654.35 799 663C798.62 666.99 795.99 678.38 798 681.62Z"/>
           </svg>
         </div>
         <!-- 文字 logo -->
-        <img src="/litzone-wordmark.svg" alt="litzone" style="height:44px;width:auto;filter:invert(1);" />
+        <img class="boot-wordmark" src="/litzone-wordmark.svg" alt="LitZone" style="height:44px;width:auto;" />
         <!-- 提示文字 -->
-        <p style="color:#8a8a8a;font-size:13px;font-family:'Microsoft YaHei UI',system-ui,sans-serif;margin:0;">正在准备工作台…</p>
+        <p class="boot-hint" style="font-size:13px;font-family:'Microsoft YaHei UI',system-ui,sans-serif;margin:0;">正在准备工作台…</p>
       </div>
     </div>
     <style>

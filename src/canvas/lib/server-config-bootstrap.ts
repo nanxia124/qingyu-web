@@ -40,13 +40,13 @@ export function ensureServerConfig(): Promise<void> {
                 baseUrl: c.base_url,
                 apiKey: "proxy",
                 apiFormat: c.provider === "gemini" ? ("gemini" as const) : ("openai" as const),
-                models: (c.model || "")
-                    .split(",")
-                    .filter(Boolean)
-                    .map((m: string) => {
-                        const name = m.trim();
-                        return { name, capability: resolveCapability(name) };
-                    }),
+                models: (Array.isArray(c.models) ? c.models : (c.model || "").split(",").filter(Boolean))
+                    .map((entry: string | { name: string; displayName?: string; capability?: ModelCapability }) => {
+                        const model = typeof entry === "string" ? { name: entry } : entry;
+                        const name = model.name.trim();
+                        return { name, displayName: model.displayName, capability: model.capability || resolveCapability(name) };
+                    })
+                    .filter((model: { name: string }) => model.name),
             }));
 
             const allModels: string[] = [];

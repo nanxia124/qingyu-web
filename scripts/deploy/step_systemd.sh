@@ -13,6 +13,7 @@ ExecStart=/usr/bin/node /home/ubuntu/qingyu-api/api-server.mjs
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
+EnvironmentFile=/etc/qingyu-api.env
 
 [Install]
 WantedBy=multi-user.target

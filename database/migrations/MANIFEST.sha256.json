@@ -53,5 +53,14 @@
   "0052_usage_completion_metrics.sql": "3e6989a6a10caad4654aac8a515d84310c14c38fb29d338eb149bc5b67477dc4",
   "0053_usage_completion_guard.sql": "6af1f61b96c8a8177c1a187793b608fc204fae34f4f87d312bab1f6df7535f5f",
   "0054_admin_accounts.sql": "5867862ddcbd7f778350fdbe447e6076162391dc8dfb32e9b7c4bd5b9369062b",
-  "0055_session_online_guard.sql": "b91731937bcb9e9849c4314f11ad038eb0ce0ea4233cc733bdd03be59329c4cc"
+  "0055_session_online_guard.sql": "b91731937bcb9e9849c4314f11ad038eb0ce0ea4233cc733bdd03be59329c4cc",
+  "0056_payment_event_retries_and_multiple_receipts.sql": "34bcd7e0c123e169e2630f346547a7a0f20def2ad21f27166c968a095dc57147",
+  "0057_refunds_scoped_to_receipts.sql": "983b100ea114616959df3db3132dd8be0f8a037a052b24eab36f4e9c202c7664",
+  "0058_cos_file_metadata_and_relations.sql": "83f5679b68b78e24216c2a2b5e7d23619ae901058b0ce05ac71b5c5e50b148c6",
+  "0059_cos_upload_sessions_and_inspection.sql": "b7c0bc37a7946fa6f8392818f0e300e801e530b53da2d6ad3fb0e722df5beadc",
+  "0060_generation_attempts_and_output_slots.sql": "0220f836f858ffed5755b3e4f5568a107ae3627b3d28e7596508c9de751bf5b5",
+  "0061_content_edits_node_assets_and_file_jobs.sql": "ab3daca114593455548e8ec39f6c1613e2aee301d542801de1f86e2fc43963a7",
+  "0062_subscription_renewal_lifecycle.sql": "1a501d273e70aa72502845bc29462cd2ec35f22137771b4b026a8da2e32286b8",
+  "0063_model_catalog_channel_models.sql": "9ba42d91134d2c9fe35693081e12ba5c982f5a02bb092d241016693ca7c91b85",
+  "0064_file_job_worker_functions.sql": "79aca4200121cb5019eabadb6bdae8e977a217cda8883c9bff6a1729099d68ae"
 }

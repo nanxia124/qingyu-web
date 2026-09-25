@@ -35,17 +35,6 @@ export interface GenTask {
   finishedAt?: string | null;
 }
 
-function authHeaders(): Record<string, string> {
-  const token =
-    localStorage.getItem('billing_token') ||
-    localStorage.getItem('token') ||
-    localStorage.getItem('admin_token') ||
-    '';
-  return token
-    ? { Authorization: `Bearer ${token}`, 'X-Qingyu-Billing-Token': token }
-    : {};
-}
-
 /** 把生图页的 ratio/quality 转换成 OpenAI images/generations 认识的取值 */
 // 各比例在 1K 档位下的标准像素值（nano-banana 系列仅支持 1K）
 const RATIO_SIZE_1K: Record<string, string> = {
@@ -120,8 +109,9 @@ export async function submitImageTask(body: Record<string, unknown>): Promise<{ 
   const idempotencyKey = String(body.idempotencyKey || `image-task:${crypto.randomUUID()}`);
   const res = await fetch(`${API}/api/generation-tasks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, idempotencyKey }),
+    credentials: 'include',
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -134,7 +124,7 @@ export async function submitImageTask(body: Record<string, unknown>): Promise<{ 
 
 export async function fetchTask(taskId: string): Promise<GenTask> {
   const res = await fetch(`${API}/api/generation-tasks/${encodeURIComponent(taskId)}`, {
-    headers: authHeaders(),
+    credentials: 'include',
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : i18n.t('imageTools.taskQueryFailed'));
@@ -144,7 +134,7 @@ export async function fetchTask(taskId: string): Promise<GenTask> {
 /** 拉取当前用户最近的生图任务（"我的生成"） */
 export async function listImageTasks(limit = 50): Promise<GenTask[]> {
   const res = await fetch(`${API}/api/generation-tasks?limit=${encodeURIComponent(limit)}`, {
-    headers: authHeaders(),
+    credentials: 'include',
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : i18n.t('imageTools.historyQueryFailed'));
@@ -168,21 +158,15 @@ export async function pollImageTask(
 }
 
 /** 把任务输出转成可直接渲染的图片 URL 列表。
- *  - 新数据：fileId 存在时走后端流式接口（带 ?token= 供 <img> 标签鉴权）
+ *  - 新数据：fileId 存在时走同源后端流式接口，由浏览器自动携带 HttpOnly Cookie
  *  - 老数据 fallback：b64_json 拼成 dataURL，或直接用上游返回的 url
  */
 export function taskOutputToDataUrls(task: GenTask): string[] {
-  const token =
-    localStorage.getItem('billing_token') ||
-    localStorage.getItem('token') ||
-    localStorage.getItem('admin_token') ||
-    '';
   return (task.outputs || [])
     .filter((o) => o.b64_json || o.url || o.fileId)
     .map((o) => {
       if (o.fileId) {
-        const q = token ? `?token=${encodeURIComponent(token)}` : '';
-        return `${API}/api/generation-tasks/${task.id}/outputs/${o.index}/content${q}`;
+        return `/api/generation-tasks/${encodeURIComponent(task.id)}/outputs/${o.index}/content`;
       }
       return o.b64_json ? `data:image/png;base64,${o.b64_json}` : (o.url as string);
     });

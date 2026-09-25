@@ -19,6 +19,7 @@ import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { useAgentSkillStore } from "@canvas/stores/use-agent-skill-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore, type AgentAttachment, type AgentBootstrapStatus, type AgentCanvasContext, type AgentCanvasReference, type AgentChatItem, type AgentConversationState, type AgentModel, type AgentPendingApproval, type AgentPendingToolCall, type AgentPermissionMode, type AgentReasoningEffort, type AgentThreadSummary } from "@canvas/stores/use-agent-store";
+import { uploadMediaFile } from "@canvas/services/file-storage";
 import { type CanvasAgentOp, type CanvasAgentSnapshot } from "@canvas/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool } from "@canvas/lib/agent/agent-site-tools";
 import { acknowledgeCodexHistory, activateAgentClient, AgentApiError, discoverAgentConfig, fetchAgentJson, interruptCodexTurn, postCodexApproval, postState, postToolResult } from "@canvas/services/api/canvas-agent";
@@ -72,6 +73,10 @@ const MESSAGE_PREVIEW_LONG_EDGE = 192;
 const MESSAGE_PREVIEW_MAX_LENGTH = 500_000;
 const DEFAULT_AGENT_URL = "/api/agent";
 const AGENT_PROTOCOL_VERSION = 6;
+async function checksumText(value: string) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 const HISTORY_RETRY_DELAYS_MS = [0, 150, 350, 700, 1200];
 const AGENT_REASONING_EFFORTS = new Set<AgentReasoningEffort>(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 const rt = (key: string, options?: Record<string, unknown>) => i18n.t(`agent.runtime.${key}`, options);
@@ -191,29 +196,53 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     const liveTurnKeysRef = useRef(new Set<string>());
     const threadOperationRef = useRef(0);
     const threadOperationSequenceRef = useRef(0);
+    const failedSnapshotThreadRef = useRef<string | null>(null);
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
 
     // Agent 服务负责实时运行；业务库保存一份脱敏后的会话快照，保证换设备后仍有历史记录。
     useEffect(() => {
         if (!activeThreadId || typeof window === "undefined") return;
-        const billingToken = window.localStorage.getItem("billing_token") || window.localStorage.getItem("token");
-        if (!billingToken) return;
+        if (!window.localStorage.getItem("billing_token_user")) return;
         const timer = window.setTimeout(() => {
-            void fetch("/api/agent/snapshot", {
+            void Promise.all([
+                ...agentMessages.map(async (item) => {
+                    if (!item.text?.trim() || (item as AgentChatItem & { storageKey?: string }).storageKey) return item;
+                    const stored = await uploadMediaFile(new Blob([item.text], { type: "text/plain;charset=utf-8" }), "text", { sourceKind: item.role === "user" ? "manual_upload" : "generated", originalFilename: `agent-message-${item.id}.txt` });
+                    return { ...item, text: "", storageKey: stored.storageKey, textChecksum: await checksumText(item.text) } as AgentChatItem;
+                }),
+            ]).then(async (storedMessages) => {
+                const storedEvents = await Promise.all(agentEventLogs.map(async (event) => {
+                    if ((!event.text?.trim() && event.raw == null) || (event as typeof event & { storageKey?: string }).storageKey) return event;
+                    const text = JSON.stringify({ text: event.text || "", raw: event.raw ?? null });
+                    const stored = await uploadMediaFile(new Blob([text], { type: "text/plain;charset=utf-8" }), "text", { sourceKind: "generated", originalFilename: `agent-event-${event.id}.json` });
+                    return { ...event, text: "", raw: undefined, storageKey: stored.storageKey, textChecksum: await checksumText(text) } as typeof event;
+                }));
+                return fetch("/api/agent/snapshot", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${billingToken}` },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     threadId: activeThreadId,
                     title: threads.find((item) => item.id === activeThreadId)?.name || undefined,
                     workspacePath,
-                    messages: agentMessages,
-                    events: agentEventLogs,
+                    messages: storedMessages,
+                    events: storedEvents,
                 }),
-            }).catch(() => undefined);
+                credentials: "include",
+                });
+            }).then((response) => {
+                if (!response?.ok) throw new Error("智能体快照保存失败");
+                if (failedSnapshotThreadRef.current === activeThreadId) failedSnapshotThreadRef.current = null;
+            }).catch((error) => {
+                console.error("智能体快照保存失败", error);
+                if (failedSnapshotThreadRef.current !== activeThreadId) {
+                    failedSnapshotThreadRef.current = activeThreadId;
+                    message.error(rt("conversationSyncFailed"));
+                }
+            });
         }, 700);
         return () => window.clearTimeout(timer);
-    }, [activeThreadId, agentEventLogs, agentMessages, threads, workspacePath]);
+    }, [activeThreadId, agentEventLogs, agentMessages, message, threads, workspacePath]);
     useEffect(() => {
         let disposed = false;
         void acquireAgentClientId().then((clientId) => {
@@ -792,14 +821,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         if (!files) return;
         const images = Array.from(files).filter((file) => file.type.startsWith("image/"));
         const prev = useAgentStore.getState().attachments;
+        const uploadBatchId = images.length > 1 ? crypto.randomUUID() : undefined;
         try {
             const next = await Promise.all(
                 images.slice(0, Math.max(0, MAX_ATTACHMENTS - prev.length)).map(async (file) => {
                     const dataUrl = await readDataUrl(file);
                     const meta = await readImageMeta(dataUrl);
+                    const stored = await uploadMediaFile(file, "image", {
+                        sourceKind: "reference_upload",
+                        uploadBatchId,
+                        originalFilename: file.name,
+                        width: meta.width,
+                        height: meta.height,
+                    });
                     const url = URL.createObjectURL(file);
                     attachmentUrlsRef.current.add(url);
-                    return { id: createId(), name: file.name, type: file.type, size: file.size, width: meta.width, height: meta.height, url, dataUrl };
+                    return { id: createId(), name: file.name, type: file.type, size: file.size, width: meta.width, height: meta.height, url, dataUrl, storageKey: stored.storageKey } as AgentAttachment;
                 }),
             );
             const merged = [...prev, ...next];
@@ -1542,7 +1579,7 @@ async function attachmentNodeOps(endpoint: string, token: string, clientId: stri
                 const body = (await res.json().catch(() => null)) as { error?: string } | null;
                 throw new Error(body?.error || rt("attachmentReadFailed"));
             }
-            const image = await uploadImage(await res.blob());
+            const image = await uploadImage(await res.blob(), { sourceKind: "reference_upload", originalFilename: `${item.title || id}.png` });
             const size = fitNodeSize(image.width, image.height);
             const position = item.position && typeof item.position === "object" ? (item.position as { x?: unknown; y?: unknown }) : {};
             return {
@@ -1583,7 +1620,7 @@ async function importGeneratedImages(endpoint: string, token: string, item: Agen
                 : await fetch(`${endpoint}/agent/local-image?token=${encodeURIComponent(token)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: source }) });
             if (!response.ok) throw new Error(rt("generatedImageReadFailed"));
             const blob = await response.blob();
-            const upload = await uploadImage(blob);
+            const upload = await uploadImage(blob, { sourceKind: "generated", originalFilename: `agent-generated-image-${index + 1}.${blob.type.split("/")[1] || "png"}` });
             const dataUrl = await readDataUrl(blob);
             const name = source.startsWith("/") ? source.split("/").at(-1) || rt("generatedImageName", { index: index + 1 }) : rt("generatedImageName", { index: index + 1 });
             return { upload, name, attachment: { id: createId(), name, type: blob.type || upload.mimeType, size: blob.size, width: upload.width, height: upload.height, url: upload.url, dataUrl } };

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { ALL_PROMPTS_OPTION } from "@canvas/services/api/prompts";
 import { cn } from "@canvas/lib/utils";
+import { SearchInput } from "@/components/SearchInput";
 import { PromptCard } from "./prompt-card";
 import { usePromptList } from "./use-prompt-list";
 
@@ -58,7 +59,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                     </div>
                 </aside>
                 <section className="flex min-h-0 min-w-0 flex-col">
-                    <Input size="large" prefix={<Search className="size-4 text-zinc-400" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={t("prompts.searchTitle")} />
+                    <SearchInput value={keyword} onChange={setKeyword} placeholder={t("prompts.searchTitle")} mode="expanded" />
                     <div className="thin-scrollbar mt-4 min-h-0 flex-1 overflow-y-auto pr-2" data-canvas-no-zoom onScroll={handleListScroll} onWheelCapture={(event) => event.stopPropagation()}>
                         {query.isLoading ? (
                             <div className="flex h-40 items-center justify-center">

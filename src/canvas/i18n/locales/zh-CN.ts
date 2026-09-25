@@ -6,7 +6,7 @@ export default {
     brand: {
         name: "LITZONE",
         welcome: "欢迎来到",
-        documentTitle: "LITZONE · 创作者工作台",
+        documentTitle: "LitZone · 全球视觉设计师、创作者/团队的智能AI创意助手 ~",
     },
     mainHome: {
         searchPlaceholder: "搜索灵感、作品、教程…",
@@ -146,6 +146,13 @@ export default {
           pasted: "已粘贴图片",
           reused: "已复用参数",
           done: "生成完成",
+          saveFailed: "图片已生成，但有 {{count}} 张暂未保存到云端。请重试保存，不要再次生成。",
+          notSavedToCloud: "未保存到云端",
+          retrySave: "重试保存",
+          savingToCloud: "正在保存到云端…",
+          savedToCloud: "已保存到云端",
+          saveRetryFailed: "保存失败，请稍后重试",
+          resultUnavailable: "当前图片无法读取，请勿关闭此页面",
           history: "我的生成",
           timeoutRefunded: "任务超时未完成，已退还积分",
           failedRefunded: "生成失败，已退还积分",
@@ -235,7 +242,7 @@ export default {
         servicePending: "（网页端对话服务待接入，敬请期待）",
     },
     pages: {
-        assets: { all: "全部", image: "图片", video: "视频", doc: "文档", search: "搜索素材…", upload: "上传素材", empty: "没有找到匹配的素材" },
+        assets: { all: "全部", image: "图片", video: "视频", audio: "音频", doc: "文档", file: "其他文件", search: "搜索素材…", upload: "上传素材", empty: "没有找到匹配的素材", uploaded: "已上传 {{count}} 个文件", uploadFailed: "{{count}} 个文件上传失败：{{names}}", preview: "素材预览", view: "查看", download: "下载", loading: "正在读取素材…", unsupportedPreview: "此文件格式暂不支持在线预览，请下载后查看" },
         favorites: { title: "我的收藏", empty: "暂无收藏，去工作台看看喜欢的作品吧", confirmDelete: "确定要删除这条收藏吗？", deleteTitle: "删除收藏" },
         feedback: { suggestion: "建议", bug: "问题反馈", other: "其他", submitted: "反馈已提交", thanks: "感谢你的建议，我们会认真评估", title: "反馈中心", subtitle: "告诉我们你的想法，帮助我们做得更好", placeholder: "请描述你的建议或遇到的问题…", contact: "联系方式（可选）", submitting: "提交中…", submit: "提交反馈", failed: "提交失败" },
         settings: { api: "API 配置", notify: "通知", security: "安全", appearance: "外观", team: "团队", data: "数据", apiTitle: "API 配置", apiDesc: "配置服务端使用的 AI 服务网关", serverAddr: "服务地址", saved: "已保存", save: "保存", developing: "设置项开发中" },
@@ -369,7 +376,7 @@ export default {
         importFailed: "导入失败，请选择有效的资产压缩包",
         deleted: "资产已删除",
         packageName: "我的资产.zip",
-        kinds: { text: "文本", image: "图片", video: "视频" },
+        kinds: { text: "文本", image: "图片", video: "视频", audio: "音频", file: "文档" },
         fields: {
             title: "标题",
             titleRequired: "请输入标题",
@@ -544,7 +551,7 @@ export default {
     canvas: {
         defaultTitle: "无限画布 {{count}}",
         library: "画布库",
-        title: "无限画布",
+        title: "LitZone · 全球视觉设计师、创作者/团队的智能AI创意助手 ~",
         imported: "已导入 {{count}} 个画布",
         importFailed: "导入失败，请选择有效的画布压缩包",
         opening: "正在打开画布...",
@@ -599,7 +606,7 @@ export default {
         videoFrames: { first: "截取首帧", last: "截取尾帧", current: "截取当前帧", firstTitle: "{{name}} 首帧", lastTitle: "{{name}} 尾帧", currentTitle: "{{name}} 当前帧", captured: "已生成图片节点", failed: "无法截取该画面，请重试" },
         sidePanel: {
             canvas: "画布", assets: "资产", prompts: "提示词库", resize: "调整左侧面板宽度", elements: "画布元素", select: "选择", searchNodes: "搜索节点", focusNode: "定位到节点", preview: "放大预览", noNodes: "画布暂无节点", clearAll: "取消全选", selected: "已选 {{count}}", exporting: "正在导出选中元素…", exportName: "画布元素-{{count}}个", exported: "已导出 {{count}} 个元素", exportFailed: "导出失败，请重试",
-            addingAssets: "正在添加资产…", addedAssets: "已添加 {{count}} 个资产", mediaOnly: "仅支持图片或视频文件", addFailed: "添加失败，请重试", searchAssets: "搜索资产", add: "添加", noAssets: "暂无资产", inserted: "插入画布", removeAssetTitle: "移除该资产？", remove: "移除", removeAsset: "移除资产", assetRemoved: "资产已移除",
+            addingAssets: "正在添加素材…", addedAssets: "已添加 {{count}} 个素材", mediaOnly: "没有可添加的素材", addFailed: "添加失败，请重试", someAssetsFailed: "{{count}} 个文件添加失败：{{names}}", unsupportedAssetType: "暂不支持这种文件格式", unnamedAsset: "未命名文件", searchAssets: "搜索素材", add: "添加", noAssets: "暂无素材", inserted: "插入画布", removeAssetTitle: "移除该素材？", remove: "移除", removeAsset: "移除素材", assetRemoved: "素材已移除",
             searchPrompts: "搜索提示词", noPrompts: "暂无提示词", promptCopied: "已复制提示词", copyFailed: "复制失败", loadFailedRetry: "加载失败，点击重试", noMatchingPrompts: "无匹配提示词", sourceEmpty: "该来源暂无提示词", viewDetails: "查看详情",
             filter: { image: "图片", video: "视频", text: "文本", audio: "音频", config: "配置", group: "分组" },
         },

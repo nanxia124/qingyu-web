@@ -28,7 +28,8 @@ test('重复 worker 只允许领取成功者调用上游', async () => {
       async failTask() { refunds++; },
     },
     async callUpstreamImage() { calls++; return { status: 200, text: JSON.stringify({ data: [{ url: 'https://example.invalid/test.png' }] }) }; },
-    async fetchUrlAsBase64() { return 'dGVzdA=='; },
+    async fetchUrlAsBuffer() { return Buffer.from('test-image'); },
+    async persistGeneratedImage(_identity, _task, index) { return { type: 'image', index, fileId: `file-${index}`, objectKey: `test/${index}.png` }; },
   });
   await Promise.all(Array.from({ length: 20 }, () => worker({ sub: 'test-user' }, { id: 'task' }, {}, {})));
   assert.equal(calls, 1);

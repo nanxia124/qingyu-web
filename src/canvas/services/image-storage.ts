@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import i18n from "@canvas/i18n";
 import { withLocalProxy } from "@canvas/stores/use-config-store";
 import { createImageThumbnail } from "@canvas/lib/image-thumbnail";
+import { deleteStoredMedia, getMediaBlob, resolveMediaUrl, setMediaBlob, uploadMediaFile, type MediaUploadOptions } from "@canvas/services/file-storage";
 
 export type UploadedImage = {
     url: string;
@@ -25,46 +26,40 @@ let previewRevision = 0;
 let previewQueue: Promise<unknown> = Promise.resolve();
 const IMAGE_PREVIEW_VERSION = 1;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
-const IMAGE_REMOTE_LOAD_TIMEOUT_MS = 10 * 60_000;
 const IMAGE_DECODE_TIMEOUT_MS = 10_000;
 const IMAGE_RESPONSE_ERROR = "ImageResponseError";
 const IMAGE_TIMEOUT_ERROR = "ImageTimeoutError";
 
 type StoredImagePreview = { version: number; blob?: Blob };
 
-type ImageReadOptions = { signal?: AbortSignal };
+type ImageReadOptions = MediaUploadOptions;
 
 export async function uploadImage(input: string | Blob, options?: ImageReadOptions): Promise<UploadedImage> {
     if (typeof input !== "string") return storeImage(input, options);
 
-    let blob: Blob;
-    try {
-        blob = await fetchImageBlob(input, options);
-    } catch (error) {
-        if (options?.signal?.aborted || isNamedError(error, IMAGE_RESPONSE_ERROR) || isNamedError(error, IMAGE_TIMEOUT_ERROR) || !/^https?:\/\//i.test(input)) throw error;
-        const meta = await loadImageMeta(input, options, IMAGE_REMOTE_LOAD_TIMEOUT_MS);
-        if (!meta) throw error;
-        return { url: input, width: meta.width, height: meta.height, bytes: 0, mimeType: "" };
-    }
+    const blob = await fetchImageBlob(input, options);
     return storeImage(blob, options);
 }
 
 async function storeImage(blob: Blob, options?: ImageReadOptions): Promise<UploadedImage> {
-    const storageKey = `image:${nanoid()}`;
-    const url = URL.createObjectURL(blob);
+    const inspectUrl = URL.createObjectURL(blob);
     try {
-        const meta = await loadImageMeta(url, options);
+        const meta = await loadImageMeta(inspectUrl, options);
         if (!meta) throw new Error(i18n.t("common.imageReadFailed"));
         throwIfAborted(options?.signal);
-        await store.setItem(storageKey, blob);
+        const filename = options?.originalFilename || (typeof File !== "undefined" && blob instanceof File ? blob.name : undefined);
+        const uploaded = await uploadMediaFile(blob, "image", { ...options, originalFilename: filename, width: meta.width, height: meta.height });
+        const storageKey = uploaded.storageKey;
+        const url = uploaded.url;
+        await store.setItem(storageKey, blob).catch(() => undefined);
         throwIfAborted(options?.signal);
         objectUrls.set(storageKey, url);
         await storeImagePreview(storageKey, blob);
         return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type.startsWith("image/") ? blob.type : "" };
     } catch (error) {
-        URL.revokeObjectURL(url);
-        await store.removeItem(storageKey).catch(() => undefined);
         throw error;
+    } finally {
+        URL.revokeObjectURL(inspectUrl);
     }
 }
 
@@ -144,15 +139,14 @@ export async function resolveImageUrl(storageKey?: string, fallback = "") {
     if (!storageKey) return fallback;
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
+    const url = await resolveMediaUrl(storageKey, fallback);
+    if (!url || url === fallback) return fallback;
     objectUrls.set(storageKey, url);
     return url;
 }
 
 export async function getImageBlob(storageKey: string) {
-    return store.getItem<Blob>(storageKey);
+    return await store.getItem<Blob>(storageKey).catch(() => null) || await getMediaBlob(storageKey);
 }
 
 // 缩略图按图片的 storageKey 另存一份 WebP，只放在本地 IndexedDB 里，不写进节点数据，也不参与导出和 WebDAV 同步。
@@ -214,7 +208,8 @@ async function deleteImagePreview(storageKey: string) {
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
-    await store.setItem(storageKey, blob);
+    await store.setItem(storageKey, blob).catch(() => undefined);
+    await setMediaBlob(storageKey, blob);
     await deleteImagePreview(storageKey);
     await storeImagePreview(storageKey, blob);
     const url = URL.createObjectURL(blob);
@@ -236,6 +231,7 @@ export async function deleteStoredImages(keys: Iterable<string>) {
             objectUrls.delete(key);
             await deleteImagePreview(key);
             await store.removeItem(key);
+            await deleteStoredMedia([key]);
         }),
     );
 }

@@ -7,6 +7,25 @@ const DEFAULT_PLANS = [
   { code: "team", name: "团队版", priceCents: 9900, durationDays: 30, monthlyQuota: 300000, level: "team", description: "多人协作", features: ["每月 30 万积分", "无限画布", "团队协作", "专属支持"] },
 ];
 
+function sessionDeviceInfo(row) {
+  const legacyName = /^Mozilla\//i.test(row.display_name || '');
+  const legacyBrowser = /^Mozilla\//i.test(row.browser_family || '');
+  const source = `${row.display_name || ''} ${row.os_family || ''} ${row.browser_family || ''}`;
+  const osFamily = /iPhone|iPad|iPod/i.test(source) ? 'iOS'
+    : /Android/i.test(source) ? 'Android'
+    : /Windows|Win32|Win64/i.test(source) ? 'Windows'
+    : /Mac/i.test(source) ? 'macOS'
+    : /Linux/i.test(source) ? 'Linux'
+    : row.os_family && row.os_family !== 'unknown' ? row.os_family : '未知系统';
+  // 旧信息可能已被截断；无法识别时不猜测 Chrome、Edge 或 Safari。
+  const browserFamily = !legacyBrowser && row.browser_family && row.browser_family !== 'unknown' ? row.browser_family
+    : /Firefox\/|FxiOS\//i.test(source) ? 'Firefox' : '浏览器';
+  return {
+    displayName: legacyName || !row.display_name || row.display_name === '网页设备' ? `${osFamily} · ${browserFamily}` : row.display_name,
+    osFamily, browserFamily,
+  };
+}
+
 function publicUser(row) {
   return {
     id: row.appwrite_user_id,
@@ -26,11 +45,24 @@ function apiPlan(row) {
     name: row.name,
     priceCents: Number(row.price_minor),
     durationDays: row.billing_interval === "month" ? 30 : row.billing_interval === "year" ? 365 : 0,
+    billingInterval: row.billing_interval,
     monthlyQuota: Number(row.quota_amount || 0),
     level: row.code,
     description: row.description || "",
     features: row.features || [],
   };
+}
+
+function addCalendarPeriod(start, interval, anchorMonth, anchorDay) {
+  const source = new Date(start);
+  const month = Number(anchorMonth || source.getUTCMonth() + 1) - 1;
+  const day = Number(anchorDay || source.getUTCDate());
+  const year = source.getUTCFullYear() + (interval === "year" ? 1 : 0);
+  const targetMonth = interval === "year" ? month : source.getUTCMonth() + 1;
+  const normalizedYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(normalizedYear, normalizedMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(normalizedYear, normalizedMonth, Math.min(day, lastDay), source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
 }
 
 function apiOrder(row) {
@@ -55,12 +87,25 @@ function maskApiKey(value) {
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
 
-const API_KEY_ENCRYPTION_SECRET = process.env.API_KEY_ENCRYPTION_SECRET || process.env.JWT_SECRET || 'qingyu-api-key-migration-secret-change-me';
-const API_KEY_ENCRYPTION_KEY = crypto.createHash('sha256').update(API_KEY_ENCRYPTION_SECRET).digest();
+const LEGACY_API_KEY_ENCRYPTION_SECRET = 'qingyu-api-key-migration-secret-change-me';
+const API_KEY_ENCRYPTION_SECRET = String(process.env.API_KEY_ENCRYPTION_SECRET || '').trim();
+const ACTIVE_API_KEY_ENCRYPTION_SECRET = API_KEY_ENCRYPTION_SECRET || LEGACY_API_KEY_ENCRYPTION_SECRET;
+const ACTIVE_API_KEY_ENCRYPTION_KEY = crypto.createHash('sha256').update(ACTIVE_API_KEY_ENCRYPTION_SECRET).digest();
+const API_KEY_ENCRYPTION_KEYS = [
+  ACTIVE_API_KEY_ENCRYPTION_KEY,
+  ...[
+    process.env.API_KEY_ENCRYPTION_PREVIOUS_SECRET,
+    process.env.JWT_SECRET,
+    LEGACY_API_KEY_ENCRYPTION_SECRET,
+  ]
+    .map(secret => String(secret || '').trim())
+    .filter(Boolean)
+    .map(secret => crypto.createHash('sha256').update(secret).digest()),
+].filter((key, index, keys) => keys.findIndex(candidate => candidate.equals(key)) === index);
 
 function encryptApiKey(value) {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', API_KEY_ENCRYPTION_KEY, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ACTIVE_API_KEY_ENCRYPTION_KEY, iv);
   const encrypted = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
   return `v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`;
 }
@@ -69,12 +114,61 @@ function decryptApiKey(value) {
   if (!value) return '';
   const [version, ivText, tagText, dataText] = String(value).split(':');
   if (version !== 'v1' || !ivText || !tagText || !dataText) throw new Error('供应商密钥密文格式无效');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', API_KEY_ENCRYPTION_KEY, Buffer.from(ivText, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+  const iv = Buffer.from(ivText, 'base64url');
+  const tag = Buffer.from(tagText, 'base64url');
+  const ciphertext = Buffer.from(dataText, 'base64url');
+  for (const key of API_KEY_ENCRYPTION_KEYS) {
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(tag);
+      return {
+        apiKey: Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8'),
+        needsReEncryption: !key.equals(ACTIVE_API_KEY_ENCRYPTION_KEY),
+      };
+    } catch {
+      // 继续尝试显式配置的旧密钥和历史默认密钥。
+    }
+  }
+  throw new Error('供应商密钥解密失败，请检查 API_KEY_ENCRYPTION_SECRET 和旧密钥配置');
+}
+
+function collectCanvasAssetIds(value, ids = new Set()) {
+  if (typeof value === 'string') {
+    const match = value.match(/^(?:image|video|audio|text):([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+    if (match) ids.add(match[1].toLowerCase());
+    return ids;
+  }
+  if (!value || typeof value !== 'object') return ids;
+  if (Array.isArray(value)) {
+    for (const item of value) collectCanvasAssetIds(item, ids);
+    return ids;
+  }
+  for (const child of Object.values(value)) collectCanvasAssetIds(child, ids);
+  return ids;
+}
+
+function collectCanvasAssetUses(value, path = 'metadata', uses = []) {
+  if (typeof value === 'string') {
+    const match = value.match(/^(?:image|video|audio|text):([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+    if (match) {
+      const slotKey = path.length <= 160 ? path : `${path.slice(0, 128)}:${crypto.createHash('sha256').update(path).digest('hex').slice(0, 31)}`;
+      uses.push({ assetId: match[1].toLowerCase(), slotKey });
+    }
+    return uses;
+  }
+  if (!value || typeof value !== 'object') return uses;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectCanvasAssetUses(item, `${path}[${index}]`, uses));
+    return uses;
+  }
+  for (const [key, child] of Object.entries(value)) collectCanvasAssetUses(child, `${path}.${key}`, uses);
+  return uses;
 }
 
 export async function createPostgresBillingStore() {
+  if (process.env.NODE_ENV === 'production' && !API_KEY_ENCRYPTION_SECRET) {
+    throw new Error('[security] 生产环境必须配置独立的 API_KEY_ENCRYPTION_SECRET');
+  }
   const pool = new Pool({
     host: process.env.PGHOST || "172.19.0.2",
     port: Number(process.env.PGPORT || 5432),
@@ -89,6 +183,13 @@ export async function createPostgresBillingStore() {
   // 的隔离测试环境，才可以直接把订单标记为已支付。
   const paymentMode = String(process.env.PAYMENT_MODE || '').trim().toLowerCase();
   await pool.query("select 1");
+
+  async function setWorkspaceUserContext(client, appwriteUserId) {
+    const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+    if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+    await client.query(`select set_config('app.user_id',$1,true)`, [user.rows[0].id]);
+    return user.rows[0].id;
+  }
 
   async function ensureAdminAccount(username, passwordHash) {
     const cleanUsername = String(username || '').trim().slice(0, 64);
@@ -209,15 +310,27 @@ export async function createPostgresBillingStore() {
   }
 
   async function listSessions(appwriteUserId) {
-    const r = await pool.query(`select s.id,s.created_at,s.last_seen_at,s.expires_at,s.admission_status,s.is_online,s.revoked_at,s.revoked_reason,d.id device_id,d.display_name,d.client_type,d.os_family,d.browser_family
+    const r = await pool.query(`select s.id,s.created_at,s.last_seen_at,s.expires_at,s.admission_status,s.is_online,s.revoked_at,s.revoked_reason,d.id device_id,d.installation_id,d.display_name,d.client_type,d.os_family,d.browser_family
       from app.user_sessions s join app.user_accounts u on u.id=s.user_id join app.user_devices d on d.id=s.device_id
-      where u.appwrite_user_id=$1 order by s.created_at desc limit 50`, [appwriteUserId]);
-    return r.rows.map(x => ({ id: x.id, deviceId: x.device_id, displayName: x.display_name, clientType: x.client_type, osFamily: x.os_family, browserFamily: x.browser_family, status: x.admission_status, online: x.is_online === true && x.admission_status === 'active' && new Date(x.expires_at).getTime() > Date.now(), createdAt: new Date(x.created_at).toISOString(), lastSeenAt: x.last_seen_at ? new Date(x.last_seen_at).toISOString() : null, expiresAt: new Date(x.expires_at).toISOString(), revokedAt: x.revoked_at ? new Date(x.revoked_at).toISOString() : null, revokedReason: x.revoked_reason || null }));
+      where u.appwrite_user_id=$1
+      order by (s.admission_status in ('pending','active') and s.expires_at > now()) desc, s.created_at desc limit 50`, [appwriteUserId]);
+    const now = Date.now();
+    return r.rows.map(x => {
+      const status = ['pending', 'active'].includes(x.admission_status) && new Date(x.expires_at).getTime() <= now ? 'expired' : x.admission_status;
+      return { id: x.id, deviceId: x.device_id, installationId: x.installation_id, ...sessionDeviceInfo(x), clientType: x.client_type, status, online: x.is_online === true && status === 'active', createdAt: new Date(x.created_at).toISOString(), lastSeenAt: x.last_seen_at ? new Date(x.last_seen_at).toISOString() : null, expiresAt: new Date(x.expires_at).toISOString(), revokedAt: x.revoked_at ? new Date(x.revoked_at).toISOString() : null, revokedReason: x.revoked_reason || null };
+    });
   }
 
   async function isSessionActive(appwriteUserId, sessionId) {
-    if (!sessionId) return true;
+    if (!sessionId) return false;
     const r = await pool.query(`select 1 from app.user_sessions s join app.user_accounts u on u.id=s.user_id where u.appwrite_user_id=$1 and s.id=$2 and s.admission_status='active' and s.is_online=true and s.expires_at > now()`, [appwriteUserId, sessionId]);
+    return r.rowCount === 1;
+  }
+
+  // 离线但仍有效的设备可管理设备列表；已撤销或过期的旧票不能踢掉其他设备。
+  async function isSessionAdmitted(appwriteUserId, sessionId) {
+    if (!sessionId) return false;
+    const r = await pool.query(`select 1 from app.user_sessions s join app.user_accounts u on u.id=s.user_id where u.appwrite_user_id=$1 and s.id=$2 and s.admission_status='active' and s.expires_at > now()`, [appwriteUserId, sessionId]);
     return r.rowCount === 1;
   }
 
@@ -227,7 +340,7 @@ export async function createPostgresBillingStore() {
       await client.query('begin');
       const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
       if (!user.rowCount) throw new Error('用户不存在，请重新登录');
-      const changed = await client.query(`update app.user_sessions set admission_status='revoked',is_online=false,revoked_at=now(),revoked_reason='user_request',provider_revocation_status='pending',revoke_retry_at=now() where id=$1 and user_id=$2 and admission_status in ('pending','active') returning id`, [sessionId, user.rows[0].id]);
+      const changed = await client.query(`update app.user_sessions set admission_status='revoked',is_online=false,revoked_at=now(),revoked_reason='user_request',provider_revocation_status='pending',revoke_retry_at=now() where id=$1 and user_id=$2 and admission_status in ('pending','active') and expires_at > now() returning id`, [sessionId, user.rows[0].id]);
       if (!changed.rowCount) throw new Error('会话不存在或已经失效');
       await client.query(`insert into app.session_actions(actor_user_id,target_user_id,target_session_id,action_type,reason) values($1,$1,$2,'revoke_one','user_request')`, [user.rows[0].id, sessionId]);
       await client.query('commit');
@@ -410,15 +523,69 @@ export async function createPostgresBillingStore() {
     return r.rows[0].setting_value;
   }
 
+  async function applyMembershipPeriod(client, { workspaceId, planId, planVersionId, billingInterval, eventKey, orderId = null, redemptionId = null }) {
+    if (!['month', 'year'].includes(billingInterval)) return { applied: false, reason: '套餐没有有效的订阅周期' };
+    // 即使当前还没有订阅记录，也先锁工作空间，避免两笔首次付款同时插入而覆盖账期。
+    await client.query('select id from app.workspaces where id=$1 for update', [workspaceId]);
+    const existing = await client.query(`select id,plan_id,status,current_period_start,current_period_end,billing_anchor_month,billing_anchor_day
+      from app.subscriptions where workspace_id=$1 for update`, [workspaceId]);
+    const now = new Date();
+    const previous = existing.rows[0] || null;
+    const active = previous && new Date(previous.current_period_end) > now && ['trialing','active','past_due','paused'].includes(previous.status);
+    if (active && previous.plan_id !== planId) {
+      return { applied: false, reason: '当前订阅尚未到期，不能直接切换套餐' };
+    }
+    const periodStart = active ? new Date(previous.current_period_end) : now;
+    const anchorMonth = active ? previous.billing_anchor_month : now.getUTCMonth() + 1;
+    const anchorDay = active ? previous.billing_anchor_day : now.getUTCDate();
+    const periodEnd = addCalendarPeriod(periodStart, billingInterval, anchorMonth, anchorDay);
+    const duplicate = await client.query('select 1 from app.subscription_events where idempotency_key=$1', [eventKey]);
+    if (duplicate.rowCount) return { applied: true, duplicate: true, periodStart, periodEnd };
+    if (previous) {
+      await client.query(`update app.subscriptions set plan_id=$2,plan_version_id=$3,status='active',current_period_start=$4,current_period_end=$5,
+        billing_anchor_month=$6,billing_anchor_day=$7,billing_timezone='UTC',cancel_at_period_end=false,version=version+1,updated_at=now() where id=$1`,
+      [previous.id, planId, planVersionId, active ? previous.current_period_start : periodStart, periodEnd, anchorMonth, anchorDay]);
+    } else {
+      await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end,billing_anchor_month,billing_anchor_day,billing_timezone)
+        values($1,$2,$3,'active',$4,$5,$6,$7,'UTC')`, [workspaceId, planId, planVersionId, periodStart, periodEnd, anchorMonth, anchorDay]);
+    }
+    await client.query(`insert into app.subscription_events(subscription_id,event_type,idempotency_key,payload)
+      select id,$2,$3,$4::jsonb from app.subscriptions where workspace_id=$1
+      on conflict(idempotency_key) do nothing`, [workspaceId, active ? 'period_extended' : 'activated', eventKey,
+      JSON.stringify({ order_id: orderId, redemption_id: redemptionId, period_start: periodStart.toISOString(), period_end: periodEnd.toISOString(), billing_interval: billingInterval })]);
+    return { applied: true, periodStart, periodEnd };
+  }
+
+  async function getRenewalStatus(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select set_config($1,$2,true)', ['app.user_id', me.internal_user_id]);
+      const result = await client.query(`select s.status,s.current_period_end,m.status mandate_status
+        from app.subscriptions s left join app.renewal_mandates m on m.subscription_id=s.id and m.status in ('pending','active','revoking')
+        where s.workspace_id=$1 order by m.created_at desc limit 1`, [me.workspace_id]);
+      await client.query('commit');
+      return { automaticRenewalEnabled: false, collectionMode: 'manual', mandateStatus: result.rows[0]?.mandate_status || null,
+        subscriptionStatus: result.rows[0]?.status || null, currentPeriodEnd: result.rows[0]?.current_period_end ? new Date(result.rows[0].current_period_end).getTime() : null };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
   async function createOrder(appwriteUserId, planCode, idempotencyKey, paymentMethod = "mock") {
     const client = await pool.connect();
     try {
       await client.query("begin");
       const me = await getUser(appwriteUserId);
       if (!me) throw new Error("用户不存在，请重新登录");
+      await client.query('select id from app.workspaces where id=$1 for update', [me.workspace_id]);
       const plan = await client.query(`select p.*,v.id plan_version_id from app.plans p join app.plan_versions v on v.plan_id=p.id and v.version=p.version where p.code=$1 and p.status='active'`, [planCode]);
       if (!plan.rowCount) throw new Error("套餐不存在");
       const p = plan.rows[0];
+      const currentSubscription = await client.query(`select s.plan_id,s.current_period_end,cp.code current_plan_code from app.subscriptions s join app.plans cp on cp.id=s.plan_id where s.workspace_id=$1 for update`, [me.workspace_id]);
+      if (currentSubscription.rowCount && new Date(currentSubscription.rows[0].current_period_end) > new Date() && currentSubscription.rows[0].current_plan_code !== planCode) {
+        throw new Error('当前订阅尚未到期，不能直接切换套餐');
+      }
       const existing = await client.query(`select o.*,u.appwrite_user_id,p.code plan_code,coalesce(pay.provider,'') payment_provider,pay.provider_payment_id,pay.paid_at
         from app.orders o join app.workspaces w on w.id=o.workspace_id join app.user_accounts u on u.id=w.owner_user_id join app.plans p on p.id=o.plan_id
         left join lateral (select * from app.payments x where x.order_id=o.id order by x.created_at desc limit 1) pay on true
@@ -461,12 +628,12 @@ export async function createPostgresBillingStore() {
       const order = result.rows[0];
       if (order.status === "paid") { await client.query("commit"); return { alreadyPaid: true, order: apiOrder(order), user: publicUser(await getUser(appwriteUserId)) }; }
       if (order.status !== "pending") throw new Error("此订单已关闭，不能继续付款");
-      const paid = await client.query(`insert into app.payments(order_id,provider,status,amount_minor,paid_at,raw_reference)
-        values($1,'mock','succeeded',$2,now(),'{}') returning id,paid_at`, [order.id, order.amount_minor]);
+      const paid = await client.query(`insert into app.payments(order_id,provider,status,amount_minor,currency,paid_at,raw_reference)
+        values($1,'mock','succeeded',$2,$3,now(),'{}') returning id,paid_at`, [order.id, order.amount_minor, order.currency]);
       await client.query(`update app.orders set status='paid',updated_at=now() where id=$1`, [order.id]);
-      const days = order.billing_interval === "year" ? 365 : order.billing_interval === "month" ? 30 : 0;
-      if (days > 0) await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end)
-        values($1,$2,$3,'active',now(),now()+make_interval(days=>$4)) on conflict(workspace_id) do update set plan_id=excluded.plan_id,plan_version_id=excluded.plan_version_id,status='active',current_period_start=excluded.current_period_start,current_period_end=excluded.current_period_end,updated_at=now()`, [order.workspace_id, order.plan_id, order.plan_version_id, days]);
+      const membership = await applyMembershipPeriod(client, { workspaceId: order.workspace_id, planId: order.plan_id, planVersionId: order.plan_version_id,
+        billingInterval: order.billing_interval, eventKey: `order:${order.id}:membership-period`, orderId: order.id });
+      if (!membership.applied) throw new Error(membership.reason);
       const quota = Number(order.quota_snapshot?.monthly || 0);
       if (quota > 0) {
         const account = await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict(workspace_id,quota_code) do update set updated_at=now() returning id`, [order.workspace_id]);
@@ -493,30 +660,42 @@ export async function createPostgresBillingStore() {
       if (!me) throw new Error('用户不存在，请重新登录');
       const existing = await client.query(`select r.id,r.order_id,r.amount_minor,r.status,r.idempotency_key,r.created_at from app.refunds r where r.workspace_id=$1 and r.idempotency_key=$2`, [me.workspace_id, idempotencyKey]);
       if (existing.rowCount) { await client.query('commit'); return { id: existing.rows[0].id, orderId: existing.rows[0].order_id, amountCents: Number(existing.rows[0].amount_minor), status: existing.rows[0].status, idempotencyKey: existing.rows[0].idempotency_key, createdAt: new Date(existing.rows[0].created_at).getTime() }; }
-      const order = await client.query(`select o.id,o.workspace_id,o.amount_minor,o.currency,o.status,pay.id payment_id
+      const requestedPaymentId = input.paymentId ? String(input.paymentId).trim() : null;
+      if (requestedPaymentId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedPaymentId)) throw new Error('指定的收款编号无效');
+      const refundKind = String(input.refundKind || 'purchase_refund');
+      if (!['purchase_refund','duplicate_collection'].includes(refundKind)) throw new Error('退款类型不正确');
+      const order = await client.query(`select o.id,o.workspace_id,o.amount_minor,o.currency,o.status,pay.id payment_id,pay.amount_minor receipt_amount,pay.currency receipt_currency,pay.is_duplicate,pay.receipt_count
         from app.orders o join app.workspaces w on w.id=o.workspace_id and w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1)
-        left join lateral(select id from app.payments x where x.order_id=o.id and x.status='succeeded' order by x.paid_at desc nulls last limit 1) pay on true
-        where o.id=$2 for update of o,w`, [appwriteUserId, orderId]);
+        left join lateral(
+          select x.id,x.amount_minor,x.currency,
+            x.id<>(select first_receipt.id from app.payments first_receipt where first_receipt.order_id=o.id and first_receipt.status='succeeded' order by first_receipt.paid_at asc nulls last,first_receipt.created_at asc,first_receipt.id asc limit 1) is_duplicate,
+            (select count(*) from app.payments counted where counted.order_id=o.id and counted.status='succeeded') receipt_count
+          from app.payments x where x.order_id=o.id and x.status='succeeded'
+            and x.id=coalesce($3::uuid,(select first_receipt.id from app.payments first_receipt where first_receipt.order_id=o.id and first_receipt.status='succeeded' order by first_receipt.paid_at asc nulls last,first_receipt.created_at asc,first_receipt.id asc limit 1))
+          for update of x
+        ) pay on true
+        where o.id=$2 for update of o,w`, [appwriteUserId, orderId, requestedPaymentId]);
       if (!order.rowCount || !['paid','partially_refunded','refunded'].includes(order.rows[0].status) || !order.rows[0].payment_id) throw new Error('订单不存在或尚未确认支付');
-      const used = await client.query(`select coalesce(sum(amount_minor) filter(where status in ('pending','processing','succeeded','unknown')),0) used from app.refunds where order_id=$1`, [orderId]);
-      const remaining = Number(order.rows[0].amount_minor) - Number(used.rows[0].used);
+      if ((refundKind === 'duplicate_collection') !== Boolean(order.rows[0].is_duplicate)) throw new Error('退款类型必须与所选收款记录相符');
+      const used = await client.query(`select coalesce(sum(amount_minor) filter(where status in ('pending','processing','succeeded','unknown')),0) used from app.refunds where payment_id=$1`, [order.rows[0].payment_id]);
+      const remaining = Number(order.rows[0].receipt_amount) - Number(used.rows[0].used);
       if (amount > remaining) throw new Error('退款金额超过可退金额');
-      const row = await client.query(`insert into app.refunds(workspace_id,order_id,payment_id,amount_minor,currency,idempotency_key,reason,requested_by)
-        values($1,$2,$3,$4,$5,$6,$7,(select id from app.user_accounts where appwrite_user_id=$8)) returning id,created_at`, [me.workspace_id, orderId, order.rows[0].payment_id, amount, order.rows[0].currency, idempotencyKey, reason, appwriteUserId]);
+      const row = await client.query(`insert into app.refunds(workspace_id,order_id,payment_id,refund_kind,amount_minor,currency,idempotency_key,reason,requested_by)
+        values($1,$2,$3,$4,$5,$6,$7,$8,(select id from app.user_accounts where appwrite_user_id=$9)) returning id,created_at`, [me.workspace_id, orderId, order.rows[0].payment_id, refundKind, amount, order.rows[0].receipt_currency, idempotencyKey, reason, appwriteUserId]);
       await client.query('commit');
-      return { id: row.rows[0].id, orderId, amountCents: amount, status: 'pending', idempotencyKey, createdAt: new Date(row.rows[0].created_at).getTime() };
+      return { id: row.rows[0].id, orderId, paymentId: order.rows[0].payment_id, refundKind, currency: order.rows[0].receipt_currency, amountCents: amount, status: 'pending', idempotencyKey, createdAt: new Date(row.rows[0].created_at).getTime() };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
   async function listRefunds(appwriteUserId) {
     const me = await getUser(appwriteUserId); if (!me) return [];
-    const r = await pool.query(`select r.id,r.order_id,r.amount_minor,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no
+    const r = await pool.query(`select r.id,r.order_id,r.payment_id,r.refund_kind,r.amount_minor,r.currency,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no
       from app.refunds r join app.orders o on o.id=r.order_id where r.workspace_id=$1 order by r.created_at desc`, [me.workspace_id]);
-    return r.rows.map(x => ({ id:x.id, orderId:x.order_id, orderNo:x.order_no, amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
+    return r.rows.map(x => ({ id:x.id, orderId:x.order_id, orderNo:x.order_no, paymentId:x.payment_id, refundKind:x.refund_kind, currency:x.currency, amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
   }
   async function adminRefunds() {
-    const r = await pool.query(`select r.id,r.workspace_id,r.order_id,r.amount_minor,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no,u.appwrite_user_id,u.email
+    const r = await pool.query(`select r.id,r.workspace_id,r.order_id,r.payment_id,r.refund_kind,r.amount_minor,r.currency,r.status,r.reason,r.provider_refund_id,r.idempotency_key,r.created_at,r.completed_at,o.order_no,u.appwrite_user_id,u.email
       from app.refunds r join app.orders o on o.id=r.order_id join app.user_accounts u on u.id=(select owner_user_id from app.workspaces where id=r.workspace_id) order by r.created_at desc limit 1000`);
-    return r.rows.map(x => ({ id:x.id, workspaceId:x.workspace_id, orderId:x.order_id, orderNo:x.order_no, userId:x.appwrite_user_id, email:x.email||'', amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
+    return r.rows.map(x => ({ id:x.id, workspaceId:x.workspace_id, orderId:x.order_id, orderNo:x.order_no, paymentId:x.payment_id, refundKind:x.refund_kind, userId:x.appwrite_user_id, email:x.email||'', currency:x.currency, amountCents:Number(x.amount_minor), status:x.status, reason:x.reason, providerRefundId:x.provider_refund_id||'', idempotencyKey:x.idempotency_key, createdAt:new Date(x.created_at).getTime(), completedAt:x.completed_at?new Date(x.completed_at).getTime():null }));
   }
   async function adminUpdateRefund(id, input = {}) {
     const status=String(input.status||''); const providerRefundId=String(input.providerRefundId||'').trim();
@@ -529,7 +708,7 @@ export async function createPostgresBillingStore() {
       if(status==='processing' && !['pending','unknown'].includes(row.status)) throw new Error('当前退款状态不能进入处理中');
       if(['succeeded','failed','unknown'].includes(status) && !['pending','processing','unknown'].includes(row.status)) throw new Error('该退款申请已经结束，不能重复处理');
       await client.query(`update app.refunds set status=$1,provider_refund_id=coalesce($2,provider_refund_id),completed_at=case when $1 in ('succeeded','failed') then now() else completed_at end,raw_reference=raw_reference||$3::jsonb where id=$4`,[status,providerRefundId||null,JSON.stringify({note:String(input.note||'').slice(0,1000)}),id]);
-      if(status==='succeeded') { const total=await client.query(`select coalesce(sum(amount_minor) filter(where status='succeeded'),0) total from app.refunds where order_id=$1`,[row.order_id]); const next=Number(total.rows[0].total)>=Number(row.order_amount)?'refunded':'partially_refunded'; await client.query(`update app.orders set status=$1,updated_at=now() where id=$2 and status in ('paid','partially_refunded')`,[next,row.order_id]); }
+      if(status==='succeeded') { const totals=await client.query(`select coalesce((select sum(amount_minor) from app.refunds where order_id=$1 and status='succeeded'),0) refunded,coalesce((select sum(amount_minor) from app.payments where order_id=$1 and status='succeeded'),0) collected`,[row.order_id]); const refunded=Number(totals.rows[0].refunded),collected=Number(totals.rows[0].collected); const next=refunded>=collected?'refunded':refunded>0?'partially_refunded':'paid'; await client.query(`update app.orders set status=$1,updated_at=now() where id=$2 and status in ('paid','partially_refunded')`,[next,row.order_id]); }
       await client.query('commit'); return {id,status};
     } catch(error){await client.query('rollback');throw error;} finally{client.release();}
   }
@@ -702,15 +881,51 @@ export async function createPostgresBillingStore() {
     const eventType = String(input.type || input.eventType || '').trim().slice(0, 120);
     if (!providerEventId || !eventType) throw new Error('支付事件缺少事件编号或事件类型');
     const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '')) ? String(value) : null;
-    const orderId = uuid(input.orderId); const paymentId = uuid(input.paymentId);
-    const amount = input.amountMinor == null ? null : Math.floor(Number(input.amountMinor));
+    const orderId = uuid(input.orderId);
+    const amount = input.amountMinor == null ? null : Number(input.amountMinor);
     if (amount != null && (!Number.isSafeInteger(amount) || amount < 0)) throw new Error('支付事件金额无效');
-    const existing = await pool.query(`select id,status from app.payment_events where provider=$1 and provider_event_id=$2`, [provider, providerEventId]);
-    if (existing.rowCount) return { eventId: existing.rows[0].id, providerEventId, status: existing.rows[0].status, duplicate: true };
-    const row = await pool.query(`insert into app.payment_events(provider,provider_event_id,event_type,order_id,payment_id,amount_minor,currency,payload,signature_verified)
-      values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,true) returning id,status,received_at`, [String(provider).slice(0,64), providerEventId, eventType, orderId, paymentId, amount, String(input.currency || '').slice(0,3) || null, JSON.stringify(input)]);
-    const processed = await processPaymentEvent(provider, providerEventId);
-    return { eventId: row.rows[0].id, providerEventId, status: processed.status, duplicate: false, receivedAt: new Date(row.rows[0].received_at).toISOString(), error: processed.error || null };
+    const providerName = String(provider).slice(0,64);
+    let row = await pool.query(`insert into app.payment_events(provider,provider_event_id,event_type,order_id,payment_id,amount_minor,currency,payload,signature_verified)
+      values($1,$2,$3,$4,null,$5,$6,$7::jsonb,true)
+      on conflict(provider,provider_event_id) do nothing returning id,status,received_at`, [providerName, providerEventId, eventType, orderId, amount, String(input.currency || '').slice(0,3) || null, JSON.stringify(input)]);
+    const duplicate = !row.rowCount;
+    if (duplicate) {
+      row = await pool.query(`select id,status,received_at,next_retry_at,attempt_count from app.payment_events where provider=$1 and provider_event_id=$2`, [providerName, providerEventId]);
+      if (!row.rowCount) throw new Error('支付事件保存后无法读取');
+      const existing = row.rows[0];
+      if (!['received','failed'].includes(existing.status) || (existing.status === 'failed' && (!existing.next_retry_at || Number(existing.attempt_count) >= 8)) || (existing.next_retry_at && new Date(existing.next_retry_at) > new Date())) {
+        return { eventId: existing.id, providerEventId, status: existing.status, duplicate: true };
+      }
+    }
+    let processed;
+    try { processed = await processPaymentEvent(providerName, providerEventId); }
+    catch (error) {
+      await schedulePaymentEventRetry(providerName, providerEventId, error);
+      const current = await pool.query(`select id,status,attempt_count,next_retry_at from app.payment_events where provider=$1 and provider_event_id=$2`, [providerName, providerEventId]);
+      return { eventId: current.rows[0]?.id, providerEventId, status: current.rows[0]?.status || 'failed', duplicate, error: error.message };
+    }
+    return { eventId: row.rows[0].id, providerEventId, status: processed.status, duplicate, receivedAt: new Date(row.rows[0].received_at).toISOString(), error: processed.error || null, paymentId: processed.paymentId || null, duplicateCollection: Boolean(processed.duplicateCollection) };
+  }
+
+  async function schedulePaymentEventRetry(provider, providerEventId, error) {
+    const failed = await pool.query(`update app.payment_events
+      set status='failed',attempt_count=attempt_count+case when status='processing' then 0 else 1 end,last_attempt_at=now(),
+          next_retry_at=case when attempt_count+case when status='processing' then 0 else 1 end < 8 then now()+make_interval(secs=>least(3600,(30*power(2,least(attempt_count,7)))::integer)) else null end,
+          error_message=$3
+      where provider=$1 and provider_event_id=$2 and status not in ('processed','ignored','review')
+      returning id,attempt_count,next_retry_at`, [String(provider).slice(0,64), String(providerEventId).slice(0,200), String(error?.message || error || '支付事件处理失败').slice(0,2000)]);
+    if (failed.rowCount && !failed.rows[0].next_retry_at) {
+      await pool.query(`select app.record_payment_alert('payment_event_retry_exhausted','critical',w.id,'支付通知多次处理失败，已停止自动重试',jsonb_build_object('event_id',pe.id,'provider',pe.provider,'provider_event_id',pe.provider_event_id,'attempt_count',pe.attempt_count,'error',pe.error_message))
+        from app.payment_events pe left join app.orders o on o.id=pe.order_id left join app.workspaces w on w.id=o.workspace_id where pe.id=$1`, [failed.rows[0].id]);
+    }
+  }
+
+  async function flagPaymentEventForReview(client, event, message, order = null, paymentId = null) {
+    const receipt = paymentId ? await client.query(`select amount_minor,currency,provider_payment_id from app.payments where id=$1`, [paymentId]) : { rows: [] };
+    const receiptDetails = receipt.rows[0] ? { amountMinor: Number(receipt.rows[0].amount_minor), currency: receipt.rows[0].currency, providerPaymentId: receipt.rows[0].provider_payment_id } : {};
+    await client.query(`update app.payment_events set payment_id=coalesce($1,payment_id),status='review',next_retry_at=null,error_message=$2 where id=$3`, [paymentId, message, event.id]);
+    await client.query(`select app.record_payment_alert('payment_event_review','critical',$1,'支付通知需要人工核对',jsonb_build_object('event_id',$2::uuid,'provider',$3::text,'provider_event_id',$4::text,'order_id',$5::uuid,'payment_id',$6::uuid,'reason',$7::text,'receipt',$8::jsonb))`,
+      [order?.workspace_id || null, event.id, event.provider, event.provider_event_id, event.order_id, paymentId, message, JSON.stringify(receiptDetails)]);
   }
 
   // 将已经验签的支付事件幂等地推进到订单、支付记录、订阅和额度。
@@ -722,7 +937,10 @@ export async function createPostgresBillingStore() {
       const eventResult = await client.query(`select * from app.payment_events where provider=$1 and provider_event_id=$2 for update`, [String(provider).slice(0,64), String(providerEventId).slice(0,200)]);
       if (!eventResult.rowCount) throw new Error('支付事件不存在');
       const event = eventResult.rows[0];
-      if (['processed','ignored'].includes(event.status)) { await client.query('commit'); return { status: event.status, error: event.error_message || null }; }
+      if (['processed','ignored','review'].includes(event.status)) { await client.query('commit'); return { status: event.status, error: event.error_message || null }; }
+      if (event.status !== 'processing') {
+        await client.query(`update app.payment_events set status='processing',attempt_count=attempt_count+1,last_attempt_at=now(),next_retry_at=null where id=$1`, [event.id]);
+      }
       const eventType = String(event.event_type || '').toLowerCase();
       const successTypes = new Set(['payment.succeeded','payment.paid','trade.success','succeeded','paid']);
       if (!successTypes.has(eventType)) {
@@ -730,11 +948,11 @@ export async function createPostgresBillingStore() {
         await client.query('commit');
         return { status: 'ignored', error: '非支付成功事件，不发放权益' };
       }
-      if (!event.order_id || event.amount_minor == null) {
+      if (!event.order_id || event.amount_minor == null || Number(event.amount_minor) <= 0) {
         const message = '支付事件缺少订单或金额，等待人工核对';
-        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await flagPaymentEventForReview(client, event, message);
         await client.query('commit');
-        return { status: 'failed', error: message };
+        return { status: 'review', error: message };
       }
       const orderResult = await client.query(`select o.*,p.code plan_code,p.name plan_name,p.billing_interval,v.quota_snapshot,u.appwrite_user_id
         from app.orders o join app.workspaces w on w.id=o.workspace_id
@@ -743,53 +961,81 @@ export async function createPostgresBillingStore() {
         where o.id=$1 for update`, [event.order_id]);
       if (!orderResult.rowCount) {
         const message = '支付事件关联的订单不存在，等待人工核对';
-        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+        await flagPaymentEventForReview(client, event, message);
         await client.query('commit');
-        return { status: 'failed', error: message };
+        return { status: 'review', error: message };
       }
       const order = orderResult.rows[0];
-      if (order.status === 'paid' || order.status === 'partially_refunded' || order.status === 'refunded') {
-        await client.query(`update app.payment_events set status='processed',processed_at=coalesce(processed_at,now()),error_message=null where id=$1`, [event.id]);
-        await client.query('commit');
-        return { status: 'processed', alreadyPaid: true };
-      }
-      if (order.status !== 'pending') {
-        const message = `订单当前状态为 ${order.status}，不能自动入账`;
-        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
-        await client.query('commit');
-        return { status: 'failed', error: message };
-      }
-      if (Number(event.amount_minor) !== Number(order.amount_minor) || (event.currency && String(event.currency).toUpperCase() !== String(order.currency).toUpperCase())) {
-        const message = '支付事件金额或币种与订单不一致，拒绝发放权益';
-        await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
-        await client.query('commit');
-        return { status: 'failed', error: message };
-      }
       const providerPaymentId = String(event.payload?.providerPaymentId || event.payload?.transactionId || event.payload?.tradeNo || `${provider}:${providerEventId}`).slice(0,160);
-      let payment = await client.query(`insert into app.payments(order_id,provider,provider_payment_id,status,amount_minor,paid_at,raw_reference)
-        values($1,$2,$3,'succeeded',$4,now(),$5::jsonb)
-        on conflict(provider,provider_payment_id) do nothing returning id,order_id`, [order.id, String(provider).slice(0,64), providerPaymentId, order.amount_minor, JSON.stringify(event.payload || {})]);
+      const rawCurrency = String(event.currency || order.currency).trim().toUpperCase();
+      const receiptCurrency = /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : 'XXX';
+      let payment = await client.query(`insert into app.payments(order_id,provider,provider_payment_id,status,amount_minor,currency,paid_at,raw_reference)
+        values($1,$2,$3,'succeeded',$4,$5,now(),$6::jsonb)
+        on conflict(provider,provider_payment_id) do nothing returning id,order_id,amount_minor,currency`, [order.id, String(provider).slice(0,64), providerPaymentId, event.amount_minor, receiptCurrency, JSON.stringify(event.payload || {})]);
+      const newReceipt = payment.rowCount === 1;
       if (!payment.rowCount) {
-        payment = await client.query(`select id,order_id from app.payments where provider=$1 and provider_payment_id=$2 for update`, [String(provider).slice(0,64), providerPaymentId]);
+        payment = await client.query(`select id,order_id,amount_minor,currency from app.payments where provider=$1 and provider_payment_id=$2 for update`, [String(provider).slice(0,64), providerPaymentId]);
         if (!payment.rowCount || payment.rows[0].order_id !== order.id) {
           const message = '支付平台交易号已经绑定其他订单，拒绝发放权益';
-          await client.query(`update app.payment_events set status='failed',error_message=$1 where id=$2`, [message, event.id]);
+          await flagPaymentEventForReview(client, event, message, order);
           await client.query('commit');
-          return { status: 'failed', error: message };
+          return { status: 'review', error: message };
         }
       }
+      if (Number(payment.rows[0].amount_minor) !== Number(event.amount_minor) || payment.rows[0].currency !== receiptCurrency) {
+        const message = '同一支付平台交易号返回了不同金额或币种，已保留原收款并转人工核对';
+        await flagPaymentEventForReview(client, event, message, order, payment.rows[0].id);
+        await client.query('commit');
+        return { status: 'review', paymentId: payment.rows[0].id, error: message };
+      }
+      if (order.status === 'paid' || order.status === 'partially_refunded' || order.status === 'refunded') {
+        if (!newReceipt) {
+          await client.query(`update app.payment_events set payment_id=$1,status='processed',processed_at=coalesce(processed_at,now()),next_retry_at=null,error_message=null where id=$2`, [payment.rows[0].id, event.id]);
+          await client.query('commit');
+          return { status: 'processed', paymentId: payment.rows[0].id, orderId: order.id, alreadyPaid: true };
+        }
+        const message = '同一订单检测到多笔实收；已保存收款记录，不重复发放权益，请核对并处理退款';
+        const automaticRefund = await client.query(`insert into app.refunds(workspace_id,order_id,payment_id,refund_kind,amount_minor,currency,idempotency_key,reason)
+          values($1,$2,$3,'duplicate_collection',$4,$5,$6,'系统检测到同一订单重复收款，已建立退回这笔重复收款的待处理申请')
+          on conflict(idempotency_key) do nothing returning id`, [order.workspace_id, order.id, payment.rows[0].id, payment.rows[0].amount_minor, payment.rows[0].currency, `duplicate-payment:${payment.rows[0].id}`]);
+        const refund = automaticRefund.rows[0] || (await client.query(`select id from app.refunds where idempotency_key=$1`, [`duplicate-payment:${payment.rows[0].id}`])).rows[0];
+        if (order.status === 'refunded') await client.query(`update app.orders set status='partially_refunded',updated_at=now() where id=$1`, [order.id]);
+        await client.query(`update app.payment_events set payment_id=$1,status='processed',processed_at=coalesce(processed_at,now()),error_message=$2 where id=$3`, [payment.rows[0].id, message, event.id]);
+        await client.query(`select app.record_payment_alert('payment_duplicate_collection','critical',$1,'检测到同一订单多笔实收，已建立待处理退款申请',jsonb_build_object('order_id',$2::uuid,'payment_id',$3::uuid,'payment_event_id',$4::uuid,'refund_id',$5::uuid,'provider',$6::text,'provider_payment_id',$7::text))`, [order.workspace_id, order.id, payment.rows[0].id, event.id, refund?.id || null, String(provider).slice(0,64), providerPaymentId]);
+        await client.query('commit');
+        return { status: 'processed', paymentId: payment.rows[0].id, refundId: refund?.id || null, orderId: order.id, alreadyPaid: true, duplicateCollection: true, error: message };
+      }
+      if (order.status !== 'pending') {
+        const message = `订单当前状态为 ${order.status}，已记录实收，不能自动发放权益`;
+        await flagPaymentEventForReview(client, event, message, order, payment.rows[0].id);
+        await client.query(`select app.record_payment_alert('payment_for_closed_order','critical',$1,'已关闭订单收到付款，需要人工核对',jsonb_build_object('order_id',$2::uuid,'payment_id',$3::uuid,'payment_event_id',$4::uuid,'order_status',$5::text))`, [order.workspace_id, order.id, payment.rows[0].id, event.id, order.status]);
+        await client.query('commit');
+        return { status: 'review', paymentId: payment.rows[0].id, orderId: order.id, error: message };
+      }
+      if (Number(event.amount_minor) !== Number(order.amount_minor) || receiptCurrency !== String(order.currency).toUpperCase()) {
+        const message = '支付事件金额或币种与订单不一致；已按实收金额留账，需人工核对，未发放权益';
+        await flagPaymentEventForReview(client, event, message, order, payment.rows[0].id);
+        await client.query('commit');
+        return { status: 'review', paymentId: payment.rows[0].id, orderId: order.id, error: message };
+      }
+      const membership = await applyMembershipPeriod(client, { workspaceId: order.workspace_id, planId: order.plan_id, planVersionId: order.plan_version_id,
+        billingInterval: order.billing_interval, eventKey: `order:${order.id}:membership-period`, orderId: order.id });
+      if (!membership.applied) {
+        const message = `${membership.reason}；款项已收妥并保留收款记录，转人工核对，不自动切换权益`;
+        await flagPaymentEventForReview(client, event, message, order, payment.rows[0].id);
+        await client.query(`select app.record_payment_alert('payment_subscription_conflict','critical',$1,$2,jsonb_build_object('order_id',$3::uuid,'payment_id',$4::uuid,'payment_event_id',$5::uuid))`,
+          [order.workspace_id, message, order.id, payment.rows[0].id, event.id]);
+        await client.query('commit');
+        return { status: 'review', paymentId: payment.rows[0].id, orderId: order.id, error: message };
+      }
       await client.query(`update app.orders set status='paid',updated_at=now() where id=$1`, [order.id]);
-      const days = order.billing_interval === 'year' ? 365 : order.billing_interval === 'month' ? 30 : 0;
-      if (days > 0) await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end)
-        values($1,$2,$3,'active',now(),now()+make_interval(days=>$4))
-        on conflict(workspace_id) do update set plan_id=excluded.plan_id,plan_version_id=excluded.plan_version_id,status='active',current_period_start=excluded.current_period_start,current_period_end=excluded.current_period_end,updated_at=now()`, [order.workspace_id, order.plan_id, order.plan_version_id, days]);
       const quota = Number(order.quota_snapshot?.monthly || 0);
       if (quota > 0) {
         const account = await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict(workspace_id,quota_code) do update set updated_at=now() returning id`, [order.workspace_id]);
         await client.query(`update app.quota_accounts set granted=granted+$1,version=version+1,updated_at=now() where id=$2`, [quota, account.rows[0].id]);
         await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata) values($1,$2,'grant',$3,$4,$5::jsonb) on conflict do nothing`, [account.rows[0].id, order.workspace_id, quota, `grant:order:${order.id}`, JSON.stringify({ order_id: order.id, payment_event_id: event.id })]);
       }
-      await client.query(`update app.payment_events set status='processed',processed_at=now(),error_message=null where id=$1`, [event.id]);
+      await client.query(`update app.payment_events set payment_id=$1,status='processed',processed_at=now(),next_retry_at=null,error_message=null where id=$2`, [payment.rows[0].id, event.id]);
       await client.query('commit');
       return { status: 'processed', paymentId: payment.rows[0].id, orderId: order.id };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -863,8 +1109,9 @@ export async function createPostgresBillingStore() {
       let granted = 0;
       if (item.kind === 'membership') {
         if (!item.plan_id || !item.plan_version_id) throw new Error('兑换码套餐配置不完整');
-        await client.query(`insert into app.subscriptions(workspace_id,plan_id,plan_version_id,status,current_period_start,current_period_end)
-          values($1,$2,$3,'active',now(),now()+make_interval(days=>$4)) on conflict(workspace_id) do update set plan_id=excluded.plan_id,plan_version_id=excluded.plan_version_id,status='active',current_period_start=excluded.current_period_start,current_period_end=excluded.current_period_end,updated_at=now()`, [user.rows[0].workspace_id, item.plan_id, item.plan_version_id, item.billing_interval === 'year' ? 365 : 30]);
+        const membership = await applyMembershipPeriod(client, { workspaceId: user.rows[0].workspace_id, planId: item.plan_id, planVersionId: item.plan_version_id,
+          billingInterval: item.billing_interval, eventKey: `redemption:${item.id}:membership-period`, redemptionId: item.id });
+        if (!membership.applied) throw new Error(membership.reason);
         granted = Number(item.quota_snapshot?.monthly || 0);
       } else granted = Number(item.denomination || 0);
       if (granted > 0) {
@@ -908,7 +1155,7 @@ export async function createPostgresBillingStore() {
   }
 
   function platformApiKeyView(row) {
-    const plaintext = row.api_key_ciphertext ? decryptApiKey(row.api_key_ciphertext) : String(row.api_key || '');
+    const plaintext = row.api_key_ciphertext ? decryptApiKey(row.api_key_ciphertext).apiKey : String(row.api_key || '');
     return {
       id: row.id,
       name: row.name,
@@ -924,6 +1171,19 @@ export async function createPostgresBillingStore() {
     };
   }
 
+  async function reencryptPlatformApiKeyIfNeeded(row, executor = pool) {
+    if (!row.api_key_ciphertext) return String(row.api_key || '');
+    const decrypted = decryptApiKey(row.api_key_ciphertext);
+    if (decrypted.needsReEncryption) {
+      const rotated = encryptApiKey(decrypted.apiKey);
+      const result = await executor.query(`update app.platform_api_keys
+        set api_key=null,api_key_ciphertext=$2,updated_at=now()
+        where id=$1 and api_key_ciphertext=$3`, [row.id, rotated, row.api_key_ciphertext]);
+      if (result.rowCount) row.api_key_ciphertext = rotated;
+    }
+    return decrypted.apiKey;
+  }
+
   async function listPlatformApiKeys() {
     const r = await pool.query(`select id,name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active,created_at,updated_at from app.platform_api_keys order by updated_at desc`);
     const result = [];
@@ -934,6 +1194,7 @@ export async function createPostgresBillingStore() {
         row.api_key_ciphertext = ciphertext;
         row.api_key = null;
       }
+      if (row.api_key_ciphertext) await reencryptPlatformApiKeyIfNeeded(row);
       result.push(platformApiKeyView(row));
     }
     return result;
@@ -944,18 +1205,36 @@ export async function createPostgresBillingStore() {
     const baseUrl = String(body.base_url || '').trim();
     const apiKey = String(body.api_key || '').trim();
     if (!name || !baseUrl || !apiKey) throw new Error('名称、API 地址、API Key 为必填项');
-    const r = await pool.query(`insert into app.platform_api_keys(name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active) values($1,$2,$3,null,$4,$5,$6,$7) returning *`, [name, String(body.provider || 'openai'), baseUrl, encryptApiKey(apiKey), String(body.model || ''), body.max_concurrency ? Number(body.max_concurrency) : null, body.is_active === undefined ? true : Boolean(Number(body.is_active))]);
-    return platformApiKeyView(r.rows[0]);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const r = await client.query(`insert into app.platform_api_keys(name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active) values($1,$2,$3,null,$4,$5,$6,$7) returning *`, [name, String(body.provider || 'openai'), baseUrl, encryptApiKey(apiKey), String(body.model || ''), body.max_concurrency ? Number(body.max_concurrency) : null, body.is_active === undefined ? true : Boolean(Number(body.is_active))]);
+      await syncPlatformChannelModels(r.rows[0], client);
+      await client.query('commit');
+      return platformApiKeyView(r.rows[0]);
+    } catch (error) {
+      await client.query('rollback').catch(() => {});
+      throw error;
+    } finally { client.release(); }
   }
 
   async function updatePlatformApiKey(id, body = {}) {
-    const current = await pool.query(`select * from app.platform_api_keys where id=$1`, [id]);
-    if (!current.rowCount) throw new Error('密钥不存在');
-    const old = current.rows[0];
-    const oldApiKey = old.api_key_ciphertext ? decryptApiKey(old.api_key_ciphertext) : String(old.api_key || '');
-    const nextApiKey = body.api_key ? String(body.api_key) : oldApiKey;
-    const r = await pool.query(`update app.platform_api_keys set name=$2,provider=$3,base_url=$4,api_key=null,api_key_ciphertext=$5,model=$6,max_concurrency=$7,is_active=$8,updated_at=now() where id=$1 returning *`, [id, body.name === undefined ? old.name : String(body.name), body.provider === undefined ? old.provider : String(body.provider), body.base_url === undefined ? old.base_url : String(body.base_url), encryptApiKey(nextApiKey), body.model === undefined ? old.model : String(body.model), body.max_concurrency === undefined ? old.max_concurrency : (body.max_concurrency ? Number(body.max_concurrency) : null), body.is_active === undefined ? old.is_active : Boolean(Number(body.is_active))]);
-    return platformApiKeyView(r.rows[0]);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query(`select * from app.platform_api_keys where id=$1 for update`, [id]);
+      if (!current.rowCount) throw new Error('密钥不存在');
+      const old = current.rows[0];
+      const oldApiKey = old.api_key_ciphertext ? decryptApiKey(old.api_key_ciphertext).apiKey : String(old.api_key || '');
+      const nextApiKey = body.api_key ? String(body.api_key) : oldApiKey;
+      const r = await client.query(`update app.platform_api_keys set name=$2,provider=$3,base_url=$4,api_key=null,api_key_ciphertext=$5,model=$6,max_concurrency=$7,is_active=$8,updated_at=now() where id=$1 returning *`, [id, body.name === undefined ? old.name : String(body.name), body.provider === undefined ? old.provider : String(body.provider), body.base_url === undefined ? old.base_url : String(body.base_url), encryptApiKey(nextApiKey), body.model === undefined ? old.model : String(body.model), body.max_concurrency === undefined ? old.max_concurrency : (body.max_concurrency ? Number(body.max_concurrency) : null), body.is_active === undefined ? old.is_active : Boolean(Number(body.is_active))]);
+      await syncPlatformChannelModels(r.rows[0], client);
+      await client.query('commit');
+      return platformApiKeyView(r.rows[0]);
+    } catch (error) {
+      await client.query('rollback').catch(() => {});
+      throw error;
+    } finally { client.release(); }
   }
 
   async function deletePlatformApiKey(id) {
@@ -967,7 +1246,8 @@ export async function createPostgresBillingStore() {
   async function getPlatformApiKeySecret(id) {
     const r = await pool.query(`select api_key,api_key_ciphertext from app.platform_api_keys where id=$1`, [id]);
     if (!r.rowCount) throw new Error('密钥不存在');
-    return { api_key: r.rows[0].api_key_ciphertext ? decryptApiKey(r.rows[0].api_key_ciphertext) : String(r.rows[0].api_key || '') };
+    const row = r.rows[0];
+    return { api_key: row.api_key_ciphertext ? await reencryptPlatformApiKeyIfNeeded({ id, ...row }) : String(row.api_key || '') };
   }
 
   async function listPlatformApiKeyStats() {
@@ -994,22 +1274,26 @@ export async function createPostgresBillingStore() {
       const item = { d1: {}, d7: {}, d30: {} };
       for (const [windowKey, days] of [['d1', 1], ['d7', 7], ['d30', 30]]) {
         const rows = await pool.query(`select case when coalesce(metadata->>'targetPath','') like '%video%' then '视频' when coalesce(metadata->>'targetPath','') like '%image%' then '图片' else '文本' end capability,
-          count(*)::int calls, count(*) filter(where result='committed')::int success, count(*) filter(where result in ('failed','unknown'))::int failure,
+          count(*)::int calls, count(*) filter(where result='committed')::int success,
+          count(*) filter(where result='failed')::int failure, count(*) filter(where result='reserved')::int in_flight,
+          count(*) filter(where result='released')::int released, count(*) filter(where result='unknown')::int unknown,
           round(avg(latency_ms))::int avg_latency_ms
-          from app.usage_records where metadata->>'channelId'=$1 and occurred_at >= now() - make_interval(days=>$2) group by 1`, [String(key.id), days]);
-        const all = { calls: 0, successRate: null, failRate: null, connRate: null, avgConnRate: null, avgLatencyMs: null };
+          from app.usage_records where metadata->>'channelId'=$1 and ${windowKey === 'd1'
+            ? `occurred_at >= (date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai')
+              and occurred_at < ((date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai')`
+            : 'occurred_at >= now() - make_interval(days=>$2)'} group by 1`, [String(key.id), days]);
+        const all = { calls: 0, successes: 0, failures: 0, inFlight: 0, released: 0, unknown: 0, successRate: null, failRate: null, connRate: null, avgConnRate: null, avgLatencyMs: null };
         for (const row of rows.rows) {
           const calls = Number(row.calls); const success = Number(row.success); const failure = Number(row.failure);
           const avgLatencyMs = row.avg_latency_ms === null ? null : Number(row.avg_latency_ms);
-          const summary = { calls, successRate: calls ? Math.round(success * 100 / calls) : null, failRate: calls ? Math.round(failure * 100 / calls) : null, connRate: calls ? Math.round((success + failure) * 100 / calls) : null, avgConnRate: null, avgLatencyMs };
+          const summary = { calls, successes: success, failures: failure, inFlight: Number(row.in_flight), released: Number(row.released), unknown: Number(row.unknown), successRate: calls ? Math.round(success * 100 / calls) : null, failRate: calls ? Math.round(failure * 100 / calls) : null, connRate: calls ? Math.round((success + failure + Number(row.released) + Number(row.unknown)) * 100 / calls) : null, avgConnRate: null, avgLatencyMs };
           item[windowKey][row.capability] = summary; all.calls += calls;
+          all.successes += success; all.failures += failure; all.inFlight += Number(row.in_flight); all.released += Number(row.released); all.unknown += Number(row.unknown);
           if (avgLatencyMs !== null) all._latencyTotal = (all._latencyTotal || 0) + avgLatencyMs * calls;
         }
-        const totalSuccess = rows.rows.reduce((n, row) => n + Number(row.success), 0);
-        const totalFailure = rows.rows.reduce((n, row) => n + Number(row.failure), 0);
-        all.successRate = all.calls ? Math.round(totalSuccess * 100 / all.calls) : null;
-        all.failRate = all.calls ? Math.round(totalFailure * 100 / all.calls) : null;
-        all.connRate = all.calls ? Math.round((totalSuccess + totalFailure) * 100 / all.calls) : null;
+        all.successRate = all.calls ? Math.round(all.successes * 100 / all.calls) : null;
+        all.failRate = all.calls ? Math.round(all.failures * 100 / all.calls) : null;
+        all.connRate = all.calls ? Math.round((all.successes + all.failures + all.released + all.unknown) * 100 / all.calls) : null;
         all.avgLatencyMs = all._latencyTotal ? Math.round(all._latencyTotal / all.calls) : null;
         delete all._latencyTotal;
         item[windowKey]._all = all;
@@ -1017,6 +1301,71 @@ export async function createPostgresBillingStore() {
       result[key.id] = item;
     }
     return result;
+  }
+
+  async function listPlatformApiKeyUsage(channelId, { range = 'today', capability = '全部', limit = 50, offset = 0 } = {}) {
+    if (!/^[0-9a-f-]{36}$/i.test(String(channelId))) throw new Error('渠道编号无效');
+    if (!['today', 'd7', 'd30'].includes(range)) throw new Error('调用时间范围无效');
+    if (!['全部', '图片', '文本', '视频'].includes(capability)) throw new Error('调用类型无效');
+    const pageSize = Math.min(100, Math.max(1, Number(limit) || 50));
+    const pageOffset = Math.max(0, Number(offset) || 0);
+    const timeFilter = range === 'today'
+      ? `u.occurred_at >= (date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai')
+         and u.occurred_at < ((date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai')`
+      : `u.occurred_at >= now() - make_interval(days=>$2)`;
+    const days = range === 'd7' ? 7 : 30;
+    const capabilityFilter = capability === '全部' ? '' : `and (case when coalesce(u.metadata->>'targetPath','') like '%video%' then '视频' when coalesce(u.metadata->>'targetPath','') like '%image%' then '图片' else '文本' end)=$${range === 'today' ? 2 : 3}`;
+    const params = range === 'today' ? [String(channelId)] : [String(channelId), days];
+    if (capability !== '全部') params.push(capability);
+    const filterSql = `u.metadata->>'channelId'=$1 and ${timeFilter} ${capabilityFilter}`;
+    const count = await pool.query(`select count(*)::int total from app.usage_records u where ${filterSql}`, params);
+    const page = await pool.query(`select u.id,u.request_id,u.occurred_at,u.completed_at,u.provider,u.model,u.quantity,u.result,u.latency_ms,
+        u.metadata->>'targetPath' target_path,u.metadata->>'statusCode' status_code,u.metadata->>'phase' phase,
+        a.email user_email
+      from app.usage_records u left join app.user_accounts a on a.id=u.user_id
+      where ${filterSql} order by u.occurred_at desc,u.id desc limit $${params.length + 1} offset $${params.length + 2}`,
+      [...params, pageSize, pageOffset]);
+    return {
+      total: Number(count.rows[0]?.total || 0), limit: pageSize, offset: pageOffset, range,
+      items: page.rows.map(row => ({ id: row.id, requestId: row.request_id || null, occurredAt: new Date(row.occurred_at).toISOString(), completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+        userEmail: row.user_email || '用户已删除', provider: row.provider || '', model: row.model || '', quantity: Number(row.quantity), status: row.result,
+        latencyMs: row.latency_ms === null ? null : Number(row.latency_ms), targetPath: row.target_path || '', statusCode: row.status_code ? Number(row.status_code) : null, phase: row.phase || '' })),
+    };
+  }
+
+  function capabilityForModelName(modelName) {
+    const name = String(modelName || '').toLowerCase();
+    if (/(video|sora|veo|kling|wan|hailuo|seedance)/.test(name)) return 'video';
+    if (/(audio|speech|tts|voice|music)/.test(name)) return 'audio';
+    if (/(image|dall.?e|flux|sdxl|imagen|seedream|banana)/.test(name)) return 'image';
+    return 'text';
+  }
+
+  async function syncPlatformChannelModels(channel, executor = pool) {
+    const models = [...new Set(String(channel.model || '').split(',').map(value => value.trim()).filter(Boolean))];
+    await executor.query(`delete from app.model_catalog_channel_models
+      where platform_api_key_id=$1 and not (upstream_model_id=any($2::text[]))`, [channel.id, models]);
+    for (const upstreamModelId of models) {
+      let catalog = await executor.query('select id from app.model_catalog where model_id=$1 limit 1', [upstreamModelId]);
+      if (!catalog.rowCount) {
+        catalog = await executor.query(`insert into app.model_catalog(model_id,display_name,provider,capability,visible,sort_order)
+          values($1,$1,$2,$3,true,coalesce((select max(sort_order)+1 from app.model_catalog),0)) returning id`,
+        [upstreamModelId, String(channel.provider || 'unknown'), capabilityForModelName(upstreamModelId)]);
+      }
+      const existingFormats = await executor.query(`select distinct case when lower(p.provider)='gemini' then 'gemini' else 'openai' end api_format
+        from app.model_catalog_channel_models link join app.platform_api_keys p on p.id=link.platform_api_key_id
+        where link.model_catalog_id=$1 and link.is_active=true`, [catalog.rows[0].id]);
+      const desiredFormat = String(channel.provider || '').toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+      if (existingFormats.rows.some(row => row.api_format !== desiredFormat)) {
+        const alreadyLinked = await executor.query(`select 1 from app.model_catalog_channel_models
+          where model_catalog_id=$1 and platform_api_key_id=$2 and upstream_model_id=$3`, [catalog.rows[0].id, channel.id, upstreamModelId]);
+        if (alreadyLinked.rowCount) throw new Error('修改渠道请求协议会与已关联模型冲突，请先移除冲突关联');
+        continue;
+      }
+      await executor.query(`insert into app.model_catalog_channel_models(model_catalog_id,platform_api_key_id,upstream_model_id)
+        values($1,$2,$3) on conflict(model_catalog_id,platform_api_key_id,upstream_model_id) do update set is_active=true`,
+      [catalog.rows[0].id, channel.id, upstreamModelId]);
+    }
   }
 
   function modelCatalogView(row) {
@@ -1034,19 +1383,92 @@ export async function createPostgresBillingStore() {
   }
 
   async function listModelCatalog() {
-    const r = await pool.query(`select id,model_id,display_name,provider,capability,visible,sort_order,created_at,updated_at
-      from app.model_catalog order by sort_order asc,id asc`);
-    return r.rows.map(modelCatalogView);
+    const r = await pool.query(`select mc.id,mc.model_id,mc.display_name,mc.provider,mc.capability,mc.visible,mc.sort_order,mc.created_at,mc.updated_at,
+        coalesce(jsonb_agg(jsonb_build_object('id',link.id,'channelId',pak.id,'channelName',pak.name,'provider',pak.provider,'model',link.upstream_model_id,'priority',link.priority,'isActive',link.is_active))
+          filter(where link.id is not null),'[]'::jsonb) linked_models
+      from app.model_catalog mc
+      left join app.model_catalog_channel_models link on link.model_catalog_id=mc.id
+      left join app.platform_api_keys pak on pak.id=link.platform_api_key_id
+      group by mc.id order by mc.sort_order asc,mc.id asc`);
+    return r.rows.map(row => ({ ...modelCatalogView(row), linkedModels: row.linked_models || [] }));
   }
 
   async function createModelCatalog(body = {}) {
-    const modelId = String(body.modelId || '').trim().slice(0, 160);
-    if (!modelId) throw new Error('模型 ID 为必填项');
-    const displayName = String(body.displayName || modelId).trim().slice(0, 240) || modelId;
+    const displayName = String(body.displayName || '').trim().slice(0, 240);
+    if (!displayName) throw new Error('请输入模型显示名称');
     const r = await pool.query(`insert into app.model_catalog(model_id,display_name,provider,capability,visible,sort_order)
-      values($1,$2,$3,$4,$5,coalesce((select max(sort_order)+1 from app.model_catalog),0)) returning *`,
-      [modelId, displayName, String(body.provider || 'unknown').slice(0, 80), String(body.capability || 'text').slice(0, 32), body.visible !== false]);
+      values(null,$1,'unknown',$2,$3,coalesce((select max(sort_order)+1 from app.model_catalog),0)) returning *`,
+      [displayName, String(body.capability || 'text').slice(0, 32), body.visible !== false]);
     return modelCatalogView(r.rows[0]);
+  }
+
+  async function addModelCatalogChannelModel(modelCatalogId, input = {}) {
+    const catalogId = Number(modelCatalogId);
+    const channelId = String(input.channelId || '').trim();
+    const upstreamModelId = String(input.upstreamModelId || '').trim().slice(0, 240);
+    const priority = Math.max(0, Math.min(100000, Number(input.priority) || 0));
+    if (!Number.isSafeInteger(catalogId) || catalogId <= 0) throw new Error('模型目录编号无效');
+    if (!/^[0-9a-f-]{36}$/i.test(channelId)) throw new Error('渠道编号无效');
+    if (!upstreamModelId) throw new Error('请选择渠道模型');
+    const channel = await pool.query(`select p.id,p.provider from app.platform_api_keys p
+      where p.id=$1 and exists(select 1 from regexp_split_to_table(coalesce(p.model,''),',') m where btrim(m)= $2)`, [channelId, upstreamModelId]);
+    if (!channel.rowCount) throw new Error('所选模型不在该渠道的已配置模型列表中');
+    const catalog = await pool.query('select id from app.model_catalog where id=$1', [catalogId]);
+    if (!catalog.rowCount) throw new Error('模型目录不存在');
+    const linkedFormats = await pool.query(`select distinct case when lower(p.provider)='gemini' then 'gemini' else 'openai' end api_format
+      from app.model_catalog_channel_models l join app.platform_api_keys p on p.id=l.platform_api_key_id
+      where l.model_catalog_id=$1 and l.is_active=true`, [catalogId]);
+    const selectedFormat = String(channel.rows[0].provider).toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+    if (linkedFormats.rows.some(row => row.api_format !== selectedFormat)) throw new Error('同一目录模型只能关联相同请求协议的渠道');
+    const result = await pool.query(`insert into app.model_catalog_channel_models(model_catalog_id,platform_api_key_id,upstream_model_id,priority,is_active)
+      values($1,$2,$3,$4,true) on conflict(model_catalog_id,platform_api_key_id,upstream_model_id)
+      do update set priority=excluded.priority,is_active=true returning id`, [catalogId, channelId, upstreamModelId, priority]);
+    return { id: result.rows[0].id, catalogModelId: catalogId, channelId, upstreamModelId, priority, isActive: true };
+  }
+
+  async function removeModelCatalogChannelModel(modelCatalogId, bindingId) {
+    const result = await pool.query('delete from app.model_catalog_channel_models where model_catalog_id=$1 and id=$2 returning id', [modelCatalogId, bindingId]);
+    if (!result.rowCount) throw new Error('模型渠道关联不存在');
+    return { success: true };
+  }
+
+  async function listPublicModelCatalogChannels() {
+    const result = await pool.query(`select mc.id,mc.display_name,mc.capability,mc.sort_order,
+        min(p.provider) filter(where l.is_active and p.is_active) provider,
+        min(l.priority) filter(where l.is_active and p.is_active) priority
+      from app.model_catalog mc
+      join app.model_catalog_channel_models l on l.model_catalog_id=mc.id and l.is_active=true
+      join app.platform_api_keys p on p.id=l.platform_api_key_id and p.is_active=true
+      where mc.visible=true group by mc.id order by mc.sort_order,mc.id`);
+    const models = result.rows.map(row => ({ name: `catalog:${row.id}`, displayName: row.display_name, capability: row.capability }));
+    if (!models.length) return [];
+    return models.map(model => {
+      const catalogId = Number(model.name.slice('catalog:'.length));
+      const row = result.rows.find(item => Number(item.id) === catalogId);
+      const provider = String(row?.provider || 'openai');
+      return {
+        id: `catalog-${catalogId}`, name: row?.display_name || model.displayName,
+        provider: provider.toLowerCase() === 'gemini' ? 'gemini' : 'openai',
+        base_url: provider.toLowerCase() === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.openai.com',
+        model: model.name, models: [model],
+      };
+    });
+  }
+
+  async function listPlatformModelRoutes(modelCatalogId) {
+    const catalogId = Number(modelCatalogId);
+    if (!Number.isSafeInteger(catalogId) || catalogId <= 0) return [];
+    const result = await pool.query(`select p.id,p.name,p.provider,p.base_url,p.api_key,p.api_key_ciphertext,p.model,p.max_concurrency,p.is_active,p.created_at,p.updated_at,l.upstream_model_id
+      from app.model_catalog_channel_models l join app.platform_api_keys p on p.id=l.platform_api_key_id
+      join app.model_catalog mc on mc.id=l.model_catalog_id
+      where l.model_catalog_id=$1 and l.is_active=true and p.is_active=true and mc.visible=true
+      order by l.priority,l.id`, [catalogId]);
+    const routes = [];
+    for (const row of result.rows) {
+      await reencryptPlatformApiKeyIfNeeded(row);
+      routes.push({ channel: platformApiKeyView(row), model: row.upstream_model_id });
+    }
+    return routes;
   }
 
   async function bulkCreateModelCatalog(models = []) {
@@ -1084,20 +1506,100 @@ export async function createPostgresBillingStore() {
 
   async function saveCanvasSnapshot(appwriteUserId, snapshot = {}) {
     const projects = Array.isArray(snapshot.projects) ? snapshot.projects.slice(0, 100) : [];
+    const savedVersions = [];
+    for (const project of projects) {
+      for (const node of Array.isArray(project.nodes) ? project.nodes : []) {
+        const metadata = node?.metadata && typeof node.metadata === 'object' ? node.metadata : {};
+        if (node?.type === 'text' && typeof metadata.content === 'string' && metadata.content.length) {
+          throw new Error('文本内容必须先保存到 COS，画布快照只接受文件编号');
+        }
+        if (['image','video','audio'].includes(node?.type) && typeof metadata.content === 'string' && metadata.content.length) {
+          throw new Error('媒体文件必须先保存到 COS，画布快照只接受文件编号');
+        }
+        if (Array.isArray(metadata.texts) && metadata.texts.some(text => typeof text?.content === 'string' && text.content.length)) {
+          throw new Error('多段文本必须先保存到 COS，画布快照只接受文件编号');
+        }
+        if (Array.isArray(metadata.images) && metadata.images.some(image => typeof image?.content === 'string' && image.content.length)) {
+          throw new Error('画布图片必须先保存到 COS，画布快照只接受文件编号');
+        }
+        if (Array.isArray(metadata.uploadedImages) && metadata.uploadedImages.some(image => typeof image === 'string' && !/^(image|video|audio):/.test(image))) {
+          throw new Error('画布参考图必须先保存到 COS，画布快照只接受文件编号');
+        }
+        if (Array.isArray(metadata.references) && metadata.references.some(reference => typeof reference === 'string' && /^(?:data:|blob:|https?:\/\/)/i.test(reference))) {
+          throw new Error('生成参考素材必须先保存到 COS，画布快照只接受文件编号');
+        }
+      }
+      for (const session of Array.isArray(project.chatSessions) ? project.chatSessions : []) {
+        for (const message of Array.isArray(session.messages) ? session.messages : []) {
+          if (typeof message?.text === 'string' && message.text.length) throw new Error('画布对话文本必须先保存到 COS');
+          if (Array.isArray(message?.references) && message.references.some(reference => reference?.dataUrl || reference?.text)) {
+            throw new Error('画布对话参考素材必须先保存到 COS');
+          }
+        }
+      }
+    }
     const client = await pool.connect();
     try {
       await client.query('begin');
-      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.id=$1 and u.status='active'`, [userId]);
       if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
-      const { user_id: userId, workspace_id: workspaceId } = owner.rows[0];
+      const { workspace_id: workspaceId } = owner.rows[0];
       for (const raw of projects) {
         const externalKey = String(raw.id || '').trim().slice(0, 160);
         if (!externalKey) continue;
-        const project = await client.query(`insert into app.canvas_projects(workspace_id,created_by,external_key,title,background_mode,show_image_info,viewport,status,updated_at)
-          values($1,$2,$3,$4,$5,$6,$7::jsonb,'active',now())
-          on conflict(workspace_id,external_key) do update set title=excluded.title,background_mode=excluded.background_mode,show_image_info=excluded.show_image_info,viewport=excluded.viewport,status='active',deleted_at=null,version=app.canvas_projects.version+1,updated_at=now()
-          returning id`, [workspaceId, userId, externalKey, String(raw.title || '未命名画布').slice(0, 240), String(raw.backgroundMode || 'lines').slice(0, 32), Boolean(raw.showImageInfo), JSON.stringify(raw.viewport || { x: 0, y: 0, k: 1 })]);
+        const expectedVersion = Number.isSafeInteger(raw.serverVersion) && raw.serverVersion > 0 ? raw.serverVersion : null;
+        const projectValues = [workspaceId, userId, externalKey, String(raw.title || '未命名画布').slice(0, 240), String(raw.backgroundMode || 'lines').slice(0, 32), Boolean(raw.showImageInfo), JSON.stringify(raw.viewport || { x: 0, y: 0, k: 1 })];
+        let project;
+        if (expectedVersion === null) {
+          project = await client.query(`insert into app.canvas_projects(workspace_id,created_by,external_key,title,background_mode,show_image_info,viewport,status,updated_at)
+            values($1,$2,$3,$4,$5,$6,$7::jsonb,'active',now())
+            on conflict(workspace_id,external_key) do nothing
+            returning id,version`, projectValues);
+          if (!project.rowCount) {
+            const current = await client.query(`select version from app.canvas_projects where workspace_id=$1 and external_key=$2`, [workspaceId, externalKey]);
+            const error = new Error('这张画布已在云端存在或已被其他设备修改，本机草稿已保留');
+            error.code = 'VERSION_CONFLICT';
+            error.conflicts = [{ projectId: externalKey, serverVersion: current.rowCount ? Number(current.rows[0].version) : null }];
+            throw error;
+          }
+        } else {
+          project = await client.query(`update app.canvas_projects set title=$3,background_mode=$4,show_image_info=$5,viewport=$6::jsonb,
+              status='active',deleted_at=null,version=version+1,updated_at=now()
+            where workspace_id=$1 and external_key=$2 and version=$7 and status='active'
+            returning id,version`, [workspaceId, externalKey, projectValues[3], projectValues[4], projectValues[5], projectValues[6], expectedVersion]);
+          if (!project.rowCount) {
+            const current = await client.query(`select version,status from app.canvas_projects where workspace_id=$1 and external_key=$2`, [workspaceId, externalKey]);
+            const error = new Error('这张画布已在云端被其他设备修改，本机草稿已保留');
+            error.code = 'VERSION_CONFLICT';
+            error.conflicts = [{ projectId: externalKey, serverVersion: current.rowCount && current.rows[0].status === 'active' ? Number(current.rows[0].version) : null }];
+            throw error;
+          }
+        }
         const projectId = project.rows[0].id;
+        savedVersions.push({ id: externalKey, serverVersion: Number(project.rows[0].version) });
+        const assetIds = [...collectCanvasAssetIds(raw.nodes)];
+        const linkedAssets = assetIds.length ? await client.query(`select a.id asset_id,av.id asset_version_id
+          from app.assets a
+          join lateral (select id from app.asset_versions where asset_id=a.id and workspace_id=a.workspace_id order by version_no desc limit 1) av on true
+          join app.asset_files af on af.asset_version_id=av.id and af.workspace_id=a.workspace_id and af.role='source'
+          join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id and f.status='ready'
+          where a.id=any($1::uuid[]) and a.workspace_id=$2 and a.status='active'`, [assetIds, workspaceId]) : { rows: [] };
+        if (linkedAssets.rows.length !== assetIds.length) throw new Error('画布包含不存在、未就绪或不属于当前工作空间的素材');
+        await client.query(`delete from app.canvas_project_assets where project_id=$1 and workspace_id=$2
+          and not (asset_id=any($3::uuid[]))`, [projectId, workspaceId, assetIds]);
+        for (const asset of linkedAssets.rows) {
+          // 已关联素材保留首次固定的版本；新素材固定到当前最新版本。
+          await client.query(`insert into app.canvas_project_assets(workspace_id,project_id,asset_id,asset_version_id,added_by)
+            values($1,$2,$3,$4,$5) on conflict(project_id,asset_id) do nothing`, [workspaceId, projectId, asset.asset_id, asset.asset_version_id, userId]);
+        }
+        const fixedAssets = assetIds.length ? await client.query(`select cpa.asset_id,cpa.asset_version_id,af.file_id
+          from app.canvas_project_assets cpa
+          join app.asset_files af on af.asset_version_id=cpa.asset_version_id and af.workspace_id=cpa.workspace_id and af.role='source'
+          join app.file_objects f on f.id=af.file_id and f.workspace_id=af.workspace_id and f.status='ready'
+          where cpa.project_id=$1 and cpa.workspace_id=$2 and cpa.asset_id=any($3::uuid[])`, [projectId, workspaceId, assetIds]) : { rows: [] };
+        if (fixedAssets.rows.length !== assetIds.length) throw new Error('画布素材当前固定版本的原文件不可用');
+        const fixedAssetById = new Map(fixedAssets.rows.map(asset => [String(asset.asset_id), asset]));
         await client.query(`delete from app.canvas_connections where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
         await client.query(`delete from app.canvas_chat_sessions where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
         await client.query(`delete from app.canvas_nodes where project_id=$1 and workspace_id=$2`, [projectId, workspaceId]);
@@ -1107,6 +1609,12 @@ export async function createPostgresBillingStore() {
           if (!nodeKey) continue;
           const inserted = await client.query(`insert into app.canvas_nodes(project_id,workspace_id,node_key,node_type,title,position,width,height,metadata) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb) returning id`, [projectId, workspaceId, nodeKey, String(node.type || 'text').slice(0, 120), String(node.title || '').slice(0, 240), JSON.stringify(node.position || { x: 0, y: 0 }), Math.max(1, Number(node.width) || 1), Math.max(1, Number(node.height) || 1), JSON.stringify(node.metadata || {})]);
           nodeIds.set(nodeKey, inserted.rows[0].id);
+          for (const use of collectCanvasAssetUses(node.metadata || {})) {
+            const asset = fixedAssetById.get(use.assetId);
+            if (!asset) throw new Error('画布节点引用了未登记的素材');
+            await client.query(`insert into app.canvas_node_asset_uses(workspace_id,project_id,node_id,slot_key,asset_id,asset_version_id,file_id,file_role,created_by)
+              values($1,$2,$3,$4,$5,$6,$7,'source',$8)`, [workspaceId, projectId, inserted.rows[0].id, use.slotKey, asset.asset_id, asset.asset_version_id, asset.file_id, userId]);
+          }
         }
         for (const connection of Array.isArray(raw.connections) ? raw.connections.slice(0, 5000) : []) {
           const connectionKey = String(connection.id || '').trim().slice(0, 160);
@@ -1123,13 +1631,13 @@ export async function createPostgresBillingStore() {
             const messageKey = String(message.id || '').trim().slice(0, 160);
             if (!messageKey) continue;
             const allowedRole = ['user', 'assistant', 'system', 'tool', 'error'].includes(message.role) ? message.role : 'user';
-            await client.query(`insert into app.canvas_chat_messages(session_id,workspace_id,message_key,role,content,detail) values($1,$2,$3,$4,$5,$6::jsonb)`, [inserted.rows[0].id, workspaceId, messageKey, allowedRole, String(message.text || '').slice(0, 200000), JSON.stringify({ title: message.title || null, meta: message.meta || null, detail: message.detail || null, references: message.references || [] })]);
+            await client.query(`insert into app.canvas_chat_messages(session_id,workspace_id,message_key,role,content,detail) values($1,$2,$3,$4,$5,$6::jsonb)`, [inserted.rows[0].id, workspaceId, messageKey, allowedRole, String(message.text || '').slice(0, 200000), JSON.stringify({ title: message.title || null, meta: message.meta || null, detail: message.detail || null, references: message.references || [], textStorageKey: message.textStorageKey || null, textChecksum: message.textChecksum || null })]);
           }
         }
-        await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('canvas.project.saved','canvas_project',$1,$2,$3::jsonb)`, [projectId, workspaceId, JSON.stringify({ externalKey, nodeCount: nodeIds.size })]);
+        await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('canvas.project.saved','canvas_project',$1,$2,$3::jsonb)`, [projectId, workspaceId, JSON.stringify({ externalKey, nodeCount: nodeIds.size, serverVersion: Number(project.rows[0].version) })]);
       }
       await client.query('commit');
-      return { saved: projects.length };
+      return { saved: savedVersions.length, versions: savedVersions };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
@@ -1137,7 +1645,7 @@ export async function createPostgresBillingStore() {
     const owner = await pool.query(`select u.id user_id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
     if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
     const workspaceId = owner.rows[0].workspace_id;
-    const projects = await pool.query(`select id,external_key,title,background_mode,show_image_info,viewport,created_at,updated_at from app.canvas_projects where workspace_id=$1 and status='active' order by updated_at desc limit 100`, [workspaceId]);
+    const projects = await pool.query(`select id,external_key,title,background_mode,show_image_info,viewport,version,created_at,updated_at from app.canvas_projects where workspace_id=$1 and status='active' order by updated_at desc limit 100`, [workspaceId]);
     const result = [];
     for (const project of projects.rows) {
       const nodes = await pool.query(`select node_key,node_type,title,position,width,height,metadata from app.canvas_nodes where project_id=$1 and workspace_id=$2 order by created_at`, [project.id, workspaceId]);
@@ -1149,9 +1657,9 @@ export async function createPostgresBillingStore() {
       const chatSessions = [];
       for (const session of sessions.rows) {
         const messages = await pool.query(`select message_key,role,content,detail,created_at from app.canvas_chat_messages where session_id=$1 and workspace_id=$2 order by created_at`, [session.id, workspaceId]);
-        chatSessions.push({ id: session.session_key, title: session.title, createdAt: new Date(session.created_at).toISOString(), updatedAt: new Date(session.updated_at).toISOString(), messages: messages.rows.map(x => ({ id: x.message_key, role: x.role, text: x.content, title: x.detail?.title || undefined, meta: x.detail?.meta || undefined, detail: x.detail?.detail || undefined, references: x.detail?.references || [] })) });
+        chatSessions.push({ id: session.session_key, title: session.title, createdAt: new Date(session.created_at).toISOString(), updatedAt: new Date(session.updated_at).toISOString(), messages: messages.rows.map(x => ({ id: x.message_key, role: x.role, text: x.content, title: x.detail?.title || undefined, meta: x.detail?.meta || undefined, detail: x.detail?.detail || undefined, references: x.detail?.references || [], textStorageKey: x.detail?.textStorageKey || undefined, textChecksum: x.detail?.textChecksum || undefined })) });
       }
-      result.push({ id: project.external_key, title: project.title, createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString(), nodes: nodes.rows.map(x => ({ id: x.node_key, type: x.node_type, title: x.title, position: x.position, width: Number(x.width), height: Number(x.height), metadata: x.metadata || {} })), connections: connections.rows.map(x => ({ id: x.connection_key, fromNodeId: idToKey.get(x.from_node_id), toNodeId: idToKey.get(x.to_node_id) })).filter(x => x.fromNodeId && x.toNodeId), chatSessions, activeChatId: null, backgroundMode: project.background_mode, showImageInfo: project.show_image_info, viewport: project.viewport });
+      result.push({ id: project.external_key, serverVersion: Number(project.version), title: project.title, createdAt: new Date(project.created_at).toISOString(), updatedAt: new Date(project.updated_at).toISOString(), nodes: nodes.rows.map(x => ({ id: x.node_key, type: x.node_type, title: x.title, position: x.position, width: Number(x.width), height: Number(x.height), metadata: x.metadata || {} })), connections: connections.rows.map(x => ({ id: x.connection_key, fromNodeId: idToKey.get(x.from_node_id), toNodeId: idToKey.get(x.to_node_id) })).filter(x => x.fromNodeId && x.toNodeId), chatSessions, activeChatId: null, backgroundMode: project.background_mode, showImageInfo: project.show_image_info, viewport: project.viewport });
     }
     return { projects: result, deletedProjects: [] };
   }
@@ -1171,12 +1679,16 @@ export async function createPostgresBillingStore() {
         const itemId = String(item.itemId || item.id || '').trim().slice(0, 200);
         if (!itemId) continue;
         const role = ['user', 'assistant', 'system', 'tool', 'error'].includes(item.role) ? item.role : 'assistant';
-        await client.query(`insert into app.agent_messages(thread_id,workspace_id,external_item_id,role,content,attachments,canvas_references,usage) values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) on conflict(thread_id,external_item_id) do update set role=excluded.role,content=excluded.content,attachments=excluded.attachments,canvas_references=excluded.canvas_references,usage=excluded.usage`, [threadId, workspaceId, itemId, role, String(item.text || '').slice(0, 200000), JSON.stringify((item.attachments || []).map(({ dataUrl, ...safe }) => safe)), JSON.stringify(item.canvasReferences || []), JSON.stringify(item.usage || null)]);
+        const usage = item.storageKey ? { ...(item.usage && typeof item.usage === 'object' ? item.usage : {}), textStorageKey: String(item.storageKey).slice(0, 500), textChecksum: String(item.textChecksum || '').slice(0, 128) } : item.usage || null;
+        await client.query(`insert into app.agent_messages(thread_id,workspace_id,external_item_id,role,content,attachments,canvas_references,usage) values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) on conflict(thread_id,external_item_id) do update set role=excluded.role,content=excluded.content,attachments=excluded.attachments,canvas_references=excluded.canvas_references,usage=excluded.usage`, [threadId, workspaceId, itemId, role, item.storageKey ? '' : String(item.text || '').slice(0, 200000), JSON.stringify((item.attachments || []).map(({ dataUrl, ...safe }) => safe)), JSON.stringify(item.canvasReferences || []), JSON.stringify(usage)]);
       }
       for (const event of Array.isArray(snapshot.events) ? snapshot.events.slice(-1000) : []) {
         const eventId = String(event.id || '').trim().slice(0, 200);
         if (!eventId) continue;
-        await client.query(`insert into app.agent_event_logs(thread_id,workspace_id,external_event_id,event_type,payload) values($1,$2,$3,$4,$5::jsonb) on conflict(thread_id,external_event_id) where external_event_id is not null do update set event_type=excluded.event_type,payload=excluded.payload`, [threadId, workspaceId, eventId, String(event.title || 'agent.event').slice(0, 120), JSON.stringify({ text: String(event.text || '').slice(0, 200000), raw: event.raw || null })]);
+        const payload = event.storageKey
+          ? { storageKey: String(event.storageKey).slice(0, 500), checksum: String(event.textChecksum || '').slice(0, 128) }
+          : { text: String(event.text || '').slice(0, 200000), raw: event.raw || null };
+        await client.query(`insert into app.agent_event_logs(thread_id,workspace_id,external_event_id,event_type,payload) values($1,$2,$3,$4,$5::jsonb) on conflict(thread_id,external_event_id) where external_event_id is not null do update set event_type=excluded.event_type,payload=excluded.payload`, [threadId, workspaceId, eventId, String(event.title || 'agent.event').slice(0, 120), JSON.stringify(payload)]);
       }
       await client.query('commit');
       return { saved: true, threadId };
@@ -1360,14 +1872,20 @@ export async function createPostgresBillingStore() {
   }
 
   async function listAssets(appwriteUserId, type = 'all', keyword = '') {
-    const r = await pool.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
+    const client = await pool.connect();
+    try {
+    await client.query('begin');
+    await setWorkspaceUserContext(client, appwriteUserId);
+    const r = await client.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
       coalesce((select count(*) from app.asset_likes l where l.asset_id=a.id and l.workspace_id=a.workspace_id),0) like_count,
       coalesce((select count(*) from app.asset_comments c where c.asset_id=a.id and c.workspace_id=a.workspace_id and c.deleted_at is null and c.moderation_status='approved'),0) comment_count,
       exists(select 1 from app.asset_likes my_like where my_like.asset_id=a.id and my_like.workspace_id=a.workspace_id and my_like.user_id=(select id from app.user_accounts where appwrite_user_id=$1)) is_liked,
       coalesce((select v.metadata from app.asset_versions v where v.asset_id=a.id order by v.version_no desc limit 1),'{}'::jsonb) metadata,
       exists(select 1 from app.collections c join app.collection_items ci on ci.collection_id=c.id where c.workspace_id=a.workspace_id and c.created_by=(select id from app.user_accounts where appwrite_user_id=$1) and c.name='favorites' and ci.asset_id=a.id) is_favorite
       from app.assets a where a.status='active' and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword]);
+    await client.query('commit');
     return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), commentCount: Number(x.comment_count), liked: Boolean(x.is_liked), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function listFavorites(appwriteUserId) { return listAssets(appwriteUserId, 'all', '').then(items => items.filter(x => x.favorited)); }
@@ -1409,6 +1927,34 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  async function processRecoverablePaymentEvents(limit = 20) {
+    const exhausted = await pool.query(`update app.payment_events set status='failed',next_retry_at=null,
+        error_message=coalesce(error_message,'支付通知处理进程中断，且已达到自动重试上限')
+      where status='processing' and attempt_count>=8 and (last_attempt_at is null or last_attempt_at<now()-interval '2 minutes')
+      returning id,provider,provider_event_id,order_id,attempt_count,error_message`);
+    for (const event of exhausted.rows) {
+      await pool.query(`select app.record_payment_alert('payment_event_retry_exhausted','critical',w.id,'支付通知处理多次中断，已停止自动重试',jsonb_build_object('event_id',$1,'provider',$2,'provider_event_id',$3,'attempt_count',$4,'error',$5))
+        from app.orders o left join app.workspaces w on w.id=o.workspace_id where o.id=$6`,
+      [event.id, event.provider, event.provider_event_id, event.attempt_count, event.error_message, event.order_id]);
+    }
+    const claimed = await pool.query(`with due as (
+        select id from app.payment_events
+        where signature_verified=true and attempt_count<8 and (
+          (status in ('received','failed') and next_retry_at<=now()) or
+          (status='processing' and (last_attempt_at is null or last_attempt_at<now()-interval '2 minutes'))
+        )
+        order by coalesce(next_retry_at,last_attempt_at),received_at limit $1 for update skip locked
+      )
+      update app.payment_events pe set status='processing',attempt_count=attempt_count+1,last_attempt_at=now(),next_retry_at=null
+      from due where pe.id=due.id returning pe.provider,pe.provider_event_id`, [Math.min(100, Math.max(1, Number(limit) || 20))]);
+    let processed = 0;
+    for (const event of claimed.rows) {
+      try { await processPaymentEvent(event.provider, event.provider_event_id); processed++; }
+      catch (error) { await schedulePaymentEventRetry(event.provider, event.provider_event_id, error); }
+    }
+    return { claimed: claimed.rowCount, processed };
+  }
+
   async function listAssetComments(appwriteUserId, assetId) {
     const r = await pool.query(`select c.id,c.parent_id,c.content,c.moderation_status,c.created_at,c.edited_at,
         coalesce(u.email,'已删除用户') author_email
@@ -1447,30 +1993,369 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  async function ensureAssetUploadBatch(client, uploadBatchId, workspaceId, userId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(uploadBatchId || ''))) {
+      throw new Error('上传批次编号无效');
+    }
+    await client.query(`insert into app.upload_batches(id,workspace_id,created_by,idempotency_key)
+      values($1,$2,$3,$4) on conflict(id) do nothing`, [uploadBatchId, workspaceId, userId, `upload:${uploadBatchId}`]);
+    const batch = await client.query(`select workspace_id,created_by from app.upload_batches where id=$1 for update`, [uploadBatchId]);
+    if (!batch.rowCount || String(batch.rows[0].workspace_id).toLowerCase() !== String(workspaceId).toLowerCase() || String(batch.rows[0].created_by).toLowerCase() !== String(userId).toLowerCase()) {
+      throw new Error('上传批次不存在或不属于当前用户及工作空间');
+    }
+  }
+
+  async function getAssetUploadScope(appwriteUserId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    return { workspaceId: me.workspace_id };
+  }
+
+  async function createContentEdit(appwriteUserId, input = {}) {
+    const idempotencyKey = String(input.idempotencyKey || '').trim().slice(0, 160);
+    const assetIds = Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.map(value => String(value).toLowerCase()) : [];
+    if (!idempotencyKey) throw new Error('编辑编号不能为空');
+    if (!assetIds.length || assetIds.length > 100 || assetIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))) {
+      throw new Error('参考素材无效或数量超出限制');
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u
+        join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active'
+        where u.id=$1 and u.status='active'`, [userId]);
+      if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+      const { user_id: internalUserId, workspace_id: workspaceId } = owner.rows[0];
+      const references = await client.query(`select a.id asset_id,af.file_id
+        from app.assets a
+        join lateral (select id from app.asset_versions where asset_id=a.id and workspace_id=a.workspace_id order by version_no desc limit 1) av on true
+        join app.asset_files af on af.asset_version_id=av.id and af.workspace_id=a.workspace_id and af.role='source'
+        join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id and f.status='ready'
+        where a.id=any($1::uuid[]) and a.workspace_id=$2 and a.status='active'`, [assetIds, workspaceId]);
+      const fileByAssetId = new Map(references.rows.map(row => [String(row.asset_id), String(row.file_id)]));
+      if (fileByAssetId.size !== new Set(assetIds).size) throw new Error('参考素材不存在、未就绪或不属于当前工作空间');
+      const inserted = await client.query(`insert into app.content_edits(workspace_id,created_by,idempotency_key)
+        values($1,$2,$3) on conflict(workspace_id,idempotency_key) do nothing returning id`, [workspaceId, internalUserId, idempotencyKey]);
+      let editId = inserted.rows[0]?.id;
+      if (!editId) {
+        const existing = await client.query(`select id,created_by from app.content_edits where workspace_id=$1 and idempotency_key=$2 for update`, [workspaceId, idempotencyKey]);
+        if (!existing.rowCount || String(existing.rows[0].created_by) !== String(internalUserId)) throw new Error('编辑编号已属于其他用户');
+        editId = existing.rows[0].id;
+      } else {
+        for (const [position, assetId] of assetIds.entries()) {
+          await client.query(`insert into app.content_edit_inputs(workspace_id,edit_id,file_id,role,position)
+            values($1,$2,$3,$4,$5)`, [workspaceId, editId, fileByAssetId.get(assetId), position === 0 ? 'base' : 'reference', position]);
+        }
+      }
+      const current = await client.query(`select file_id,role,position from app.content_edit_inputs where workspace_id=$1 and edit_id=$2 order by position`, [workspaceId, editId]);
+      const requested = assetIds.map(id => fileByAssetId.get(id));
+      if (current.rows.length !== requested.length || current.rows.some((row, index) => String(row.file_id) !== requested[index] || Number(row.position) !== index || row.role !== (index === 0 ? 'base' : 'reference'))) {
+        throw new Error('同一编辑编号不能更换参考素材');
+      }
+      await client.query('commit');
+      return { editId, baseFileId: requested[0] };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function createAssetUploadSession(appwriteUserId, input) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const owner = await client.query(`select u.id user_id,w.id workspace_id from app.user_accounts u
+        join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active'
+        where u.id=$1 for update of u,w`, [userId]);
+      if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+      const { workspace_id: workspaceId } = owner.rows[0];
+      const sessionId = crypto.randomUUID();
+      const idempotencyKey = String(input.idempotencyKey || '').trim();
+      if (idempotencyKey && idempotencyKey.length > 160) throw new Error('文件保存编号不能超过160个字符');
+      const fileId = String(input.fileId || crypto.randomUUID());
+      if (!/^[0-9a-f-]{36}$/i.test(fileId)) throw new Error('文件编号无效');
+      const title = String(input.title || '').trim();
+      const mimeType = String(input.mimeType || 'application/octet-stream').slice(0, 160);
+      const sizeBytes = Number(input.sizeBytes);
+      const sourceKind = ['generated','reference_upload','manual_upload','edited'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
+      const mediaType = ['image','video','audio','text','document','other'].includes(input.mediaType) ? input.mediaType : 'other';
+      if (!title || title.length > 240 || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 5 * 1024 * 1024 * 1024) throw new Error('上传文件名称或大小无效');
+      const editId = sourceKind === 'edited' ? String(input.editId || '') : null;
+      const sourceFileId = sourceKind === 'edited' ? String(input.sourceFileId || '') : null;
+      if (sourceKind === 'edited') {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceFileId)) throw new Error('编辑来源记录无效');
+        const source = await client.query(`select 1 from app.content_edits ce join app.content_edit_inputs cei on cei.edit_id=ce.id and cei.workspace_id=ce.workspace_id
+          join app.file_objects f on f.id=cei.file_id and f.workspace_id=cei.workspace_id and f.status='ready'
+          where ce.id=$1 and ce.workspace_id=$2 and ce.created_by=$3 and cei.file_id=$4 and cei.role='base'`, [editId, workspaceId, userId, sourceFileId]);
+        if (!source.rowCount) throw new Error('编辑记录或原始素材不存在、未就绪或不属于当前用户');
+      }
+      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : String(input.uploadBatchId || crypto.randomUUID());
+      if (uploadBatchId) {
+        await ensureAssetUploadBatch(client, uploadBatchId, workspaceId, userId);
+      }
+      const objectKey = String(input.objectKey || '');
+      if (!objectKey.startsWith(`workspaces/${workspaceId}/`) || objectKey.includes('..')) throw new Error('上传对象键与当前工作空间不匹配');
+      await client.query(`insert into app.file_objects(
+        id,workspace_id,uploaded_by,storage_provider,bucket,object_key,size_bytes,mime_type,status,media_type,source_kind,
+        original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,edit_id,source_file_id,write_idempotency_key
+      ) values($1,$2,$3,'cos',$4,$5,$6,$7,'pending',$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16,$17,$18)`, [
+        fileId, workspaceId, userId, input.bucket, objectKey, sizeBytes, mimeType, mediaType, sourceKind, title, uploadBatchId,
+        Number.isInteger(input.width) && input.width > 0 ? input.width : null,
+        Number.isInteger(input.height) && input.height > 0 ? input.height : null,
+        Number.isInteger(input.durationMs) && input.durationMs >= 0 ? input.durationMs : null,
+        mediaType === 'text' ? (input.completeness === 'complete' ? 'complete' : 'partial') : null,
+        editId, sourceFileId, idempotencyKey || null,
+      ]);
+      await client.query(`insert into app.upload_sessions(id,workspace_id,file_id,attempt_no,provider_upload_id,status,expires_at)
+        values($1,$2,$3,1,$4,'initiated',now()+interval '24 hours')`, [sessionId, workspaceId, fileId, input.providerUploadId]);
+      await client.query(`update app.upload_sessions set status='uploading' where id=$1`, [sessionId]);
+      await client.query('commit');
+      return { sessionId, fileId, uploadBatchId, objectKey, sizeBytes };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function getAssetUploadSession(appwriteUserId, sessionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const r = await client.query(`select s.id,s.status,s.provider_upload_id,s.expires_at,f.id file_id,f.workspace_id,
+          f.object_key,f.bucket,f.size_bytes,f.mime_type,f.media_type,f.source_kind,f.original_filename,
+          f.width,f.height,f.duration_ms,f.completeness,f.write_idempotency_key,f.edit_id,f.source_file_id,
+          a.id asset_id,a.asset_type,a.title asset_title
+        from app.upload_sessions s join app.file_objects f on f.id=s.file_id and f.workspace_id=s.workspace_id
+        join app.workspaces w on w.id=s.workspace_id
+        left join app.asset_files af on af.file_id=f.id and af.workspace_id=f.workspace_id and af.role='source'
+        left join app.asset_versions av on av.id=af.asset_version_id and av.workspace_id=f.workspace_id
+        left join app.assets a on a.id=av.asset_id and a.workspace_id=f.workspace_id
+        where s.id=$1 and w.type='personal' and w.owner_user_id=$2`, [sessionId, userId]);
+      if (!r.rowCount) throw new Error('上传会话不存在或无权访问');
+      const x = r.rows[0];
+      const parts = await client.query(`select part_number,etag,size_bytes,checksum from app.upload_session_parts where session_id=$1 order by part_number`, [sessionId]);
+      await client.query('commit');
+      return { id: x.id, status: x.status, providerUploadId: x.provider_upload_id, expiresAt: x.expires_at,
+        fileId: x.file_id, workspaceId: x.workspace_id, objectKey: x.object_key, bucket: x.bucket,
+        sizeBytes: Number(x.size_bytes), mimeType: x.mime_type, mediaType: x.media_type, sourceKind: x.source_kind,
+        originalFilename: x.original_filename, width: x.width, height: x.height, durationMs: x.duration_ms,
+        completeness: x.completeness, writeIdempotencyKey: x.write_idempotency_key,
+        editId: x.edit_id, sourceFileId: x.source_file_id,
+        assetId: x.asset_id || null, assetType: x.asset_type || null,
+        assetTitle: x.asset_title || null, parts: parts.rows.map(p => ({ partNumber: p.part_number, etag: p.etag, sizeBytes: Number(p.size_bytes), checksum: p.checksum })) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function recordAssetUploadPart(appwriteUserId, sessionId, part) {
+    const session = await getAssetUploadSession(appwriteUserId, sessionId);
+    if (session.status !== 'uploading') throw new Error('上传会话当前不可接收分片');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await setWorkspaceUserContext(client, appwriteUserId);
+      await client.query(`insert into app.upload_session_parts(session_id,workspace_id,part_number,etag,size_bytes,checksum)
+        values($1,$2,$3,$4,$5,$6) on conflict(session_id,part_number) do update set etag=excluded.etag,size_bytes=excluded.size_bytes,checksum=excluded.checksum`,
+      [session.id, session.workspaceId, part.partNumber, part.etag, part.sizeBytes, part.checksum || null]);
+      await client.query('commit');
+      return { recorded: true };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function beginAssetUploadCompletion(appwriteUserId, sessionId, cosParts) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const session = await client.query(`select s.id,s.workspace_id,s.file_id,s.status,f.size_bytes
+        from app.upload_sessions s join app.file_objects f on f.id=s.file_id and f.workspace_id=s.workspace_id
+        join app.workspaces w on w.id=s.workspace_id join app.user_accounts u on u.id=w.owner_user_id
+        where s.id=$1 and u.id=$2 and u.status='active' and w.type='personal' for update of s,f`, [sessionId, userId]);
+      if (!session.rowCount || !['uploading','completing'].includes(session.rows[0].status)) throw new Error('上传会话不存在或当前不可完成');
+      const recorded = await client.query(`select part_number,etag,size_bytes from app.upload_session_parts where session_id=$1 order by part_number`, [sessionId]);
+      const expected = recorded.rows.map(row => ({ partNumber: Number(row.part_number), etag: row.etag, sizeBytes: Number(row.size_bytes) }));
+      const actual = Array.isArray(cosParts) ? cosParts : [];
+      if (!expected.length || actual.length !== expected.length) throw new Error('COS 分片数量与上传记录不一致');
+      let totalBytes = 0;
+      for (let index = 0; index < expected.length; index += 1) {
+        const left = expected[index];
+        const right = actual[index];
+        if (left.partNumber !== index + 1 || right?.partNumber !== left.partNumber || right.etag !== left.etag || right.sizeBytes !== left.sizeBytes) throw new Error('COS 分片校验未通过');
+        totalBytes += left.sizeBytes;
+      }
+      if (totalBytes !== Number(session.rows[0].size_bytes)) throw new Error('分片总大小与原文件不一致');
+      if (session.rows[0].status === 'uploading') await client.query(`update app.upload_sessions set status='completing' where id=$1`, [sessionId]);
+      await client.query(`insert into app.file_jobs(workspace_id,file_id,job_kind,idempotency_key,upload_session_id,next_run_at)
+        values($1,$2,'persist',$3,$4,now()+interval '2 minutes')
+        on conflict(workspace_id,idempotency_key) do nothing`,
+      [session.rows[0].workspace_id, session.rows[0].file_id, `upload-persist:${session.rows[0].id}`, session.rows[0].id]);
+      await client.query('commit');
+      return { sessionId, fileId: session.rows[0].file_id, workspaceId: session.rows[0].workspace_id, sizeBytes: totalBytes, parts: expected };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function failAssetUploadSession(appwriteUserId, sessionId, errorCode = 'upload_failed') {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const session = await client.query(`select s.id,s.workspace_id,s.file_id,s.status from app.upload_sessions s
+        join app.workspaces w on w.id=s.workspace_id join app.user_accounts u on u.id=w.owner_user_id
+        where s.id=$1 and u.id=$2 and u.status='active' and w.type='personal' for update of s`, [sessionId, userId]);
+      if (!session.rowCount) throw new Error('上传会话不存在或无权操作');
+      const row = session.rows[0];
+      if (['initiated','uploading','completing'].includes(row.status)) await client.query(`update app.upload_sessions set status='aborting' where id=$1`, [sessionId]);
+      const current = await client.query(`select status from app.upload_sessions where id=$1`, [sessionId]);
+      if (current.rows[0].status === 'aborting') await client.query(`update app.upload_sessions set status='aborted',last_error_code=$2 where id=$1`, [sessionId, String(errorCode).slice(0, 120)]);
+      await client.query(`update app.file_objects set status='failed',last_error_code=$2,updated_at=now() where id=$1 and status='pending'`, [row.file_id, String(errorCode).slice(0, 120)]);
+      await client.query('commit');
+      return { aborted: true };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function enqueueAssetUploadRecovery(appwriteUserId, sessionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const session = await client.query(`select s.workspace_id,s.file_id,s.id
+        from app.upload_sessions s join app.workspaces w on w.id=s.workspace_id
+        join app.user_accounts u on u.id=w.owner_user_id
+        where s.id=$1 and u.id=$2 and u.status='active' and w.type='personal' and s.status='completing'`, [sessionId, userId]);
+      if (!session.rowCount) throw new Error('只有正在完成的上传可以进入恢复队列');
+      await client.query(`insert into app.file_jobs(workspace_id,file_id,job_kind,idempotency_key,upload_session_id)
+        values($1,$2,'persist',$3,$4) on conflict(workspace_id,idempotency_key) do nothing`,
+      [session.rows[0].workspace_id, session.rows[0].file_id, `upload-persist:${session.rows[0].id}`, session.rows[0].id]);
+      await client.query('commit');
+      return { queued: true };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function claimFileUploadRecoveryJobs(workerId, limit = 10) {
+    const owner = String(workerId || '').trim().slice(0, 200);
+    if (!owner) throw new Error('文件恢复执行器编号不能为空');
+    const result = await pool.query(`select * from app.claim_file_upload_recovery_jobs($1,$2)`,
+      [owner, Math.max(1, Math.min(50, Number(limit) || 10))]);
+    return result.rows.map(row => ({ id: row.id, workspaceId: row.workspace_id, fileId: row.file_id,
+      uploadSessionId: row.upload_session_id, leaseVersion: Number(row.lease_version), attemptCount: Number(row.attempt_count),
+      appwriteUserId: row.appwrite_user_id, leaseOwner: owner }));
+  }
+
+  async function finishFileUploadRecoveryJob(job) {
+    const result = await pool.query(`select app.finish_file_job($1,$2,$3) as finished`, [job.id, job.leaseOwner, job.leaseVersion]);
+    if (!result.rows[0]?.finished) throw new Error('文件恢复作业租约已失效');
+    return true;
+  }
+
+  async function cancelFileUploadRecoveryJob(job) {
+    const result = await pool.query(`select app.cancel_file_job($1,$2,$3) as cancelled`, [job.id, job.leaseOwner, job.leaseVersion]);
+    if (!result.rows[0]?.cancelled) throw new Error('文件恢复作业租约已失效');
+    return true;
+  }
+
+  async function retryFileUploadRecoveryJob(job, errorCode = 'persist_failed', maxAttempts = 8) {
+    const result = await pool.query(`select * from app.retry_file_job($1,$2,$3,$4,$5)`,
+      [job.id, job.leaseOwner, job.leaseVersion, String(errorCode), maxAttempts]);
+    if (!result.rowCount) throw new Error('文件恢复作业租约已失效');
+    return { status: result.rows[0].status, delaySeconds: Number(result.rows[0].delay_seconds) };
+  }
+
   async function createAssetFromFile(appwriteUserId, file) {
     const title = String(file.title || '').trim();
     const assetType = String(file.assetType || 'file').trim().toLowerCase();
     if (!title || title.length > 240) throw new Error('文件名称不能为空且不能超过240个字符');
     if (!['image','video','audio','doc','file'].includes(assetType)) throw new Error('不支持的资产类型');
+    if (file.storageProvider !== 'cos' || !file.bucket || !file.objectKey || !file.fileId) throw new Error('文件缺少有效的 COS 存储记录');
     const client = await pool.connect();
     try {
       await client.query('begin');
-      const owner = await client.query(`select u.id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const owner = await client.query(`select u.id,w.id workspace_id from app.user_accounts u join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active' where u.id=$1 and u.status='active'`, [userId]);
       if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
       const workspaceId = owner.rows[0].workspace_id;
-      const object = await client.query(`insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status) values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`, [workspaceId, owner.rows[0].id, file.storageProvider || 'local', file.bucket || 'qingyu-assets', file.objectKey, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream']);
+      if (file.workspaceId && file.workspaceId !== workspaceId) throw new Error('上传期间工作空间已变化，请重新上传');
       const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : {};
+      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited'].includes(file.sourceKind || metadata.sourceKind)
+        ? (file.sourceKind || metadata.sourceKind) : 'manual_upload';
+      const mediaType = ['image', 'video', 'audio', 'text', 'document', 'other'].includes(file.mediaType)
+        ? file.mediaType : 'other';
+      const editId = sourceKind === 'edited' ? String(metadata.editId || '') : null;
+      const sourceFileId = sourceKind === 'edited' ? String(metadata.sourceFileId || '') : null;
+      const idempotencyKey = String(file.idempotencyKey || metadata.writeIdempotencyKey || '').trim();
+      if (idempotencyKey && idempotencyKey.length > 160) throw new Error('文件保存编号不能超过160个字符');
+      if (sourceKind === 'edited') {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceFileId)) throw new Error('编辑来源记录无效');
+        const source = await client.query(`select 1 from app.content_edits ce join app.content_edit_inputs cei on cei.edit_id=ce.id and cei.workspace_id=ce.workspace_id
+          join app.file_objects f on f.id=cei.file_id and f.workspace_id=cei.workspace_id and f.status='ready'
+          where ce.id=$1 and ce.workspace_id=$2 and ce.created_by=$3 and cei.file_id=$4 and cei.role='base'`, [editId, workspaceId, owner.rows[0].id, sourceFileId]);
+        if (!source.rowCount) throw new Error('编辑记录或原始素材不存在、未就绪或不属于当前用户');
+      }
+      if (idempotencyKey && !file.uploadSessionId) {
+        const existing = await client.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
+            f.object_key,f.checksum,f.size_bytes,f.source_kind,f.edit_id,f.source_file_id,f.status file_status
+          from app.file_objects f
+          join app.asset_files af on af.file_id=f.id and af.workspace_id=f.workspace_id and af.role='source'
+          join app.asset_versions av on av.id=af.asset_version_id and av.workspace_id=f.workspace_id
+          join app.assets a on a.id=av.asset_id and a.workspace_id=f.workspace_id
+          where f.workspace_id=$1 and f.write_idempotency_key=$2
+          order by av.version_no desc limit 1 for update of f`, [workspaceId, idempotencyKey]);
+        if (existing.rowCount) {
+          const prior = existing.rows[0];
+          if (prior.file_status !== 'ready' || prior.status !== 'active') throw new Error('同一文件仍在保存，请稍后重试');
+          if (String(prior.checksum || '') !== String(file.checksum || '') || Number(prior.size_bytes) !== Number(file.sizeBytes)
+            || prior.source_kind !== sourceKind || String(prior.edit_id || '') !== String(editId || '')
+            || String(prior.source_file_id || '') !== String(sourceFileId || '')) {
+            throw new Error('同一文件保存编号不能用于不同内容或来源');
+          }
+          await client.query('commit');
+          return { id: prior.id, name: prior.title, type: prior.asset_type, visibility: prior.visibility, favorited: false,
+            createdAt: new Date(prior.created_at).toISOString(), updatedAt: new Date(prior.updated_at).toISOString(),
+            objectKey: prior.object_key, reused: true };
+        }
+      }
+      let uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : (file.uploadBatchId || crypto.randomUUID());
+      let pendingUpload = null;
+      if (file.uploadSessionId) {
+        const pending = await client.query(`select s.id,s.status,s.file_id,s.workspace_id,f.bucket,f.object_key,f.size_bytes,f.upload_batch_id,f.source_kind,f.edit_id,f.source_file_id,f.write_idempotency_key
+          from app.upload_sessions s join app.file_objects f on f.id=s.file_id and f.workspace_id=s.workspace_id
+          where s.id=$1 and s.file_id=$2 for update of s,f`, [file.uploadSessionId, file.fileId]);
+        if (!pending.rowCount || pending.rows[0].status !== 'completing' || pending.rows[0].workspace_id !== workspaceId) throw new Error('上传会话状态不允许完成或归属不匹配');
+        pendingUpload = pending.rows[0];
+        if (pendingUpload.bucket !== file.bucket || pendingUpload.object_key !== file.objectKey || Number(pendingUpload.size_bytes) !== Number(file.sizeBytes)) throw new Error('上传文件信息与会话登记不一致');
+        if (pendingUpload.source_kind !== sourceKind || String(pendingUpload.edit_id || '') !== String(editId || '') || String(pendingUpload.source_file_id || '') !== String(sourceFileId || '')) throw new Error('上传会话的文件来源与完成请求不一致');
+        if (String(pendingUpload.write_idempotency_key || '') !== idempotencyKey) throw new Error('上传会话的文件保存编号与完成请求不一致');
+        uploadBatchId = pendingUpload.upload_batch_id;
+      }
+      if (uploadBatchId && !pendingUpload) {
+        await ensureAssetUploadBatch(client, uploadBatchId, workspaceId, owner.rows[0].id);
+      }
+      const completeness = mediaType === 'text' ? (metadata.completeness === 'complete' ? 'complete' : 'partial') : null;
+      const object = pendingUpload
+        ? await client.query(`update app.file_objects set storage_version_id=$2,checksum=$3,status='ready',inspection_status='approved',updated_at=now()
+            where id=$1 and workspace_id=$4 and status='pending' returning id`, [file.fileId, file.storageVersionId || null, file.checksum || null, workspaceId])
+        : await client.query(`insert into app.file_objects(
+        id,workspace_id,uploaded_by,storage_provider,bucket,object_key,storage_version_id,checksum,size_bytes,mime_type,status,
+        media_type,source_kind,original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,write_idempotency_key,edit_id,source_file_id
+      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,$12,$13,$14,$15,$16,$17,$18,'approved',$19,$20,$21) returning id`, [
+        file.fileId, workspaceId, owner.rows[0].id, file.storageProvider, file.bucket, file.objectKey,
+        file.storageVersionId || null, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream',
+        mediaType, sourceKind, file.originalFilename || file.title || title, uploadBatchId,
+        Number.isInteger(metadata.width) && metadata.width > 0 ? metadata.width : null,
+        Number.isInteger(metadata.height) && metadata.height > 0 ? metadata.height : null,
+        Number.isInteger(metadata.durationMs) && metadata.durationMs >= 0 ? metadata.durationMs : null,
+        completeness, file.idempotencyKey || null, editId, sourceFileId,
+      ]);
+      if (!object.rowCount) throw new Error('待完成文件记录不存在或状态已变化');
       let generationTaskId = null;
-      if (metadata.source === 'image_generation' && metadata.sourceGenerationTaskId) {
-        const task = await client.query(`select id from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 and status='succeeded'`, [metadata.sourceGenerationTaskId, workspaceId, owner.rows[0].id]);
-        if (!task.rowCount) throw new Error('来源生图任务不存在、未成功或不属于当前用户');
+      if (sourceKind === 'generated' && metadata.sourceGenerationTaskId) {
+        const task = await client.query(`select id,task_type from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 and status='succeeded'`, [metadata.sourceGenerationTaskId, workspaceId, owner.rows[0].id]);
+        if (!task.rowCount || task.rows[0].task_type !== mediaType) throw new Error('来源生成任务不存在、未成功、类型不匹配或不属于当前用户');
         generationTaskId = task.rows[0].id;
       }
       const asset = await client.query(`insert into app.assets(workspace_id,created_by,source_generation_id,asset_type,title,visibility,moderation_status,status) values($1,$2,$3,$4,$5,'private','approved','active') returning id,title,asset_type,visibility,status,created_at,updated_at`, [workspaceId, owner.rows[0].id, generationTaskId, assetType, title]);
       const versionMetadata = { ...metadata, mimeType: file.mimeType || 'application/octet-stream', sizeBytes: file.sizeBytes, checksum: file.checksum };
       const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`, [asset.rows[0].id, workspaceId, owner.rows[0].id, JSON.stringify(versionMetadata)]);
       await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`, [version.rows[0].id, object.rows[0].id, workspaceId]);
-      if (generationTaskId) await client.query(`insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,content_status,metadata) values($1,$2,$3,'image','approved',$4::jsonb)`, [generationTaskId, workspaceId, object.rows[0].id, JSON.stringify({ assetId: asset.rows[0].id, width: metadata.width || null, height: metadata.height || null })]);
+      if (generationTaskId) await client.query(`insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,width,height,duration_ms,content_status,metadata) values($1,$2,$3,$4,$5,$6,$7,'approved',$8::jsonb)`, [generationTaskId, workspaceId, object.rows[0].id, mediaType, metadata.width || null, metadata.height || null, metadata.durationMs || null, JSON.stringify({ assetId: asset.rows[0].id, source: `${mediaType}_generation` })]);
+      if (pendingUpload) await client.query(`update app.upload_sessions set status='completed' where id=$1 and status='completing'`, [file.uploadSessionId]);
+      if (pendingUpload) await client.query(`update app.file_jobs set status='cancelled'
+        where upload_session_id=$1 and job_kind='persist' and status in ('queued','retry_wait')`, [file.uploadSessionId]);
       await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('asset.created','asset',$1,$2,$3::jsonb)`, [asset.rows[0].id, workspaceId, JSON.stringify({ title, assetType })]);
       await client.query('commit');
       return { id: asset.rows[0].id, name: asset.rows[0].title, type: asset.rows[0].asset_type, visibility: asset.rows[0].visibility, favorited: false, createdAt: new Date(asset.rows[0].created_at).toISOString(), updatedAt: new Date(asset.rows[0].updated_at).toISOString(), objectKey: file.objectKey };
@@ -1478,14 +2363,20 @@ export async function createPostgresBillingStore() {
   }
 
   async function getAssetFile(appwriteUserId, assetId) {
-    const r = await pool.query(`select a.title,f.storage_provider,f.bucket,f.object_key,f.mime_type,f.size_bytes,f.checksum
+    const client = await pool.connect();
+    try {
+    await client.query('begin');
+    await setWorkspaceUserContext(client, appwriteUserId);
+    const r = await client.query(`select a.title,f.storage_provider,f.bucket,f.object_key,f.mime_type,f.size_bytes,f.checksum
       from app.assets a join app.asset_versions v on v.asset_id=a.id and v.workspace_id=a.workspace_id and v.version_no=1
       join app.asset_files af on af.asset_version_id=v.id and af.workspace_id=a.workspace_id and af.role='source'
       join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id
       where a.id=$1 and a.status='active' and f.status='ready' and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$2) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active'))) limit 1`, [assetId, appwriteUserId]);
     if (!r.rowCount) throw new Error('资产不存在或无权访问');
     const x = r.rows[0];
+    await client.query('commit');
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   // ── 异步生图任务（0046）：创建即预占额度并返回 task，由后端 worker 异步调用上游 ──
@@ -1493,6 +2384,7 @@ export async function createPostgresBillingStore() {
     if (!row) return null;
     return {
       id: row.id,
+      workspaceId: row.workspace_id,
       status: row.status,
       taskType: row.task_type,
       provider: row.provider || '',
@@ -1511,22 +2403,58 @@ export async function createPostgresBillingStore() {
   }
 
   async function createGenerationTask(appwriteUserId, input = {}) {
-    const me = await getUser(appwriteUserId);
-    if (!me) throw new Error('用户不存在，请重新登录');
+    const referenceAssetIds = Array.isArray(input.referenceAssetIds) ? input.referenceAssetIds.map(value => String(value).toLowerCase()) : [];
+    if (referenceAssetIds.length > 100 || referenceAssetIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))) {
+      throw new Error('参考素材编号无效或超过100个');
+    }
     const client = await pool.connect();
     try {
       await client.query('begin');
-      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const owner = await client.query(`select u.id,w.id workspace_id from app.user_accounts u
+        join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active'
+        where u.id=$1 and u.status='active'`, [userId]);
+      if (!owner.rowCount) throw new Error('用户不存在，请重新登录');
+      const workspaceId = owner.rows[0].workspace_id;
+      const fileByAssetId = new Map();
+      if (referenceAssetIds.length) {
+        const refs = await client.query(`select a.id asset_id,af.file_id
+          from app.assets a
+          join lateral (select id from app.asset_versions where asset_id=a.id and workspace_id=a.workspace_id order by version_no desc limit 1) av on true
+          join app.asset_files af on af.asset_version_id=av.id and af.workspace_id=a.workspace_id and af.role='source'
+          join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id and f.status='ready'
+          where a.id=any($1::uuid[]) and a.workspace_id=$2 and a.status='active'`, [referenceAssetIds, workspaceId]);
+        for (const row of refs.rows) fileByAssetId.set(String(row.asset_id), row.file_id);
+        if (fileByAssetId.size !== new Set(referenceAssetIds).size) throw new Error('参考素材不存在、未就绪或不属于当前工作空间');
+      }
       const idempotencyKey = String(input.idempotencyKey || `task:${crypto.randomUUID()}`).slice(0, 160);
       const quantity = Math.max(0, Math.min(15, Number(input.quantity) || 1));
+      const existingTask = await client.query(`select id from app.generation_tasks where workspace_id=$1 and idempotency_key=$2`, [workspaceId, idempotencyKey]);
       const r = await client.query(
         `select * from app.create_generation_task($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)`,
-        [me.workspace_id, me.internal_user_id, String(input.taskType || 'image').slice(0, 32),
+        [workspaceId, userId, String(input.taskType || 'image').slice(0, 32),
          String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null,
          String(input.pricingVersion || '').slice(0, 160) || null, String(input.prompt || '').slice(0, 4000),
          JSON.stringify(input.parameters || {}), quantity, idempotencyKey,
          Math.max(30, Number(input.timeoutSeconds) || 600)]
       );
+      const currentInputs = await client.query(`select file_id from app.generation_inputs where task_id=$1 and workspace_id=$2 and role='reference' order by position`, [r.rows[0].id, workspaceId]);
+      const requestedFileIds = referenceAssetIds.map(id => String(fileByAssetId.get(id)));
+      if (existingTask.rowCount) {
+        if (currentInputs.rows.length !== requestedFileIds.length || currentInputs.rows.some((row, index) => String(row.file_id) !== requestedFileIds[index])) {
+          throw new Error('同一任务编号不能更换参考素材');
+        }
+      } else {
+        for (const [position, assetId] of referenceAssetIds.entries()) {
+          await client.query(`insert into app.generation_inputs(workspace_id,task_id,file_id,role,position,created_by)
+            values($1,$2,$3,'reference',$4,$5)
+            on conflict (task_id, role, position) do nothing`, [workspaceId, r.rows[0].id, fileByAssetId.get(assetId), position, userId]);
+        }
+      }
+      const finalInputs = await client.query(`select file_id from app.generation_inputs where task_id=$1 and workspace_id=$2 and role='reference' order by position`, [r.rows[0].id, workspaceId]);
+      if (finalInputs.rows.length !== requestedFileIds.length || finalInputs.rows.some((row, index) => String(row.file_id) !== requestedFileIds[index])) {
+        throw new Error('同一任务编号不能更换参考素材');
+      }
       await client.query('commit');
       return apiTask(r.rows[0]);
     } catch (e) { await client.query('rollback'); throw e; } finally { client.release(); }
@@ -1601,33 +2529,42 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  // 生图 worker 把结果图落盘到对象存储后，登记 file_objects + generation_outputs。
+  // 生图 worker 把 COS 已保存的结果登记到 file_objects + generation_outputs。
   async function recordGeneratedOutput(appwriteUserId, taskId, file) {
     const me = await getUser(appwriteUserId);
     if (!me) throw new Error('用户不存在，请重新登录');
+    if (file.storageProvider !== 'cos' || !file.bucket || !file.objectKey || !file.fileId) throw new Error('生成结果缺少有效的 COS 存储记录');
     const client = await pool.connect();
     try {
       await client.query('begin');
       await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
       const task = await client.query(
-        `select id, workspace_id, created_by from app.generation_tasks where id=$1 and workspace_id=$2`,
+        `select id, workspace_id, created_by, task_type, provider from app.generation_tasks where id=$1 and workspace_id=$2`,
         [taskId, me.workspace_id]
       );
       if (!task.rowCount) throw new Error('任务不存在或不属于当前工作空间');
       const workspaceId = task.rows[0].workspace_id;
       const ownerId = task.rows[0].created_by;
+      const mediaType = ['image', 'video', 'audio', 'text'].includes(task.rows[0].task_type) ? task.rows[0].task_type : 'other';
       const fileRow = await client.query(
-        `insert into app.file_objects(workspace_id,uploaded_by,storage_provider,bucket,object_key,checksum,size_bytes,mime_type,status)
-         values($1,$2,$3,$4,$5,$6,$7,$8,'ready') returning id`,
-        [workspaceId, ownerId, file.storageProvider || 'local', file.bucket || 'qingyu-assets',
-         file.objectKey, file.sha256 || null, file.sizeBytes, file.contentType || 'application/octet-stream']
+        `insert into app.file_objects(id,workspace_id,uploaded_by,storage_provider,bucket,object_key,storage_version_id,checksum,size_bytes,mime_type,status,media_type,source_kind,original_filename,width,height,duration_ms,completeness,inspection_status)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,'generated',$12,$13,$14,$15,$16,'approved') returning id`,
+        [file.fileId, workspaceId, ownerId, file.storageProvider, file.bucket,
+         file.objectKey, file.storageVersionId || null, file.sha256 || null, file.sizeBytes, file.contentType || 'application/octet-stream',
+         mediaType, file.originalFilename || file.objectKey.split('/').pop(), file.width || null, file.height || null,
+         Number.isInteger(file.durationMs) && file.durationMs >= 0 ? file.durationMs : null,
+         mediaType === 'text' ? 'complete' : null]
       );
       const fileId = fileRow.rows[0].id;
-      const meta = { source: 'image_generation', index: Number.isInteger(file.index) ? file.index : null };
+      let attempt = await client.query(`select id from app.generation_attempts where task_id=$1 and workspace_id=$2 order by attempt_no limit 1`, [taskId, workspaceId]);
+      if (!attempt.rowCount) attempt = await client.query(`insert into app.generation_attempts(workspace_id,task_id,attempt_no,provider)
+        values($1,$2,1,$3) returning id`, [workspaceId, taskId, task.rows[0].provider || null]);
+      const outputIndex = Number.isInteger(file.index) && file.index >= 0 ? file.index : 0;
+      const meta = { source: `${mediaType}_generation`, index: outputIndex };
       await client.query(
-        `insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,width,height,content_status,metadata)
-         values($1,$2,$3,'image',$4,$5,'approved',$6::jsonb)`,
-        [taskId, workspaceId, fileId, file.width || null, file.height || null, JSON.stringify(meta)]
+        `insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,width,height,content_status,metadata,attempt_id,output_index,availability)
+         values($1,$2,$3,$4,$5,$6,'approved',$7::jsonb,$8,$9,'available')`,
+        [taskId, workspaceId, fileId, mediaType, file.width || null, file.height || null, JSON.stringify(meta), attempt.rows[0].id, outputIndex]
       );
       await client.query('commit');
       return { fileId, objectKey: file.objectKey };
@@ -1737,5 +2674,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, plans, updatePlan, getSystemSetting, setSystemSetting, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, adminCreateCodes, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

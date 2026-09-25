@@ -4,9 +4,22 @@ import { account, teams } from "@/lib/appwrite";
 import { ID, AppwriteException } from "appwrite";
 import { trackEvent, AnalyticsEvent } from "@/lib/analytics";
 import { api } from "@/lib/api";
-import { billingApi, clearBillingToken, setBillingToken } from "@/lib/billing";
+import { billingApi, clearBillingToken } from "@/lib/billing";
 
 const PRODUCTION_OAUTH_ORIGIN = "https://litzone.art";
+const OAUTH_SESSION_ACTIVATION_KEY = "qingyu-oauth-session-activation";
+const OAUTH_SESSION_ACTIVATION_MAX_AGE_MS = 10 * 60 * 1000;
+const BILLING_TOKEN_USER_KEY = "billing_token_user";
+
+function consumeOAuthSessionActivationIntent(): boolean {
+  if (new URLSearchParams(window.location.search).has("oauth_error")) {
+    sessionStorage.removeItem(OAUTH_SESSION_ACTIVATION_KEY);
+    return false;
+  }
+  const createdAt = Number(sessionStorage.getItem(OAUTH_SESSION_ACTIVATION_KEY));
+  sessionStorage.removeItem(OAUTH_SESSION_ACTIVATION_KEY);
+  return Number.isFinite(createdAt) && createdAt > 0 && Date.now() - createdAt <= OAUTH_SESSION_ACTIVATION_MAX_AGE_MS;
+}
 
 /** OAuth 回调地址必须和 Google/Appwrite 控制台登记的地址完全一致。 */
 export function getOAuthOrigin(): string {
@@ -67,6 +80,7 @@ interface AuthState {
   closeAuthModal: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  activateCurrentDevice: () => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   fetchTeams: () => Promise<void>;
@@ -116,10 +130,19 @@ export const useAuthStore = create<AuthState>()(
             user: mapAppwriteUser(user),
             isLoggedIn: true,
           });
-          await get().fetchTeams();
+          if (consumeOAuthSessionActivationIntent()) {
+            try {
+              await get().activateCurrentDevice();
+            } catch {
+              // Appwrite 身份仍然有效；业务在线接管失败不应伪装成登出。
+              await get().fetchTeams();
+            }
+          } else await get().fetchTeams();
         } catch {
           // 没有有效会话
+          await billingApi.logout().catch(() => undefined);
           clearBillingToken();
+          localStorage.removeItem(BILLING_TOKEN_USER_KEY);
           set({
             user: null,
             isLoggedIn: false,
@@ -132,6 +155,8 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isLoading: true });
         try {
+          clearBillingToken();
+          localStorage.removeItem(BILLING_TOKEN_USER_KEY);
           // 创建邮箱密码会话
           await account.createEmailPasswordSession(email, password);
           const user = await account.get();
@@ -139,7 +164,7 @@ export const useAuthStore = create<AuthState>()(
             user: mapAppwriteUser(user),
             isLoggedIn: true,
           });
-          await get().fetchTeams();
+          await get().activateCurrentDevice();
           trackEvent(AnalyticsEvent.LoginSuccess, { method: "email" });
         } finally {
           set({ isLoading: false });
@@ -149,6 +174,8 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, email, password) => {
         set({ isLoading: true });
         try {
+          clearBillingToken();
+          localStorage.removeItem(BILLING_TOKEN_USER_KEY);
           // 创建用户
           await account.create(ID.unique(), email, password, name);
           // 注册后自动登录
@@ -158,8 +185,8 @@ export const useAuthStore = create<AuthState>()(
             user: mapAppwriteUser(user),
             isLoggedIn: true,
           });
-          // 创建默认团队
-          await get().fetchTeams();
+          // 建立业务会话并读取默认空间
+          await get().activateCurrentDevice();
           trackEvent(AnalyticsEvent.RegisterSuccess, { method: "email" });
         } finally {
           set({ isLoading: false });
@@ -168,12 +195,18 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
+          await billingApi.logout();
+        } catch {
+          // 即使网络不可用，也清除本机登录状态；服务端会话仍受有效期与设备状态保护。
+        }
+        try {
           await account.deleteSession("current");
         } catch {
           // 忽略错误
         }
         localStorage.removeItem('dev_login');
         clearBillingToken();
+        localStorage.removeItem(BILLING_TOKEN_USER_KEY);
         set({
           user: null,
           isLoggedIn: false,
@@ -192,16 +225,11 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchTeams: async () => {
-        // 业务团队以 PostgreSQL 为准；登录后先建立计费/业务会话，再读取团队。
-        // 失败时保留 Appwrite 兜底，避免后端短暂不可用导致前台没有团队列表。
-        // 先清掉旧账号令牌，避免换账号时把上一个账号的业务请求带过来。
-        clearBillingToken();
+        // 恢复登录或刷新团队列表时只读取现有业务会话，不重新登记在线设备。
+        // 只有明确登录、OAuth 回跳或用户主动切换设备时才会建立/接管在线会话。
         try {
           const authUser = get().user;
-          if (authUser) {
-            const appwriteJwt = await account.createJWT();
-            const billingSession = await billingApi.login({ userId: authUser.id, email: authUser.email, appwriteJwt: appwriteJwt.jwt });
-            setBillingToken(billingSession.token);
+          if (authUser && localStorage.getItem(BILLING_TOKEN_USER_KEY) === authUser.id) {
             const postgresTeams = await api.get<Team[]>("/teams");
             set({ teams: postgresTeams, currentTeam: postgresTeams[0] || null });
             return;
@@ -225,6 +253,36 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch {
           // 静默失败
+        }
+      },
+
+      activateCurrentDevice: async () => {
+        const authUser = get().user;
+        if (!authUser) throw new Error("请先登录后再切换设备");
+        clearBillingToken();
+        localStorage.removeItem(BILLING_TOKEN_USER_KEY);
+        const appwriteJwt = await account.createJWT();
+        const inviteCode = new URLSearchParams(window.location.search).get('invite') || undefined;
+        await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode, appwriteJwt: appwriteJwt.jwt });
+        localStorage.setItem(BILLING_TOKEN_USER_KEY, authUser.id);
+        try {
+          const postgresTeams = await api.get<Team[]>("/teams");
+          set({ teams: postgresTeams, currentTeam: postgresTeams[0] || null });
+        } catch {
+          // 登录会话已建立；团队列表读取失败时沿用身份系统的只读兜底。
+          try {
+            const teamList = await teams.list();
+            const formattedTeams: Team[] = teamList.teams.map((team) => ({
+              id: team.$id,
+              name: team.name,
+              plan: (team.prefs as any)?.plan || "free",
+              role: (team.prefs as any)?.role || "member",
+              createdAt: team.$createdAt,
+            }));
+            set({ teams: formattedTeams, currentTeam: formattedTeams[0] || null });
+          } catch {
+            // 团队列表可稍后重新读取；不回滚已建立的在线会话。
+          }
         }
       },
 
@@ -263,7 +321,13 @@ export const useAuthStore = create<AuthState>()(
         console.info("[oauth] starting OAuth session", { provider, successUrl, failureUrl });
         trackEvent(AnalyticsEvent.LoginSuccess, { method: provider });
         // createOAuth2Session 会跳出当前页走授权流程，完成后浏览器自动跳回 successUrl
-        await account.createOAuth2Session(provider as any, successUrl, failureUrl);
+        sessionStorage.setItem(OAUTH_SESSION_ACTIVATION_KEY, String(Date.now()));
+        try {
+          await account.createOAuth2Session(provider as any, successUrl, failureUrl);
+        } catch (error) {
+          sessionStorage.removeItem(OAUTH_SESSION_ACTIVATION_KEY);
+          throw error;
+        }
       },
     }),
     {

@@ -8,6 +8,7 @@ import { usePromptList } from "@canvas/components/prompts/use-prompt-list";
 import { PromptDetailDialog } from "./components/prompt-detail-dialog";
 import { useCopyText } from "@canvas/hooks/use-copy-text";
 import { cn } from "@canvas/lib/utils";
+import { SearchInput } from "@/components/SearchInput";
 import { useAssetStore } from "@canvas/stores/use-asset-store";
 import { ALL_PROMPTS_OPTION, type Prompt } from "@canvas/services/api/prompts";
 
@@ -63,7 +64,7 @@ export default function PromptsPage() {
                             </div>
                         </aside>
                         <section className="min-w-0">
-                            <Input size="large" prefix={<Search className="size-4 text-zinc-400" />} value={titleKeyword} placeholder={t("prompts.search")} onChange={(event) => setTitleKeyword(event.target.value)} />
+                            <SearchInput value={titleKeyword} onChange={setTitleKeyword} placeholder={t("prompts.search")} mode="expanded" />
                             {query.isLoading ? <div className="flex h-60 items-center justify-center"><Spin /></div> : null}
                             {!query.isLoading ? <div className="mt-5"><PromptGrid items={promptItems} onOpen={setSelectedPrompt} renderActions={(item) => <Button type="text" size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => savePromptAsset(item)}>{t("common.addToAssets")}</Button>} onCopy={(item) => copyText(item.prompt, t("common.promptCopied"))} emptyText={t("prompts.empty")} /></div> : null}
                             <div className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-400">{query.isFetchingNextPage ? t("prompts.loading") : query.hasNextPage ? t("prompts.loadMore") : promptItems.length > 0 ? t("prompts.end") : null}</div>

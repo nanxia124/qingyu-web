@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
+import { App } from "antd";
 import { Check, Zap, Crown, Rocket } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useBillingStore } from "@/stores/useBillingStore";
@@ -13,6 +14,7 @@ const LEVEL_ICON: Record<string, any> = {
 
 export default function SubscriptionPage() {
   const { t } = useTranslation()
+  const { message } = App.useApp();
   const { user: authUser, isLoggedIn, openAuthModal } = useAuthStore();
   const { user: billingUser, plans, initFromAuth, refreshMe, refreshPlans } = useBillingStore();
   const [loading, setLoading] = useState("");
@@ -49,10 +51,16 @@ export default function SubscriptionPage() {
       // 只有服务端确认收到支付回调后才会发放权益；未配置支付渠道时由服务端明确返回提示。
       if (order.status !== "paid") await billingApi.payOrder(order.id);
       await refreshMe();
-      // 保留编号，刷新或响应延迟时仍能认出原单；明确续费时应另开购买流程。
-      setMsg(`${t("pages.subscription.activated")}：${plan.name}`);
+      // 服务端已确认成功后才清除幂等编号；下一次用户主动购买才会创建新的订单。
+      localStorage.removeItem(storageKey);
+      checkoutKeysRef.current.delete(storageKey);
+      const successText = `${t("pages.subscription.activated")}：${plan.name}`;
+      setMsg(successText);
+      message.success(successText);
     } catch (e: any) {
-      setMsg(e.message || t("pages.subscription.activateFailed"));
+      const errorText = e.message || t("pages.subscription.activateFailed");
+      setMsg(errorText);
+      message.error(errorText);
     } finally {
       checkoutBusyRef.current = false;
       setLoading("");
@@ -119,19 +127,13 @@ export default function SubscriptionPage() {
                   </li>
                 ))}
               </ul>
-              {isCurrent ? (
-                <button disabled className="mt-6 w-full py-2.5 rounded-lg bg-secondary text-text-muted">
-                  {t("pages.subscription.currentPlan")}
-                </button>
-              ) : (
-                <button
-                  onClick={() => buy(plan)}
-                  disabled={!!loading || plan.priceCents === 0}
-                  className="mt-6 w-full py-2.5 rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-50 transition-colors"
-                >
-                  {loading === plan.id ? t("pages.subscription.activating") : plan.priceCents === 0 ? t("pages.subscription.currentFree") : t("pages.subscription.activateNow")}
-                </button>
-              )}
+              <button
+                onClick={() => buy(plan)}
+                disabled={!!loading || plan.priceCents === 0 || (memberActive && !isCurrent)}
+                className="mt-6 w-full py-2.5 rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-50 transition-colors"
+              >
+                {loading === plan.id ? t("pages.subscription.activating") : plan.priceCents === 0 ? t("pages.subscription.currentFree") : isCurrent ? "续费当前套餐" : memberActive ? "当前订阅到期后可更换" : t("pages.subscription.activateNow")}
+              </button>
             </div>
           );
         })}

@@ -79,7 +79,8 @@ export async function hydrateCanvasImages(nodes: CanvasNodeData[]) {
                 return { ...node, metadata: { ...metadata, content: await resolveImageUrl(metadata.storageKey, content), images } };
             }
             if (!content.startsWith("data:image/")) return node;
-            return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content)) } };
+            const sourceKind = metadata.prompt || metadata.model || metadata.generationType ? "generated" : "manual_upload";
+            return { ...node, metadata: { ...metadata, ...imageMetadata(await uploadImage(content, { sourceKind, originalFilename: `${node.title || node.id}.png` })) } };
         }),
     );
 }
@@ -88,7 +89,7 @@ export async function hydrateAssistantImages(sessions: CanvasAssistantSession[])
     const hydrateItem = async <T extends { dataUrl?: string; storageKey?: string }>(item: T) => {
         if (item.storageKey) return { ...item, dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl) };
         if (item.dataUrl?.startsWith("data:image/")) {
-            const image = await uploadImage(item.dataUrl);
+            const image = await uploadImage(item.dataUrl, { sourceKind: "reference_upload", originalFilename: `assistant-reference-${"id" in item ? String(item.id || "image") : "image"}.png` });
             return { ...item, dataUrl: image.url, storageKey: image.storageKey };
         }
         return item;

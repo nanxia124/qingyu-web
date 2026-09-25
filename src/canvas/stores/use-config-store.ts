@@ -13,6 +13,7 @@ export type ChannelModel = {
     name: string;
     capability: ModelCapability;
     script?: string;
+    displayName?: string;
 };
 
 export type ModelChannel = {
@@ -309,7 +310,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         seen.add(name);
         const capability = typeof item === "string" ? guessCapability(name) : item.capability || guessCapability(name);
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
-        result.push({ name, capability, script });
+        const displayName = typeof item === "string" ? undefined : item.displayName?.trim() || undefined;
+        result.push({ name, capability, script, displayName });
     }
     return result;
 }
@@ -421,8 +423,8 @@ function formatModelName(model: string) {
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return formatModelName(value);
-    const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return formatModelName(decoded.model);
+    const channelModel = config.channels.find((item) => item.id === decoded.channelId)?.models.find((item) => item.name === decoded.model);
+    return channelModel?.displayName || formatModelName(decoded.model);
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -504,11 +506,9 @@ export function buildApiUrl(_baseUrl: string, path: string) {
     return `${proxyBase}${normalizedPath}`;
 }
 
-/** 服务器代理请求必须携带当前业务会话，API Key 不能代替用户身份。 */
+/** 普通用户身份由同源 HttpOnly Cookie 自动携带；不能复制到自定义请求头。 */
 export function billingProxyHeaders(): Record<string, string> {
-    if (typeof window === "undefined") return {};
-    const token = window.localStorage.getItem("billing_token") || window.localStorage.getItem("token");
-    return token ? { "X-Qingyu-Billing-Token": token } : {};
+    return {};
 }
 
 export function normalizeLocalProxyUrl(value: string) {

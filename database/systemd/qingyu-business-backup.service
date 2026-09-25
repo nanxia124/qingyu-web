@@ -7,4 +7,5 @@ Requires=docker.service
 Type=oneshot
 User=ubuntu
 WorkingDirectory=/home/ubuntu/qingyu-db
+EnvironmentFile=/etc/qingyu-backup.env
 ExecStart=/home/ubuntu/qingyu-db/scheduled-business-backup.sh

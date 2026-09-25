@@ -117,9 +117,10 @@ export default function ImagePage() {
 
     const addReferences = async (files?: FileList | null) => {
         const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+        const uploadBatchId = crypto.randomUUID();
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
-                const image = await uploadImage(file);
+                const image = await uploadImage(file, { sourceKind: "reference_upload", uploadBatchId, originalFilename: file.name });
                 return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
             }),
         );
@@ -134,9 +135,10 @@ export default function ImagePage() {
                 message.error(t("imageWorkbench.clipboardEmpty"));
                 return;
             }
+            const uploadBatchId = crypto.randomUUID();
             const nextReferences = await Promise.all(
                 blobs.map(async (blob, index) => {
-                    const image = await uploadImage(blob);
+                    const image = await uploadImage(blob, { sourceKind: "reference_upload", uploadBatchId, originalFilename: `clipboard-${index + 1}.png` });
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
@@ -234,13 +236,13 @@ export default function ImagePage() {
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
-        const stored = await uploadImage(image.dataUrl);
+        const stored = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, bytes: image.bytes, width: image.width, height: image.height, mimeType: image.mimeType } : await uploadImage(image.dataUrl, { sourceKind: "generated", originalFilename: `generated-image-${index + 1}.png` });
         setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         message.success(t("imageWorkbench.addedReference"));
     };
 
     const saveResultToAssets = async (image: GeneratedImage, index: number) => {
-        const stored = await uploadImage(image.dataUrl);
+        const stored = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, bytes: image.bytes, width: image.width, height: image.height, mimeType: image.mimeType } : await uploadImage(image.dataUrl, { sourceKind: "generated", originalFilename: `generated-image-${index + 1}.png` });
         addAsset({
             kind: "image",
             title: t("imageWorkbench.resultTitle", { count: index + 1 }),
@@ -257,7 +259,7 @@ export default function ImagePage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
-            const stored = await uploadImage(payload.dataUrl);
+            const stored = payload.storageKey ? { url: await resolveImageUrl(payload.storageKey, payload.dataUrl), storageKey: payload.storageKey, bytes: 0, width: 1, height: 1, mimeType: "image/png" } : await uploadImage(payload.dataUrl, { sourceKind: "reference_upload", originalFilename: `${payload.title}.png` });
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         } else {
             message.warning(t("imageWorkbench.unsupportedAsset"));
@@ -324,7 +326,7 @@ export default function ImagePage() {
             const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
             const image = result[0];
             if (!image) throw new Error(t("imageWorkbench.missingResult"));
-            const stored = await uploadImage(image.dataUrl);
+            const stored = await uploadImage(image.dataUrl, { sourceKind: "generated", originalFilename: `generated-image-${index + 1}.png` });
             const nextImage: GeneratedImage = { id: image.id, dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: performance.now() - itemStartedAt, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;

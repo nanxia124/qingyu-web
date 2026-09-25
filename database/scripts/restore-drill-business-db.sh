@@ -6,7 +6,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER="${PG_DOCKER_CONTAINER:-appwrite-postgresql}"
 DATABASE="${PGDATABASE:-qingyu_business}"
 DB_USER="${PGUSER:-user}"
-BACKUP_FILE="${BACKUP_FILE:?请设置 BACKUP_FILE，例如 /home/ubuntu/backups/qingyu/qingyu_business_20260923T000000Z.dump}"
+BACKUP_FILE="${BACKUP_FILE:?请设置 BACKUP_FILE，例如 /home/ubuntu/backups/qingyu/qingyu_business_20260923T000000Z.dump.age}"
+BACKUP_AGE_IDENTITY_FILE="${BACKUP_AGE_IDENTITY_FILE:?请设置 age 解密私钥文件路径 BACKUP_AGE_IDENTITY_FILE}"
+BACKUP_AGE_KEY_VERSION="${BACKUP_AGE_KEY_VERSION:?请设置密钥版本标记 BACKUP_AGE_KEY_VERSION}"
+command -v age >/dev/null || { echo '未安装 age，无法安全解密备份' >&2; exit 1; }
+test -r "$BACKUP_AGE_IDENTITY_FILE" || { echo 'age 解密私钥文件不可读' >&2; exit 1; }
 DRILL_DB="${DRILL_DB:-qingyu_restore_drill_$(date -u +%Y%m%dT%H%M%SZ)}"
 ENVIRONMENT="${RESTORE_DRILL_ENVIRONMENT:-isolated_server}"
 REQUIRED_MIGRATION_VERSION="${REQUIRED_MIGRATION_VERSION:-0049_reconciliation_drift_and_audit_query}"
@@ -15,15 +19,15 @@ OBJECT_ARCHIVE_FILE="${OBJECT_ARCHIVE_FILE:-}"
 
 # 数据库备份和对象归档使用同一时间戳；如果调用方没有显式指定，就尝试自动匹配。
 if [[ -z "$OBJECT_ARCHIVE_FILE" ]]; then
-  backup_stamp="$(basename "$BACKUP_FILE" | sed -n "s/^${DATABASE}_\\(.*\\)\\.dump$/\\1/p")"
-  if [[ -n "$backup_stamp" && -f "$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz" ]]; then
-    OBJECT_ARCHIVE_FILE="$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz"
+  backup_stamp="$(basename "$BACKUP_FILE" | sed -n "s/^${DATABASE}_\\(.*\\)\\.dump\\.age$/\\1/p")"
+  if [[ -n "$backup_stamp" && -f "$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz.age" ]]; then
+    OBJECT_ARCHIVE_FILE="$(dirname "$BACKUP_FILE")/qingyu_objects_${backup_stamp}.tar.gz.age"
   fi
 fi
 if [[ -n "$OBJECT_ARCHIVE_FILE" ]]; then
   test -r "$OBJECT_ARCHIVE_FILE"
   bash "$SCRIPT_DIR/verify-backup-file.sh" "$OBJECT_ARCHIVE_FILE"
-  tar -tzf "$OBJECT_ARCHIVE_FILE" >/dev/null
+  age -d -i "$BACKUP_AGE_IDENTITY_FILE" "$OBJECT_ARCHIVE_FILE" | tar -tzf - >/dev/null
 elif [[ "$REQUIRE_OBJECT_ARCHIVE" == '1' ]]; then
   echo '要求对象归档，但没有找到对应的对象归档文件' >&2
   exit 1
@@ -37,6 +41,12 @@ backup_id="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -At
 test -n "$backup_id"
 expected_schema_version="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
   "select coalesce(schema_version,'unknown') from app.backup_runs where id = '$backup_id'")"
+expected_key_version="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
+  "select coalesce(encryption_key_version,'') from app.backup_runs where id = '$backup_id'")"
+if [[ -z "$expected_key_version" || "$expected_key_version" != "$BACKUP_AGE_KEY_VERSION" ]]; then
+  echo '当前提供的密钥版本与备份记录不一致，拒绝恢复' >&2
+  exit 1
+fi
 drill_id="$(cat /proc/sys/kernel/random/uuid)"
 started_epoch="$(date +%s)"
 restored=0
@@ -62,15 +72,14 @@ cleanup() {
   if [ "$restored" -eq 1 ]; then
     sudo docker exec "$CONTAINER" dropdb -U "$DB_USER" --if-exists "$DRILL_DB" >/dev/null || true
   fi
-  sudo docker exec "$CONTAINER" rm -f "/tmp/$(basename "$BACKUP_FILE")" >/dev/null 2>&1 || true
 }
 trap 'record_failed "restore drill failed"; cleanup' ERR
 
 record_started
 sudo docker exec "$CONTAINER" createdb -U "$DB_USER" "$DRILL_DB"
 restored=1
-sudo docker cp "$BACKUP_FILE" "$CONTAINER:/tmp/$(basename "$BACKUP_FILE")"
-sudo docker exec "$CONTAINER" pg_restore -U "$DB_USER" -d "$DRILL_DB" --no-owner --no-acl "/tmp/$(basename "$BACKUP_FILE")"
+age -d -i "$BACKUP_AGE_IDENTITY_FILE" "$BACKUP_FILE" | \
+  sudo docker exec -i "$CONTAINER" pg_restore -U "$DB_USER" -d "$DRILL_DB" --no-owner --no-acl
 
 table_count="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DRILL_DB" -Atqc \
   "select count(*) from information_schema.tables where table_schema='app'")"
@@ -89,13 +98,19 @@ sudo docker exec -i "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -v ON_ERROR_S
   -v drill_id="$drill_id" -v rto_seconds="$rto_seconds" -v table_count="$table_count" \
   -v schema_version="$schema_version" -v required_migration="$REQUIRED_MIGRATION_VERSION" \
   -v object_archive_checked="$object_archive_checked" -f - >/dev/null <<'SQL'
-update app.restore_drills
-set status='passed',restored_at=now(),completed_at=now(),rpo_seconds=0,rto_seconds=:'rto_seconds',
-    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'required_migration', :'required_migration', 'checksum_verified', true, 'object_archive_checked', :'object_archive_checked'::boolean)
-where id=:'drill_id';
+update app.restore_drills d
+set status='passed',restored_at=now(),completed_at=now(),
+    rpo_seconds=greatest(0,floor(extract(epoch from (d.target_time - b.started_at))))::bigint,
+    rto_seconds=:'rto_seconds',
+    checks=jsonb_build_object('app_table_count', :'table_count'::int, 'schema_version', :'schema_version', 'required_migration', :'required_migration', 'checksum_verified', true, 'object_archive_checked', :'object_archive_checked'::boolean, 'rpo_basis', 'target_time_minus_backup_started_at_conservative')
+from app.backup_runs b
+where d.id=:'drill_id' and b.id=d.backup_id and b.started_at <= d.target_time;
 SQL
+rpo_seconds="$(sudo docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DATABASE" -Atqc \
+  "select rpo_seconds from app.restore_drills where id = '$drill_id' and status = 'passed'")"
+test -n "$rpo_seconds"
 
 cleanup
 restored=0
-printf 'restore_drill_id=%s\napp_table_count=%s\nschema_version=%s\nrto_seconds=%s\nobject_archive_checked=%s\n' \
-  "$drill_id" "$table_count" "$schema_version" "$rto_seconds" "$object_archive_checked"
+printf 'restore_drill_id=%s\napp_table_count=%s\nschema_version=%s\nrpo_seconds=%s\nrto_seconds=%s\nobject_archive_checked=%s\n' \
+  "$drill_id" "$table_count" "$schema_version" "$rpo_seconds" "$rto_seconds" "$object_archive_checked"

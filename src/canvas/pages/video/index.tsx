@@ -24,6 +24,7 @@ import { useThemeStore } from "@canvas/stores/use-theme-store";
 import type { ReferenceImage } from "@canvas/types/image";
 import i18n from "@canvas/i18n";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { api } from "@/lib/api";
 
 type GeneratedVideo = {
     id: string;
@@ -156,9 +157,10 @@ export default function VideoPage() {
         const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/"));
         if (unsupported.length) message.warning(t("videoWorkbench.unsupportedFiles"));
         const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/")).slice(0, 7 - references.length);
+        const uploadBatchId = crypto.randomUUID();
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
-                const image = await uploadImage(file);
+                const image = await uploadImage(file, { sourceKind: "reference_upload", uploadBatchId, originalFilename: file.name });
                 return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
             }),
         );
@@ -192,9 +194,10 @@ export default function VideoPage() {
                 message.error(t("videoWorkbench.clipboardEmpty"));
                 return;
             }
+            const uploadBatchId = crypto.randomUUID();
             const nextReferences = await Promise.all(
                 blobs.slice(0, 7 - references.length).map(async (blob, index) => {
-                    const image = await uploadImage(blob);
+                    const image = await uploadImage(blob, { sourceKind: "reference_upload", uploadBatchId, originalFilename: `clipboard-${index + 1}.png` });
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
@@ -296,7 +299,7 @@ export default function VideoPage() {
         if (payload.kind === "text") {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
-            const stored = await uploadImage(payload.dataUrl);
+            const stored = payload.storageKey ? { url: await resolveImageUrl(payload.storageKey, payload.dataUrl), storageKey: payload.storageKey, bytes: 0, width: 1, height: 1, mimeType: "image/png" } : await uploadImage(payload.dataUrl, { sourceKind: "reference_upload", originalFilename: `${payload.title}.png` });
             setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, 7));
         }
         setAssetPickerOpen(false);
@@ -332,7 +335,11 @@ export default function VideoPage() {
     };
 
     const refreshLogs = async (resumePending = true) => {
-        const nextLogs = await readStoredLogs();
+        const localLogs = await readStoredLogs();
+        const localVideoKeys = new Set(localLogs.map((log) => log.video?.storageKey).filter((key): key is string => Boolean(key)));
+        const remoteLogs = await readRemoteVideoLogs().catch(() => []);
+        const nextLogs = [...localLogs, ...remoteLogs.filter((log) => !localVideoKeys.has(log.video?.storageKey || ""))]
+            .sort((left, right) => right.createdAt - left.createdAt);
         setLogs(nextLogs);
         if (resumePending) resumePendingLogs(nextLogs);
         return nextLogs;
@@ -355,7 +362,14 @@ export default function VideoPage() {
             for (let attempt = 0; attempt < 120; attempt += 1) {
                 const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
                 if (state.status === "completed") {
-                    const stored = await storeGeneratedVideo(state.result);
+                    const stored = await storeGeneratedVideo(state.result, {
+                        prompt: log.prompt,
+                        model: log.model,
+                        size: log.size || "",
+                        resolution: log.resolution || "",
+                        seconds: log.seconds || "",
+                        referenceStorageKeys: log.references.map((item) => item.storageKey).filter(Boolean),
+                    });
                     const nextVideo: GeneratedVideo = {
                         id: nanoid(),
                         url: stored.url,
@@ -989,6 +1003,60 @@ async function readStoredLogs() {
     } catch {
         return [];
     }
+}
+
+async function readRemoteVideoLogs(): Promise<GenerationLog[]> {
+    if (typeof window === "undefined" || !localStorage.getItem("billing_token_user")) return [];
+    const assets = await api.get<Array<{ id: string; name: string; type: string; createdAt: string; metadata?: Record<string, unknown> }>>("/assets", { type: "video" });
+    return Promise.all(assets.filter((asset) => asset.type === "video" && asset.metadata?.sourceKind === "generated").map(async (asset) => {
+        const metadata = asset.metadata || {};
+        const createdAt = Date.parse(asset.createdAt) || Date.now();
+        const model = String(metadata.model || "");
+        const storageKey = `video:${asset.id}`;
+        const references = Array.isArray(metadata.referenceStorageKeys)
+            ? metadata.referenceStorageKeys.filter((key): key is string => typeof key === "string" && /^(image|video|audio):/.test(key)).map((key, index) => ({
+                id: `${asset.id}-reference-${index}`,
+                name: `reference-${index + 1}`,
+                type: "image/png",
+                dataUrl: "",
+                storageKey: key,
+            }))
+            : [];
+        return normalizeLog({
+            id: `asset-${asset.id}`,
+            createdAt,
+            title: String(metadata.prompt || asset.name),
+            prompt: String(metadata.prompt || ""),
+            time: new Date(createdAt).toLocaleString(i18n.resolvedLanguage, { hour12: false }),
+            model,
+            config: {
+                model,
+                videoModel: model,
+                size: String(metadata.size || ""),
+                vquality: String(metadata.resolution || ""),
+                videoSeconds: String(metadata.seconds || ""),
+                videoGenerateAudio: "true",
+                videoWatermark: "false",
+                videoMode: references.length ? "reference" : "frames",
+            },
+            references,
+            durationMs: Number(metadata.durationMs) || 0,
+            size: String(metadata.size || ""),
+            resolution: String(metadata.resolution || ""),
+            seconds: String(metadata.seconds || ""),
+            status: "success",
+            video: {
+                id: asset.id,
+                url: "",
+                storageKey,
+                durationMs: Number(metadata.durationMs) || 0,
+                width: Number(metadata.width) || 1280,
+                height: Number(metadata.height) || 720,
+                bytes: Number(metadata.sizeBytes) || 0,
+                mimeType: String(metadata.mimeType || "video/mp4"),
+            },
+        });
+    }));
 }
 
 async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog> {

@@ -3,6 +3,8 @@
  * 统一处理：baseURL、token、超时、错误处理
  */
 
+import { uploadMediaFile } from "@canvas/services/file-storage";
+
 const BASE_URL = "/api";
 const DEFAULT_TIMEOUT = 30000;
 
@@ -18,9 +20,14 @@ export class ApiError extends Error {
 }
 
 function getToken(): string | null {
-  // 管理后台和普通站点共用请求封装。管理员登录后使用 admin_token，
-  // 普通用户继续使用 token；管理员 token 优先，避免后台页面请求被当成匿名请求。
-  return localStorage.getItem("admin_token") || localStorage.getItem("token") || localStorage.getItem("billing_token");
+  // 普通用户票不再由脚本读取；此封装只为管理后台保留管理员令牌。
+  try {
+    localStorage.removeItem("billing_token");
+    localStorage.removeItem("token");
+    return localStorage.getItem("admin_token");
+  } catch {
+    return null;
+  }
 }
 
 interface RequestOptions {
@@ -72,6 +79,7 @@ export async function apiRequest<T = any>(
       headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
+      credentials: token ? "omit" : "include",
     });
 
     clearTimeout(timeoutId);
@@ -127,27 +135,15 @@ export const api = {
     apiRequest<T>(path, { method: "DELETE" }),
 
   uploadAsset: async <T = any>(file: File, metadata?: Record<string, unknown>): Promise<T> => {
-    const token = getToken();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
-    try {
-      const res = await fetch(`${BASE_URL}/assets/upload`, {
-        method: "POST",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-Asset-Name": encodeURIComponent(file.name),
-          ...(metadata ? { "X-Asset-Metadata": encodeURIComponent(JSON.stringify(metadata)) } : {}),
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: file,
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new ApiError(res.status, data?.error || "上传失败", data);
-      return data as T;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const uploaded = await uploadMediaFile(file, "asset", {
+      originalFilename: file.name,
+      assetMetadata: metadata,
+      uploadBatchId: typeof metadata?.uploadBatchId === "string" ? metadata.uploadBatchId : undefined,
+      completeness: metadata?.completeness === "partial" ? "partial" : "complete",
+    });
+    const assetId = uploaded.storageKey.slice(uploaded.storageKey.indexOf(":") + 1);
+    if (!assetId) throw new Error("云端没有返回文件编号，无法确认保存结果");
+    return { id: assetId } as T;
   },
 
   /**
@@ -162,6 +158,7 @@ export const api = {
       const res = await fetch(`${BASE_URL}/assets/${encodeURIComponent(assetId)}/content`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: controller.signal,
+        credentials: token ? "omit" : "include",
       });
       if (!res.ok) {
         let message = `文件读取失败 (${res.status})`;

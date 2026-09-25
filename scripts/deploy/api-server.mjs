@@ -11,16 +11,21 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { writeAssetUpload } from './asset-upload.mjs';
+import { buildAssetObjectKey, writeAssetUpload } from './asset-upload.mjs';
 import { createObjectStore, sniffImageMime, extForMime } from './object-store.mjs';
+
+const DEFAULT_JWT_SECRET = "qingyu-api-jwt-secret-2026-change-me";
+const configuredJwtSecret = String(process.env.JWT_SECRET || "").trim();
+if (process.env.NODE_ENV === "production" && (!configuredJwtSecret || configuredJwtSecret === DEFAULT_JWT_SECRET)) {
+  console.error("[security] 生产环境必须配置非默认的 JWT_SECRET，API 服务拒绝启动。");
+  process.exit(1);
+}
+const JWT_SECRET = configuredJwtSecret || DEFAULT_JWT_SECRET;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
-const OBJECT_DATA_DIR = process.env.OBJECT_DATA_DIR || path.join(DATA_DIR, "objects");
-// 生图结果是否落盘到对象存储（而非塞 base64 进 Postgres outputs jsonb）。
-// 出问题设 GEN_OUTPUTS_TO_STORAGE=off 可立即回滚到旧行为。
-const GEN_OUTPUTS_TO_STORAGE = String(process.env.GEN_OUTPUTS_TO_STORAGE || 'on').trim().toLowerCase() !== 'off';
-const objectStore = createObjectStore({ dataDir: OBJECT_DATA_DIR });
+const LEGACY_OBJECT_DATA_DIR = process.env.OBJECT_DATA_DIR || path.join(DATA_DIR, "objects");
+const objectStore = createObjectStore();
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
 const ADMIN_FILE = path.join(DATA_DIR, "admin.json");
 // ===== 计费系统数据文件 =====
@@ -34,11 +39,19 @@ const MODELS_CATALOG_FILE = path.join(DATA_DIR, "models_catalog.json"); // 模�
 const PORT = process.env.PORT || 3001;
 // 只有隔离测试环境显式设置 PAYMENT_MODE=mock 才允许模拟支付；生产默认关闭。
 const PAYMENT_MODE = String(process.env.PAYMENT_MODE || '').trim().toLowerCase();
+const CUSTOMER_SESSION_COOKIE = "qingyu_session";
+const CUSTOMER_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const CONFIGURED_CORS_ORIGINS = new Set(String(process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",").map(origin => origin.trim()).filter(Boolean));
+if (process.env.NODE_ENV !== "production") {
+  CONFIGURED_CORS_ORIGINS.add("http://localhost:5173");
+  CONFIGURED_CORS_ORIGINS.add("http://127.0.0.1:5173");
+}
 let postgresBilling = null;
+const catalogModelRouteOffsets = new Map();
 
 // ---------- 数据存储 ----------
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(OBJECT_DATA_DIR)) fs.mkdirSync(OBJECT_DATA_DIR, { recursive: true });
 
 function loadJSON(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf-8")); }
@@ -63,8 +76,6 @@ if (!admin) {
 // API 密钥列表
 let keys = loadJSON(KEYS_FILE, []);
 
-// JWT 签名密钥
-const JWT_SECRET = process.env.JWT_SECRET || "qingyu-api-jwt-secret-2026-change-me";
 const APPWRITE_INTERNAL_URL = process.env.APPWRITE_INTERNAL_URL || "http://127.0.0.1:8081/v1";
 
 // 用 Appwrite 短期 JWT 反查当前登录身份，不能相信浏览器单独提交的 userId。
@@ -210,10 +221,21 @@ function issueMembership(uid, plan) {
   const u = findUserByAppwriteId(uid);
   if (!u) return;
   const now = Date.now();
-  // 在现有到期时间上续期（若未过期），否则从现在起算
+  // 使用日历月/年续期并记录原始日，月底不足时临时取月末，下一期仍沿用原始日期。
   const base = u.memberExpireAt > now ? u.memberExpireAt : now;
+  const anchorMonth = u.memberExpireAt > now ? (u.memberBillingAnchorMonth || new Date(base).getUTCMonth() + 1) : new Date(now).getUTCMonth() + 1;
+  const anchorDay = u.memberExpireAt > now ? (u.memberBillingAnchorDay || new Date(base).getUTCDate()) : new Date(now).getUTCDate();
+  const isYearly = plan.durationDays >= 360;
+  const source = new Date(base);
+  const year = source.getUTCFullYear() + (isYearly ? 1 : 0);
+  const month = isYearly ? anchorMonth - 1 : source.getUTCMonth() + 1;
+  const targetYear = year + Math.floor(month / 12);
+  const targetMonth = ((month % 12) + 12) % 12;
+  const day = Math.min(anchorDay, new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate());
   u.memberLevel = plan.level;
-  u.memberExpireAt = base + plan.durationDays * 24 * 3600 * 1000;
+  u.memberExpireAt = Date.UTC(targetYear, targetMonth, day, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds());
+  u.memberBillingAnchorMonth = anchorMonth;
+  u.memberBillingAnchorDay = anchorDay;
   // 会员套餐赠送额度
   if (plan.monthlyQuota) {
     u.balance = (u.balance || 0) + plan.monthlyQuota;
@@ -228,14 +250,76 @@ function genRedeemCode() {
   const seg = () => crypto.randomBytes(3).toString("hex").toUpperCase();
   return "QY-" + seg() + "-" + seg() + "-" + seg();
 }
-// 校验客户计费 JWT（区分管理员与普通客户）
+function readCookie(req, name) {
+  const cookieHeader = String(req.headers.cookie || "");
+  for (const item of cookieHeader.split(";")) {
+    const separator = item.indexOf("=");
+    if (separator < 0 || item.slice(0, separator).trim() !== name) continue;
+    return item.slice(separator + 1).trim();
+  }
+  return "";
+}
+
+function customerSessionCookie(token) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${CUSTOMER_SESSION_COOKIE}=${token}; Path=/api; Max-Age=${CUSTOMER_SESSION_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function clearCustomerSessionCookie() {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${CUSTOMER_SESSION_COOKIE}=; Path=/api; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function isAllowedBrowserOrigin(origin, req) {
+  if (!origin) return false;
+  if (CONFIGURED_CORS_ORIGINS.has(origin)) return true;
+  const host = String(req.headers.host || "").trim();
+  if (!host) return false;
+  const allowedProtocol = process.env.NODE_ENV === "production" ? "https:" : null;
+  try {
+    const parsed = new URL(origin);
+    return parsed.host === host && (!allowedProtocol || parsed.protocol === allowedProtocol);
+  } catch {
+    return false;
+  }
+}
+
+function requestCorsHeaders(req) {
+  const origin = String(req.headers.origin || "");
+  if (origin && isAllowedBrowserOrigin(origin, req)) {
+    return {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      "Vary": "Origin",
+    };
+  }
+  return { "Access-Control-Allow-Origin": "*" };
+}
+
+function applyCors(req, res) {
+  for (const [name, value] of Object.entries(requestCorsHeaders(req))) res.setHeader(name, value);
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Qingyu-Requested-With");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+}
+
+function isUnsafeMethod(method) {
+  return !["GET", "HEAD", "OPTIONS"].includes(String(method || "").toUpperCase());
+}
+
+function hasTrustedMutationOrigin(req) {
+  return isAllowedBrowserOrigin(String(req.headers.origin || ""), req);
+}
+
+// 管理员仍使用 Authorization；普通用户只能通过 HttpOnly Cookie 鉴权。
 function getBillingIdentity(req) {
   const auth = req.headers["authorization"] || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  if (!token) return null;
-  const payload = verifyJWT(token);
-  if (!payload) return null;
-  return payload; // { sub, role, exp }
+  const bearerToken = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const bearerIdentity = bearerToken ? verifyJWT(bearerToken) : null;
+  if (bearerIdentity?.role === "admin") return bearerIdentity;
+  const cookieToken = readCookie(req, CUSTOMER_SESSION_COOKIE);
+  const cookieIdentity = cookieToken ? verifyJWT(cookieToken) : null;
+  if (cookieIdentity?.role !== "customer" || typeof cookieIdentity.sid !== "string" || !cookieIdentity.sid) return null;
+  return cookieIdentity; // { sub, role, sid, exp }
 }
 
 
@@ -309,13 +393,21 @@ function parseRawBody(req, maxBytes = 1024 * 1024) {
   });
 }
 
-function sendJSON(res, status, data) {
+function sendJSON(res, status, data, headers = {}) {
   const body = JSON.stringify(data);
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") || "*",
+    "Access-Control-Allow-Headers": res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization, X-Qingyu-Requested-With",
+    "Access-Control-Allow-Methods": res.getHeader("Access-Control-Allow-Methods") || "GET, POST, PUT, DELETE, OPTIONS",
+  };
+  const allowCredentials = res.getHeader("Access-Control-Allow-Credentials");
+  const vary = res.getHeader("Vary");
+  if (allowCredentials) corsHeaders["Access-Control-Allow-Credentials"] = allowCredentials;
+  if (vary) corsHeaders.Vary = vary;
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    ...corsHeaders,
+    ...headers,
   });
   res.end(body);
   return true;
@@ -350,38 +442,58 @@ function findChannel(modelName) {
   return null;
 }
 
+async function findChannelForModel(modelName) {
+  const requestedModel = String(modelName || '');
+  const separatorIndex = requestedModel.indexOf('::');
+  const logicalModel = separatorIndex > 0 ? requestedModel.slice(separatorIndex + 2) : requestedModel;
+  const catalogMatch = logicalModel.match(/^catalog:(\d+)$/);
+  if (!catalogMatch) return findChannel(modelName);
+  const catalogModelId = Number(catalogMatch[1]);
+  const routes = postgresBilling
+    ? await postgresBilling.listPlatformModelRoutes(catalogModelId)
+    : (modelsCatalog.find(model => Number(model.id) === catalogModelId)?.linkedModels || [])
+      .filter(link => link.isActive !== false)
+      .map(link => ({ channel: keys.find(key => String(key.id) === String(link.channelId) && key.is_active === 1), model: link.model, priority: link.priority || 0 }))
+      .filter(route => route.channel)
+      .sort((a, b) => a.priority - b.priority);
+  if (!routes.length) return null;
+  const offset = catalogModelRouteOffsets.get(catalogModelId) || 0;
+  catalogModelRouteOffsets.set(catalogModelId, (offset + 1) % routes.length);
+  return { ...routes[offset % routes.length], catalogModelId };
+}
+
 // ---------- AI 请求代理 ----------
 function proxyRequest(req, res, targetPath) {
   let bodyChunks = [];
   req.on("data", chunk => bodyChunks.push(chunk));
   req.on("end", async () => {
     // 代理调用必须绑定业务会话，不能只凭浏览器提交的模型名或上游 API Key 消耗供应商资源。
-    // 前端把业务 JWT 放在独立请求头，避免覆盖真正发给上游的 Authorization。
-    const proxyToken = String(req.headers["x-qingyu-billing-token"] || "");
+    // 普通用户身份来自 HttpOnly Cookie；Authorization 保留给模型供应商密钥。
+    const proxyToken = readCookie(req, CUSTOMER_SESSION_COOKIE);
     const proxyIdentity = proxyToken ? verifyJWT(proxyToken) : null;
-    if (!proxyIdentity || proxyIdentity.role !== "customer") {
+    if (!proxyIdentity || proxyIdentity.role !== "customer" || !proxyIdentity.sid) {
       return sendJSON(res, 401, { error: "请先登录后再使用 AI 服务" });
     }
-    if (postgresBilling && proxyIdentity.sid && !(await postgresBilling.isSessionActive(proxyIdentity.sub, proxyIdentity.sid))) {
-      return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录后再使用 AI 服务" });
-    }
-    // 计费数据库是 AI 代理的硬前置：未启用 PostgreSQL 时禁止转发，避免无计费消耗上游额度。
+    // 先确认 PostgreSQL 可用，再严格核对设备会话；旧版无 sid 的 JWT 已在上方拒绝。
     if (!postgresBilling) {
       return sendJSON(res, 503, { error: "计费服务未启用，AI 调用暂不可用" });
+    }
+    if (!(await postgresBilling.isSessionActive(proxyIdentity.sub, proxyIdentity.sid))) {
+      return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录后再使用 AI 服务" });
     }
     const rawBody = Buffer.concat(bodyChunks).toString("utf-8");
     let bodyObj = {};
     try { bodyObj = rawBody ? JSON.parse(rawBody) : {}; } catch { bodyObj = {}; }
 
     const modelField = bodyObj.model || "";
-    const match = findChannel(modelField);
+    const match = await findChannelForModel(modelField);
     if (!match) {
       return sendJSON(res, 502, { error: "没有可用的 API 渠道，请先在管理后台添加并启用 API Key" });
     }
     const { channel, model } = match;
 
     // 替换模型名为纯模型名（去掉 channelId 前缀）
-    if (modelField.includes("::")) {
+    if (modelField.includes("::") || match.catalogModelId) {
       bodyObj.model = model;
     }
     const forwardBody = JSON.stringify(bodyObj);
@@ -397,7 +509,7 @@ function proxyRequest(req, res, targetPath) {
           quantity: requestedQuantity,
           provider: channel.provider,
           model,
-          metadata: { targetPath, channelId: channel.id, phase: "started" },
+          metadata: { targetPath, channelId: channel.id, phase: "started", ...(match.catalogModelId ? { catalogModelId: match.catalogModelId, requestedModel: modelField } : {}) },
         });
       } catch (error) {
         console.error("[proxy usage] unable to persist request", error.message);
@@ -439,8 +551,42 @@ function proxyRequest(req, res, targetPath) {
     const proxyReq = lib.request(options, proxyRes => {
       // 透传响应头
       const respHeaders = { ...proxyRes.headers };
-      respHeaders["Access-Control-Allow-Origin"] = "*";
       res.writeHead(proxyRes.statusCode || 502, respHeaders);
+      // 图片接口：先缓冲响应体，检查上游真的返回了图片再记成功，
+      // 避免上游返回 200 但 body 是空 data/错误 JSON 时被误记为成功扣费。
+      const isImagePath = /\/images\//i.test(targetPath);
+      if (isImagePath) {
+        const chunks = [];
+        proxyRes.on("data", chunk => chunks.push(chunk));
+        proxyRes.on("end", () => {
+          const buf = Buffer.concat(chunks);
+          res.end(buf);
+          if (!postgresBilling) return;
+          const httpStatus = proxyRes.statusCode || 502;
+          let billingResult = "committed";
+          let extraMeta = { targetPath, statusCode: httpStatus, phase: "finished" };
+          if (httpStatus >= 200 && httpStatus < 300) {
+            try {
+              const parsed = JSON.parse(buf.toString("utf-8"));
+              const arr = Array.isArray(parsed.data) ? parsed.data : [];
+              const hasImage = arr.some(item => item && (item.b64_json || item.url || item.task_id));
+              if (!hasImage) {
+                billingResult = "failed";
+                extraMeta = { ...extraMeta, phase: "empty_image", error: "上游 200 但未返回图片数据" };
+              }
+            } catch (parseErr) {
+              billingResult = "failed";
+              extraMeta = { ...extraMeta, phase: "bad_json", error: String(parseErr.message || parseErr).slice(0, 200) };
+            }
+          } else {
+            billingResult = "failed";
+          }
+          void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, billingResult, extraMeta)
+            .catch(error => console.error("[proxy usage] finalize failed", error.message));
+        });
+        return;
+      }
+
       proxyRes.pipe(res);
       proxyRes.on("end", () => {
         if (postgresBilling) {
@@ -448,8 +594,8 @@ function proxyRequest(req, res, targetPath) {
           void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, result, { targetPath, statusCode: proxyRes.statusCode || 502, phase: "finished" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
         }
       });
-    });
 
+    });
     proxyReq.on("error", err => {
       console.error("[proxy error]", err.message);
       if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, error: err.message, phase: "error" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
@@ -554,20 +700,27 @@ async function fetchUrlAsBuffer(imageUrl) {
   });
 }
 
-// 把一张生成图持久化：落盘到对象存储 + 登记 file_objects/generation_outputs。
-// 返回的 outputs 条目里不带 b64_json，只带 fileId/objectKey。
-// GEN_OUTPUTS_TO_STORAGE=off 时回退到老行为（base64 塞 outputs），用于紧急回滚。
+// 把生成图直接写 COS，再登记 file_objects/generation_outputs；不允许退回本地磁盘或数据库正文。
 async function persistGeneratedImage(identity, task, index, buffer, revisedPrompt) {
-  if (!GEN_OUTPUTS_TO_STORAGE || !postgresBilling || !postgresBilling.recordGeneratedOutput) {
-    return { type: "image", index, b64_json: buffer.toString("base64"), url: null, revisedPrompt: revisedPrompt || null };
-  }
+  if (!postgresBilling?.recordGeneratedOutput || !task.workspaceId) throw new Error('COS 图片保存所需的数据库或空间信息不可用');
   const mime = sniffImageMime(buffer);
   const ext = extForMime(mime);
-  const objectKey = `gen/${task.id}/${index}${ext}`;
+  const createdAt = new Date(task.createdAt || Date.now());
+  const year = String(createdAt.getUTCFullYear());
+  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
+  const fileId = crypto.randomUUID();
+  const objectKey = `workspaces/${task.workspaceId}/generated/images/${year}/${month}/${task.id}/${fileId}${ext}`;
   const put = await objectStore.putObject({ key: objectKey, buffer, contentType: mime });
-  const rec = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
-    ...put, index,
-  });
+  let rec;
+  try {
+    rec = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
+      ...put, index, fileId,
+    });
+  } catch (error) {
+    try { await objectStore.deleteObject(objectKey); }
+    catch (cleanupError) { console.error('[generation-output] COS cleanup failed', task.id, cleanupError.message); }
+    throw error;
+  }
   return { type: "image", index, b64_json: null, url: null, fileId: rec.fileId, objectKey: rec.objectKey, revisedPrompt: revisedPrompt || null };
 }
 
@@ -617,6 +770,8 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
   try {
     claimed = await postgresBilling.markTaskRunning(identity.sub, task.id, null);
     if (!claimed) return;
+    bodyObj = { ...bodyObj };
+    delete bodyObj.__qingyuCatalogModelId;
     const { status, text } = await callUpstreamImage(channel, bodyObj);
     let payload = {};
     try { payload = JSON.parse(text); } catch { payload = {}; }
@@ -692,6 +847,23 @@ async function handleBilling(req, res, pathname, method, url) {
   // ---------- 客户端：/api/billing/* ----------
   if (pathname.startsWith("/api/billing/") || pathname === "/api/billing") {
 
+    // POST /api/billing/logout — 撤销当前设备会话并清除 HttpOnly Cookie。
+    if (pathname === "/api/billing/logout" && method === "POST") {
+      const identity = getBillingIdentity(req);
+      if (identity?.role === "customer" && postgresBilling) {
+        try {
+          await postgresBilling.revokeSession(identity.sub, identity.sid);
+        } catch (error) {
+          // 已失效的会话无需再次撤销；数据库故障则报告失败，但仍清掉本机 Cookie。
+          if (!/会话不存在或已经失效/.test(String(error.message || ""))) {
+            console.error("[billing logout] session revocation failed", error.message);
+            return sendJSON(res, 503, { error: "退出登录未能同步到服务器，请稍后重试" }, { "Set-Cookie": clearCustomerSessionCookie() });
+          }
+        }
+      }
+      return sendJSON(res, 200, { success: true }, { "Set-Cookie": clearCustomerSessionCookie() });
+    }
+
     // POST /api/billing/login — 用 Appwrite 用户 ID 换取客户计费 JWT（前端在 Appwrite 登录成功后调用）
     if (pathname === "/api/billing/login" && method === "POST") {
       const body = await parseBody(req);
@@ -709,9 +881,13 @@ async function handleBilling(req, res, pathname, method, url) {
           osFamily: body.osFamily,
           browserFamily: body.browserFamily,
         });
-        const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+        const exp = Math.floor(Date.now() / 1000) + CUSTOMER_SESSION_MAX_AGE_SECONDS;
         const token = signJWT({ sub: body.userId, role: "customer", sid: session.id, iat: Math.floor(Date.now() / 1000), exp });
-        return sendJSON(res, 200, { token, user, session });
+        return sendJSON(res, 200, { user, session }, { "Set-Cookie": customerSessionCookie(token) });
+      }
+      // 文件账本仅用于隔离的本地支付测试；正式和普通开发登录必须走 PostgreSQL 会话表。
+      if (process.env.NODE_ENV !== "test" || PAYMENT_MODE !== "mock") {
+        return sendJSON(res, 503, { error: "登录会话服务暂不可用，请稍后重试" });
       }
       const user = upsertUser(body.userId, body.email || "");
       // 邀请人绑定（仅首次）
@@ -722,9 +898,9 @@ async function handleBilling(req, res, pathname, method, url) {
           saveJSON(USERS_FILE, billingUsers);
         }
       }
-      const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
-      const token = signJWT({ sub: user.id, role: "customer", iat: Math.floor(Date.now() / 1000), exp });
-      return sendJSON(res, 200, { token, user: publicUser(user) });
+      const exp = Math.floor(Date.now() / 1000) + CUSTOMER_SESSION_MAX_AGE_SECONDS;
+      const token = signJWT({ sub: user.id, role: "customer", sid: crypto.randomUUID(), iat: Math.floor(Date.now() / 1000), exp });
+      return sendJSON(res, 200, { user: publicUser(user) }, { "Set-Cookie": customerSessionCookie(token) });
     }
 
     // 以下客户接口都需要客户 JWT
@@ -751,6 +927,12 @@ async function handleBilling(req, res, pathname, method, url) {
       }});
     }
 
+    if (pathname === "/api/billing/renewal-status" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.getRenewalStatus(identity.sub));
+      return sendJSON(res, 200, { automaticRenewalEnabled: false, collectionMode: "manual", mandateStatus: null,
+        subscriptionStatus: me.memberActive ? "active" : null, currentPeriodEnd: me.memberExpireAt || null });
+    }
+
     // GET /api/billing/plans — 公开套餐
     if (pathname === "/api/billing/plans" && method === "GET") {
       if (postgresBilling) return sendJSON(res, 200, await postgresBilling.plans());
@@ -765,7 +947,7 @@ async function handleBilling(req, res, pathname, method, url) {
         if (requestedKey && (requestedKey.length < 16 || requestedKey.length > 200)) return sendJSON(res, 400, { error: "订单幂等编号无效，请重试" });
         const key = requestedKey || `legacy_${crypto.createHash("sha256").update(`${identity.sub}:${body.planId}:${Math.floor(Date.now() / (15 * 60 * 1000))}`).digest("hex").slice(0, 48)}`;
         try { return sendJSON(res, 200, await postgresBilling.createOrder(identity.sub, body.planId, key, body.method || "mock")); }
-        catch (error) { return sendJSON(res, error.message.includes("同一") ? 409 : 400, { error: error.message }); }
+        catch (error) { return sendJSON(res, error.message.includes("同一") || error.message.includes("订阅") ? 409 : 400, { error: error.message }); }
       }
       const plan = billingPlans.find(p => p.id === body.planId);
       if (!plan) return sendJSON(res, 400, { error: "套餐不存在" });
@@ -785,12 +967,8 @@ async function handleBilling(req, res, pathname, method, url) {
         if (sameRequest.planId !== plan.id) return sendJSON(res, 409, { error: "同一购买编号不能用于不同套餐" });
         return sendJSON(res, 200, sameRequest);
       }
-      // 开通入口不是续费入口：已有有效会员时只返回原来的成功订单。
-      if (me.memberLevel === plan.level && me.memberExpireAt > Date.now()) {
-        const paid = billingOrders.filter(o => o.userId === me.id && o.planId === plan.id && o.status === "paid")
-          .sort((a, b) => b.paidAt - a.paidAt)[0];
-        if (paid) return sendJSON(res, 200, paid);
-        return sendJSON(res, 409, { error: "此套餐已生效，无需重复开通" });
+      if (me.memberExpireAt > Date.now() && me.memberLevel !== plan.level) {
+        return sendJSON(res, 409, { error: "当前订阅尚未到期，不能直接切换套餐" });
       }
       // 页面刷新后编号可能丢失：同一用户同一套餐的短期未付款单继续使用，避免重复弹出收银台。
       const pendingCutoff = Date.now() - 15 * 60 * 1000;
@@ -1320,27 +1498,165 @@ async function handleTeams(req, res, pathname, method) {
 
 async function handleAssets(req, res, pathname, method, url) {
   if (pathname.startsWith('/api/')) pathname = pathname.slice(4);
-  if (!postgresBilling || !(pathname === "/assets" || pathname === "/assets/upload" || pathname.startsWith("/assets/") || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
+  if (!postgresBilling || !(pathname === "/content-edits" || pathname === "/assets" || pathname === "/assets/upload" || pathname.startsWith("/assets/") || pathname === "/favorites" || pathname.startsWith("/favorites/"))) return false;
   const identity = getBillingIdentity(req);
   if (!identity || identity.role !== "customer") { sendJSON(res, 401, { error: "未登录或登录已过期" }); return true; }
   try {
+    if (pathname === '/content-edits' && method === 'POST') {
+      const input = await parseBody(req);
+      return sendJSON(res, 201, await postgresBilling.createContentEdit(identity.sub, input));
+    }
+    if (pathname === '/assets/upload-sessions' && method === 'POST') {
+      const input = await parseBody(req);
+      const title = String(input.title || '').trim().slice(0, 240);
+      const mimeType = String(input.mimeType || 'application/octet-stream').split(';')[0].slice(0, 160);
+      const sizeBytes = Number(input.sizeBytes);
+      if (!title || !Number.isSafeInteger(sizeBytes) || sizeBytes < 16 * 1024 * 1024 || sizeBytes > 5 * 1024 * 1024 * 1024) {
+        return sendJSON(res, 400, { error: '分片上传仅接受16MB至5GB的文件' });
+      }
+      const sourceKind = ['generated','reference_upload','manual_upload','edited'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
+      const mediaType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video'
+        : mimeType.startsWith('audio/') ? 'audio' : mimeType.startsWith('text/') ? 'text'
+        : /pdf|document|officedocument|msword/.test(mimeType) ? 'document' : 'other';
+      const { workspaceId } = await postgresBilling.getAssetUploadScope(identity.sub);
+      const fileToken = crypto.randomUUID();
+      const requestedBatchId = String(input.uploadBatchId || '');
+      if (!['generated','edited'].includes(sourceKind) && requestedBatchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedBatchId)) {
+        return sendJSON(res, 400, { error: '上传批次编号无效' });
+      }
+      const editId = sourceKind === 'edited' ? String(input.editId || '') : '';
+      const sourceFileId = sourceKind === 'edited' ? String(input.sourceFileId || '') : '';
+      const validUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+      if (sourceKind === 'edited' && (!validUuid(editId) || !validUuid(sourceFileId))) return sendJSON(res, 400, { error: '编辑来源记录无效' });
+      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
+      const sourceTaskId = sourceKind === 'generated' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(input.sourceGenerationTaskId || ''))
+        ? String(input.sourceGenerationTaskId) : '';
+      const groupId = sourceTaskId || editId || uploadBatchId || fileToken;
+      const now = new Date();
+      const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
+      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType, createdAt: now, groupingId: groupId, fileId: fileToken, extension });
+      const initialized = await objectStore.multipartInit({ key: objectKey, contentType: mimeType });
+      try {
+        const session = await postgresBilling.createAssetUploadSession(identity.sub, {
+          title, mimeType, sizeBytes, sourceKind, mediaType, objectKey, bucket: initialized.bucket, uploadBatchId, fileId: fileToken,
+          providerUploadId: initialized.uploadId, editId, sourceFileId, width: input.width, height: input.height,
+          durationMs: input.durationMs, completeness: input.completeness,
+          idempotencyKey: input.writeIdempotencyKey,
+        });
+        return sendJSON(res, 201, { ...session, partSizeBytes: 16 * 1024 * 1024 });
+      } catch (error) {
+        await objectStore.multipartAbort({ key: objectKey, uploadId: initialized.uploadId }).catch(() => {});
+        throw error;
+      }
+    }
+    const uploadSessionMatch = pathname.match(/^\/assets\/upload-sessions\/([0-9a-f-]+)$/i);
+    if (uploadSessionMatch && method === 'GET') {
+      return sendJSON(res, 200, await postgresBilling.getAssetUploadSession(identity.sub, uploadSessionMatch[1]));
+    }
+    const uploadPartMatch = pathname.match(/^\/assets\/upload-sessions\/([0-9a-f-]+)\/parts\/([0-9]+)$/i);
+    if (uploadPartMatch && method === 'PUT') {
+      const session = await postgresBilling.getAssetUploadSession(identity.sub, uploadPartMatch[1]);
+      if (session.status !== 'uploading' || session.bucket !== objectStore.getBucket()) return sendJSON(res, 409, { error: '上传会话已失效或不属于当前环境' });
+      const partNumber = Number(uploadPartMatch[2]);
+      const contentLength = Number(req.headers['content-length']);
+      if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000 || !Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > 16 * 1024 * 1024) {
+        req.resume();
+        return sendJSON(res, 400, { error: '上传分片编号或大小无效' });
+      }
+      const part = await objectStore.multipartUploadPart({ key: session.objectKey, uploadId: session.providerUploadId, partNumber, body: req, contentLength });
+      await postgresBilling.recordAssetUploadPart(identity.sub, session.id, { partNumber, ...part });
+      return sendJSON(res, 200, { partNumber, etag: part.etag, sizeBytes: part.sizeBytes });
+    }
+    const uploadCompleteMatch = pathname.match(/^\/assets\/upload-sessions\/([0-9a-f-]+)\/complete$/i);
+    if (uploadCompleteMatch && method === 'POST') {
+      const completionInput = await parseBody(req);
+      const assetMetadata = completionInput.metadata && typeof completionInput.metadata === 'object' && !Array.isArray(completionInput.metadata)
+        ? completionInput.metadata : {};
+      const session = await postgresBilling.getAssetUploadSession(identity.sub, uploadCompleteMatch[1]);
+      if (session.status === 'completed' && session.assetId) {
+        return sendJSON(res, 200, { id: session.assetId, name: session.assetTitle || session.originalFilename, type: session.assetType, favorited: false });
+      }
+      if (!['uploading','completing'].includes(session.status) || session.bucket !== objectStore.getBucket()) return sendJSON(res, 409, { error: '上传会话已失效或不属于当前环境' });
+      try {
+        const cosParts = session.status === 'uploading'
+          ? await objectStore.multipartListParts({ key: session.objectKey, uploadId: session.providerUploadId })
+          : session.parts;
+        const completion = await postgresBilling.beginAssetUploadCompletion(identity.sub, session.id, cosParts);
+        let completed;
+        try {
+          completed = await objectStore.multipartComplete({ key: session.objectKey, uploadId: session.providerUploadId, parts: completion.parts });
+        } catch (completeError) {
+          const existing = await objectStore.headObject(session.objectKey).catch(() => null);
+          if (!existing || existing.sizeBytes !== completion.sizeBytes) throw completeError;
+          completed = { storageVersionId: existing.storageVersionId };
+        }
+        const mimeType = session.mimeType;
+        const assetType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video'
+          : mimeType.startsWith('audio/') ? 'audio' : /pdf|document|officedocument|msword/.test(mimeType) ? 'doc' : 'file';
+        const asset = await postgresBilling.createAssetFromFile(identity.sub, {
+          storageProvider: 'cos', bucket: session.bucket, objectKey: session.objectKey, storageVersionId: completed.storageVersionId,
+          checksum: null, sizeBytes: completion.sizeBytes, fileId: session.fileId, workspaceId: session.workspaceId,
+          uploadSessionId: session.id, title: session.originalFilename, originalFilename: session.originalFilename,
+          assetType, mediaType: session.mediaType, sourceKind: session.sourceKind, mimeType,
+          metadata: { ...assetMetadata, sourceKind: session.sourceKind },
+        });
+        return sendJSON(res, 201, asset);
+      } catch (error) {
+        try { await postgresBilling.enqueueAssetUploadRecovery(identity.sub, session.id); }
+        catch (queueError) { console.error('[assets/upload] recovery enqueue failed', session.id, queueError.message); }
+        throw error;
+      }
+    }
+    const uploadAbortMatch = pathname.match(/^\/assets\/upload-sessions\/([0-9a-f-]+)$/i);
+    if (uploadAbortMatch && method === 'DELETE') {
+      const session = await postgresBilling.getAssetUploadSession(identity.sub, uploadAbortMatch[1]);
+      await objectStore.multipartAbort({ key: session.objectKey, uploadId: session.providerUploadId });
+      await postgresBilling.failAssetUploadSession(identity.sub, session.id, 'user_aborted');
+      return sendJSON(res, 200, { aborted: true });
+    }
     const contentMatch = pathname.match(/^\/assets\/([^/]+)\/content$/);
+    const readUrlMatch = pathname.match(/^\/assets\/([^/]+)\/read-url$/);
+    if (readUrlMatch && method === 'GET') {
+      const file = await postgresBilling.getAssetFile(identity.sub, readUrlMatch[1]);
+      if (file.storageProvider !== 'cos' || file.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '文件不属于当前环境的云存储' });
+      const readUrl = objectStore.signCdnReadUrl(file.objectKey, 300) || await objectStore.signReadUrl(file.objectKey, 300);
+      return sendJSON(res, 200, { url: readUrl, mimeType: file.mimeType, expiresInSeconds: 300 });
+    }
     if (contentMatch && method === "GET") {
       const file = await postgresBilling.getAssetFile(identity.sub, contentMatch[1]);
-      if (file.storageProvider !== 'local') return sendJSON(res, 501, { error: '当前存储提供商暂不支持直接读取' });
-      const root = path.resolve(OBJECT_DATA_DIR);
-      const filePath = path.resolve(root, file.objectKey);
-      if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '文件不存在' });
-      const stat = fs.statSync(filePath);
-      res.writeHead(200, {
-        'Content-Type': file.mimeType,
-        'Content-Length': stat.size,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.title)}`,
-        'Cache-Control': 'private, max-age=60',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      });
-      fs.createReadStream(filePath).on('error', error => { console.error('[assets/content]', error.message); if (!res.headersSent) sendJSON(res, 404, { error: '文件读取失败' }); else res.destroy(error); }).pipe(res);
+      if (file.storageProvider === 'cos') {
+        if (file.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '文件不属于当前环境的存储桶' });
+        const cdnUrl = objectStore.signCdnReadUrl(file.objectKey);
+        if (cdnUrl) {
+          res.writeHead(302, { Location: cdnUrl, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' });
+          res.end();
+          return true;
+        }
+        const stored = await objectStore.getObjectStream(file.objectKey, { range: req.headers.range });
+        const headers = {
+          'Content-Type': file.mimeType || stored.contentType,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.title)}`,
+          'Cache-Control': 'private, max-age=60',
+          'Accept-Ranges': 'bytes',
+        };
+        if (stored.contentLength) headers['Content-Length'] = stored.contentLength;
+        if (stored.contentRange) headers['Content-Range'] = stored.contentRange;
+        res.writeHead(stored.statusCode === 206 ? 206 : 200, headers);
+        stored.stream.on('error', error => { console.error('[assets/content]', error.message); res.destroy(error); }).pipe(res);
+      } else if (file.storageProvider === 'local') {
+        // 只为读取 COS 接入前已经存在的文件保留兼容；新上传不会再写本地。
+        const root = path.resolve(LEGACY_OBJECT_DATA_DIR);
+        const filePath = path.resolve(root, file.objectKey);
+        if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '文件不存在' });
+        const stat = fs.statSync(filePath);
+        res.writeHead(200, {
+          'Content-Type': file.mimeType,
+          'Content-Length': stat.size,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.title)}`,
+          'Cache-Control': 'private, max-age=60',
+        });
+        fs.createReadStream(filePath).on('error', error => { console.error('[assets/content]', error.message); res.destroy(error); }).pipe(res);
+      } else return sendJSON(res, 501, { error: '该文件使用的存储方式不受支持' });
       return true;
     }
     if (pathname === "/assets/upload" && method === "POST") {
@@ -1352,17 +1668,51 @@ async function handleAssets(req, res, pathname, method, url) {
         const rawMetadata = req.headers["x-asset-metadata"];
         if (rawMetadata) metadata = JSON.parse(decodeURIComponent(String(rawMetadata)));
       } catch { metadata = {}; }
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) metadata = {};
+      const requestedBatchId = String(metadata.uploadBatchId || '');
+      if (requestedBatchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedBatchId)) {
+        return sendJSON(res, 400, { error: '上传批次编号无效' });
+      }
+      const assetMetadata = { ...metadata };
+      delete assetMetadata.uploadBatchId;
       const mimeType = String(req.headers["content-type"] || "application/octet-stream").split(';')[0];
       const assetType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : mimeType.includes('pdf') || mimeType.includes('document') ? 'doc' : 'file';
+      const mediaType = mimeType.startsWith('image/') ? 'images'
+        : mimeType.startsWith('video/') ? 'videos'
+        : mimeType.startsWith('audio/') ? 'audio'
+        : mimeType.startsWith('text/') ? 'text'
+        : /pdf|document|officedocument|msword/.test(mimeType) ? 'documents' : 'other';
+      const fileMediaType = mediaType === 'images' ? 'image' : mediaType === 'videos' ? 'video'
+        : mediaType === 'documents' ? 'document' : ['audio', 'text'].includes(mediaType) ? mediaType : 'other';
+      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited'].includes(metadata.sourceKind)
+        ? metadata.sourceKind : 'manual_upload';
       const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
-      const objectKey = `${identity.sub}/${crypto.randomUUID()}${extension}`;
-      const outputPath = path.join(OBJECT_DATA_DIR, objectKey);
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      const { sizeBytes, checksum } = await writeAssetUpload(req, outputPath);
+      const { workspaceId } = await postgresBilling.getAssetUploadScope(identity.sub);
+      const editId = sourceKind === 'edited' ? String(metadata.editId || '') : '';
+      const sourceFileId = sourceKind === 'edited' ? String(metadata.sourceFileId || '') : '';
+      const validUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+      if (sourceKind === 'edited' && (!validUuid(editId) || !validUuid(sourceFileId))) return sendJSON(res, 400, { error: '编辑来源记录无效' });
+      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
+      const fileId = crypto.randomUUID();
+      const createdAt = new Date();
+      const sourceTaskId = sourceKind === 'generated' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(metadata.sourceGenerationTaskId || ''))
+        ? String(metadata.sourceGenerationTaskId) : '';
+      const groupId = sourceTaskId || editId || uploadBatchId || fileId;
+      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType: fileMediaType, createdAt, groupingId: groupId, fileId, extension });
+      const stored = await writeAssetUpload(req, objectStore, objectKey, mimeType);
       try {
-        return sendJSON(res, 201, await postgresBilling.createAssetFromFile(identity.sub, { title, assetType, mimeType, sizeBytes, checksum, objectKey, metadata }));
+        const asset = await postgresBilling.createAssetFromFile(identity.sub, {
+          ...stored, fileId, uploadBatchId, workspaceId, title, originalFilename: title, assetType, mediaType: fileMediaType,
+          sourceKind, mimeType, checksum: stored.sha256, metadata: assetMetadata, idempotencyKey: assetMetadata.writeIdempotencyKey,
+        });
+        if (asset.reused && asset.objectKey !== objectKey) {
+          try { await objectStore.deleteObject(objectKey); }
+          catch (cleanupError) { console.error('[assets/upload] duplicate COS cleanup failed', objectKey, cleanupError.message); }
+        }
+        return sendJSON(res, 201, asset);
       } catch (error) {
-        try { fs.unlinkSync(outputPath); } catch { /* 文件已不存在 */ }
+        try { await objectStore.deleteObject(objectKey); }
+        catch (cleanupError) { console.error('[assets/upload] COS cleanup failed', objectKey, cleanupError.message); }
         throw error;
       }
     }
@@ -1410,12 +1760,19 @@ function publicUser(u) {
 
 // ---------- 路由 ----------
 const server = http.createServer(async (req, res) => {
+  applyCors(req, res);
+  // Cookie 会随浏览器请求自动携带；对写操作验证来源，避免第三方页面借用登录态。
+  if (isUnsafeMethod(req.method) && readCookie(req, CUSTOMER_SESSION_COOKIE) && !hasTrustedMutationOrigin(req)) {
+    return sendJSON(res, 403, { error: "请求来源不受信任，请刷新页面后重试" });
+  }
   // CORS 预检
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") || "*",
+      "Access-Control-Allow-Headers": res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization, X-Qingyu-Requested-With",
+      "Access-Control-Allow-Methods": res.getHeader("Access-Control-Allow-Methods") || "GET, POST, PUT, DELETE, OPTIONS",
+      ...(res.getHeader("Access-Control-Allow-Credentials") ? { "Access-Control-Allow-Credentials": res.getHeader("Access-Control-Allow-Credentials") } : {}),
+      ...(res.getHeader("Vary") ? { Vary: res.getHeader("Vary") } : {}),
     });
     return res.end();
   }
@@ -1443,15 +1800,17 @@ const server = http.createServer(async (req, res) => {
 
     // GET /api/config/public — 公开模型配置
     if (pathname === "/api/config/public" && req.method === "GET") {
-      const publicKeys = keys
-        .filter(k => k.is_active === 1)
-        .map(k => ({
-          id: k.id,
-          name: k.name,
-            provider: k.provider,
-          model: k.model,
-        }));
-      return sendJSON(res, 200, publicKeys);
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPublicModelCatalogChannels());
+      const catalogConfigs = modelsCatalog.filter(model => model.visible !== false).flatMap(model => {
+        const links = (model.linkedModels || []).filter(link => link.isActive !== false)
+          .map(link => ({ link, channel: keys.find(key => String(key.id) === String(link.channelId) && key.is_active === 1) }))
+          .filter(entry => entry.channel);
+        if (!links.length) return [];
+        const provider = links[0].channel.provider;
+        const modelName = `catalog:${model.id}`;
+        return [{ id: `catalog-${model.id}`, name: model.displayName, provider, base_url: links[0].channel.base_url, model: modelName, models: [{ name: modelName, displayName: model.displayName, capability: model.capability }] }];
+      });
+      return sendJSON(res, 200, catalogConfigs);
     }
 
     // POST /api/feedback — 反馈允许匿名提交，但必须进入 PostgreSQL；数据库不可用时明确失败。
@@ -1500,13 +1859,66 @@ const server = http.createServer(async (req, res) => {
           clientType: "dev-login",
           installationId: url.searchParams.get("installationId") || "",
         });
-        const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+        const exp = Math.floor(Date.now() / 1000) + CUSTOMER_SESSION_MAX_AGE_SECONDS;
         const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
-        // JSON 模式：供前端 /dev-login 页面用 fetch 拿 token，避免临时 HTML 页跳转丢登录态
+        const cookieHeaders = { "Set-Cookie": customerSessionCookie(token) };
+        // JSON 模式：浏览器自动保存 HttpOnly Cookie，页面脚本不接触登录票。
         if (url.searchParams.get("format") === "json" || (req.headers.accept || "").includes("application/json")) {
-          return sendJSON(res, 200, { token, uid, email: user.email });
+          return sendJSON(res, 200, { uid, email: user.email }, cookieHeaders);
 }
-        // 返回一个自动写 localStorage 并跳转的 HTML 页
+
+async function processFileUploadRecoveryJob(job) {
+  try {
+    const session = await postgresBilling.getAssetUploadSession(job.appwriteUserId, job.uploadSessionId);
+    if (session.status === 'completed' && session.assetId) {
+      await postgresBilling.finishFileUploadRecoveryJob(job);
+      return;
+    }
+    if (['aborted', 'failed'].includes(session.status)) {
+      await postgresBilling.cancelFileUploadRecoveryJob(job);
+      console.log('[file-recovery] cancelled terminal upload', job.id, session.status);
+      return;
+    }
+    if (session.status !== 'completing' || session.bucket !== objectStore.getBucket()) throw new Error('上传会话状态或存储桶不匹配');
+
+    let completed = await objectStore.headObject(session.objectKey).catch(() => null);
+    if (!completed || completed.sizeBytes !== session.sizeBytes) {
+      const cosParts = await objectStore.multipartListParts({ key: session.objectKey, uploadId: session.providerUploadId });
+      const completion = await postgresBilling.beginAssetUploadCompletion(job.appwriteUserId, session.id, cosParts);
+      try {
+        completed = await objectStore.multipartComplete({ key: session.objectKey, uploadId: session.providerUploadId, parts: completion.parts });
+      } catch (error) {
+        const existing = await objectStore.headObject(session.objectKey).catch(() => null);
+        if (!existing || existing.sizeBytes !== completion.sizeBytes) throw error;
+        completed = existing;
+      }
+    }
+    const mimeType = session.mimeType || 'application/octet-stream';
+    const assetType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video'
+      : mimeType.startsWith('audio/') ? 'audio' : /pdf|document|officedocument|msword/.test(mimeType) ? 'doc' : 'file';
+    await postgresBilling.createAssetFromFile(job.appwriteUserId, {
+      storageProvider: 'cos', bucket: session.bucket, objectKey: session.objectKey,
+      storageVersionId: completed.storageVersionId || null, checksum: null, sizeBytes: session.sizeBytes,
+      fileId: session.fileId, workspaceId: session.workspaceId, uploadSessionId: session.id,
+      title: session.originalFilename, originalFilename: session.originalFilename, assetType,
+      mediaType: session.mediaType, sourceKind: session.sourceKind,
+      metadata: { sourceKind: session.sourceKind, width: session.width, height: session.height,
+        durationMs: session.durationMs, completeness: session.completeness,
+        editId: session.editId, sourceFileId: session.sourceFileId },
+      idempotencyKey: session.writeIdempotencyKey,
+    });
+    await postgresBilling.finishFileUploadRecoveryJob(job);
+    console.log('[file-recovery] completed', job.id, session.fileId);
+  } catch (error) {
+    try {
+      const result = await postgresBilling.retryFileUploadRecoveryJob(job, error.code || 'persist_failed');
+      console.error('[file-recovery] retry scheduled', job.id, result.status, error.message);
+    } catch (leaseError) {
+      console.error('[file-recovery] lease lost', job.id, leaseError.message);
+    }
+  }
+}
+        // 返回一个只写非敏感演示身份状态并跳转的 HTML 页；登录票由响应头保存。
         // zustand persist 的 auth-store 也要写，否则 checkSession 会强制查 Appwrite 把登录态清掉。
         const authStoreState = {
           state: {
@@ -1520,16 +1932,15 @@ const server = http.createServer(async (req, res) => {
         const html = `<!doctype html><meta charset="utf-8"><title>dev login</title>
 <body style="background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <div>登录中... <script>
-localStorage.setItem('billing_token', ${JSON.stringify(token)});
-localStorage.setItem('token', ${JSON.stringify(token)});
 localStorage.setItem('appwrite_uid', ${JSON.stringify(uid)});
+localStorage.setItem('billing_token_user', ${JSON.stringify(uid)});
 localStorage.setItem('auth-store', ${JSON.stringify(JSON.stringify(authStoreState))});
 localStorage.setItem('dev_login', '1');
 localStorage.setItem('infinite-canvas:locale', 'zh-CN');
 localStorage.removeItem('infinite-canvas:locale-manual');
 location.href = 'http://localhost:5173/';
 </script></div></body>`;
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...cookieHeaders });
         res.end(html);
         return;
       } catch (e) {
@@ -1543,20 +1954,22 @@ location.href = 'http://localhost:5173/';
       if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
       const body = await parseBody(req);
       const modelField = String(body.model || "");
-      const match = findChannel(modelField);
+      const match = await findChannelForModel(modelField);
       if (!match) return sendJSON(res, 502, { error: "当前模型暂不可用，请稍后再试" });
       const channel = match.channel;
       const bodyObj = { ...body };
+      const referenceAssetIds = Array.isArray(bodyObj.referenceAssetIds) ? bodyObj.referenceAssetIds : [];
       const idempotencyKey = String(bodyObj.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `image-task:${crypto.randomUUID()}`;
-      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds;
-      if (modelField.includes("::")) bodyObj.model = match.model;
+      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds; delete bodyObj.referenceAssetIds;
+      if (modelField.includes("::") || match.catalogModelId) bodyObj.model = match.model;
+      if (match.catalogModelId) bodyObj.__qingyuCatalogModelId = match.catalogModelId;
       bodyObj.response_format = bodyObj.response_format || "b64_json";
       const quantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
       try {
         const task = await postgresBilling.createGenerationTask(identity.sub, {
            taskType: "image", provider: channel.provider, model: match.model,
            prompt: String(bodyObj.prompt || "").slice(0, 4000), parameters: bodyObj, quantity,
-           idempotencyKey,
+           idempotencyKey, referenceAssetIds,
            timeoutSeconds: 600,
         });
         // 立即返回，不等待上游；后台异步执行避免请求超时导致状态不确定。
@@ -1564,6 +1977,10 @@ location.href = 'http://localhost:5173/';
         return sendJSON(res, 202, { taskId: task.id, status: task.status });
       } catch (e) {
         if (/积分|额度|余额|quota|insufficient|daily/i.test(String(e.message || ""))) return sendJSON(res, 402, { error: e.message });
+        if (/参考素材编号|参考素材不存在|参考素材不能|同一任务编号不能/.test(String(e.message || ""))) {
+          const conflict = String(e.message || "").includes('同一任务编号');
+          return sendJSON(res, conflict ? 409 : 400, { error: e.message });
+        }
         console.error("[generation-task] create failed", e);
         return sendJSON(res, 500, { error: "生成失败，请稍后重试" });
       }
@@ -1572,6 +1989,7 @@ location.href = 'http://localhost:5173/';
       if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
       const identity = getBillingIdentity(req);
       if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
       return sendJSON(res, 200, await postgresBilling.listMyGenerationTasks(identity.sub, 50));
     }
     const taskMatch = pathname.match(/^\/api\/generation-tasks\/([^/]+)$/);
@@ -1579,6 +1997,7 @@ location.href = 'http://localhost:5173/';
       if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
       const identity = getBillingIdentity(req);
       if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
       try { return sendJSON(res, 200, await postgresBilling.getGenerationTask(identity.sub, taskMatch[1])); }
       catch (e) { return sendJSON(res, 404, { error: e.message }); }
     }
@@ -1586,18 +2005,11 @@ location.href = 'http://localhost:5173/';
     // 私有权限：必须登录且任务属于当前用户；后端校验通过后才从对象存储读流回。
     const outputMatch = pathname.match(/^\/api\/generation-tasks\/([^/]+)\/outputs\/(\d+)\/content$/);
     if (outputMatch && req.method === "GET") {
-      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
-      // <img> 标签带不了 Authorization header，额外允许 ?token=xxx。
-      // 仅限生图结果这种"页面内嵌 <img>"场景；不开放给其他接口。
-      let identity = getBillingIdentity(req);
-      if (!identity || identity.role !== "customer") {
-        const qToken = url.searchParams.get("token");
-        if (qToken) {
-          const p = verifyJWT(qToken);
-          if (p && p.role === "customer") identity = p;
-        }
-      }
+      // 图片和 API 同源，浏览器会自动携带 HttpOnly Cookie；禁止把登录票放进网址。
+      const identity = getBillingIdentity(req);
       if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录" });
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
       const taskId = outputMatch[1];
       const wantIndex = parseInt(outputMatch[2], 10);
       try {
@@ -1605,16 +2017,38 @@ location.href = 'http://localhost:5173/';
         const found = outputs.find(o => o.index === wantIndex)
                    || (wantIndex === 0 ? outputs[0] : null);
         if (!found) return sendJSON(res, 404, { error: "图片不存在" });
-        if (found.storageProvider !== "local") return sendJSON(res, 501, { error: "当前存储提供商暂不支持直接读取" });
-        let stat;
-        try { stat = objectStore.stat(found.objectKey); }
-        catch { return sendJSON(res, 404, { error: "图片文件已失效" }); }
-        res.writeHead(200, {
-          "Content-Type": found.contentType || "image/png",
-          "Content-Length": stat.size,
-          "Cache-Control": "private, max-age=31536000, immutable",
-        });
-        objectStore.createReadStream(found.objectKey).pipe(res);
+        if (found.storageProvider === 'cos') {
+          if (found.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '图片不属于当前环境的存储桶' });
+          const cdnUrl = objectStore.signCdnReadUrl(found.objectKey);
+          if (cdnUrl) {
+            res.writeHead(302, { Location: cdnUrl, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' });
+            res.end();
+            return;
+          }
+          const stored = await objectStore.getObjectStream(found.objectKey, { range: req.headers.range });
+          const headers = {
+            'Content-Type': found.contentType || stored.contentType || 'image/png',
+            'Cache-Control': 'private, max-age=31536000, immutable',
+            'Accept-Ranges': 'bytes',
+          };
+          const size = stored.contentLength || found.sizeBytes;
+          if (size) headers['Content-Length'] = size;
+          if (stored.contentRange) headers['Content-Range'] = stored.contentRange;
+          res.writeHead(stored.statusCode === 206 ? 206 : 200, headers);
+          stored.stream.on('error', error => { console.error('[generation-output/content]', error.message); res.destroy(error); }).pipe(res);
+        } else if (found.storageProvider === 'local') {
+          // 只为读取 COS 接入前已经存在的结果保留兼容；新结果不会再写本地。
+          const root = path.resolve(LEGACY_OBJECT_DATA_DIR);
+          const filePath = path.resolve(root, found.objectKey);
+          if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '图片文件已失效' });
+          const stat = fs.statSync(filePath);
+          res.writeHead(200, {
+            'Content-Type': found.contentType || 'image/png',
+            'Content-Length': stat.size,
+            'Cache-Control': 'private, max-age=31536000, immutable',
+          });
+          fs.createReadStream(filePath).on('error', error => { console.error('[generation-output/content]', error.message); res.destroy(error); }).pipe(res);
+        } else return sendJSON(res, 501, { error: '该图片使用的存储方式不受支持' });
         return;
       } catch (e) {
         return sendJSON(res, 404, { error: e.message });
@@ -1665,17 +2099,25 @@ location.href = 'http://localhost:5173/';
       const identity = getBillingIdentity(req);
       if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
       try {
+        if (!(await postgresBilling.isSessionAdmitted(identity.sub, identity.sid))) return sendJSON(res, 401, { error: "当前设备登录已撤销或过期，请重新登录" });
         if (pathname === "/api/account/sessions" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listSessions(identity.sub));
         const sessionMatch = pathname.match(/^\/api\/account\/sessions\/([^/]+)$/);
-        if (sessionMatch && req.method === "DELETE") return sendJSON(res, 200, await postgresBilling.revokeSession(identity.sub, sessionMatch[1]));
+        if (sessionMatch && req.method === "DELETE") {
+          const result = await postgresBilling.revokeSession(identity.sub, sessionMatch[1]);
+          return sendJSON(res, 200, result, sessionMatch[1] === identity.sid ? { "Set-Cookie": clearCustomerSessionCookie() } : {});
+        }
         return sendJSON(res, 404, { error: "会话接口不存在" });
       } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
     }
 
     // 新版业务 Token 带数据库会话编号；会话被撤销或被另一台设备接管后，业务请求立即拒绝。
     const requestIdentity = getBillingIdentity(req);
-    if (postgresBilling && requestIdentity?.role === "customer" && requestIdentity.sid) {
-      if (!(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
+    const authenticationPath = (pathname === "/api/billing/logout" || pathname === "/api/billing/login") && req.method === "POST";
+    if (!authenticationPath && requestIdentity?.role === "customer") {
+      if (!postgresBilling && !(process.env.NODE_ENV === "test" && PAYMENT_MODE === "mock")) {
+        return sendJSON(res, 503, { error: "登录会话服务暂不可用" });
+      }
+      if (postgresBilling && !(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
         return sendJSON(res, 401, { error: "当前设备处于离线状态，请在本设备重新登录后接管在线状态" });
       }
     }
@@ -1714,7 +2156,10 @@ location.href = 'http://localhost:5173/';
         if (pathname === "/api/canvas/projects" && req.method === "GET") return sendJSON(res, 200, await postgresBilling.listCanvasSnapshots(identity.sub));
         if (pathname === "/api/canvas/projects/snapshot" && req.method === "POST") return sendJSON(res, 200, await postgresBilling.saveCanvasSnapshot(identity.sub, await parseBody(req)));
         return sendJSON(res, 404, { error: "画布接口不存在" });
-      } catch (error) { return sendJSON(res, 400, { error: error.message || "画布保存失败" }); }
+      } catch (error) {
+        if (error.code === 'VERSION_CONFLICT') return sendJSON(res, 409, { code: error.code, error: error.message || "画布版本冲突", conflicts: error.conflicts || [] });
+        return sendJSON(res, 400, { error: error.message || "画布保存失败" });
+      }
     }
 
     if (postgresBilling && pathname === "/api/agent/snapshot" && req.method === "POST") {
@@ -1865,6 +2310,43 @@ location.href = 'http://localhost:5173/';
       return sendJSON(res, 200, modelsCatalog);
     }
 
+    const catalogChannelModelsMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)\/channels$/);
+    if (catalogChannelModelsMatch && req.method === "POST") {
+      const body = await parseBody(req);
+      if (postgresBilling) {
+        try { return sendJSON(res, 201, await postgresBilling.addModelCatalogChannelModel(catalogChannelModelsMatch[1], body)); }
+        catch (error) { return sendJSON(res, 400, { error: error.message }); }
+      }
+      const catalog = modelsCatalog.find(model => Number(model.id) === Number(catalogChannelModelsMatch[1]));
+      const channel = keys.find(key => String(key.id) === String(body.channelId));
+      const modelName = String(body.upstreamModelId || '').trim();
+      if (!catalog) return sendJSON(res, 404, { error: "模型目录不存在" });
+      if (!channel || !(channel.model || '').split(',').map(value => value.trim()).includes(modelName)) return sendJSON(res, 400, { error: "请选择该渠道已配置的模型" });
+      const format = value => String(value).toLowerCase() === 'gemini' ? 'gemini' : 'openai';
+      if ((catalog.linkedModels || []).some(link => {
+        const linkedChannel = keys.find(key => String(key.id) === String(link.channelId));
+        return linkedChannel && format(linkedChannel.provider) !== format(channel.provider);
+      })) return sendJSON(res, 400, { error: "同一目录模型只能关联相同请求协议的渠道" });
+      catalog.linkedModels ||= [];
+      let link = catalog.linkedModels.find(item => String(item.channelId) === String(channel.id) && item.model === modelName);
+      if (link) { link.isActive = true; link.priority = Number(body.priority) || 0; }
+      else { link = { id: crypto.randomUUID(), channelId: channel.id, model: modelName, priority: Number(body.priority) || 0, isActive: true }; catalog.linkedModels.push(link); }
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 201, link);
+    }
+    const catalogChannelModelDeleteMatch = pathname.match(/^\/api\/admin\/models-catalog\/(\d+)\/channels\/([^/]+)$/);
+    if (catalogChannelModelDeleteMatch && req.method === "DELETE") {
+      if (postgresBilling) {
+        try { return sendJSON(res, 200, await postgresBilling.removeModelCatalogChannelModel(catalogChannelModelDeleteMatch[1], catalogChannelModelDeleteMatch[2])); }
+        catch (error) { return sendJSON(res, 404, { error: error.message }); }
+      }
+      const catalog = modelsCatalog.find(model => Number(model.id) === Number(catalogChannelModelDeleteMatch[1]));
+      if (!catalog) return sendJSON(res, 404, { error: "模型目录不存在" });
+      catalog.linkedModels = (catalog.linkedModels || []).filter(link => String(link.id) !== catalogChannelModelDeleteMatch[2]);
+      saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
+      return sendJSON(res, 200, { success: true });
+    }
+
 
     // POST /api/admin/models-catalog — 新增单个模型
     if (pathname === "/api/admin/models-catalog" && req.method === "POST") {
@@ -1873,26 +2355,21 @@ location.href = 'http://localhost:5173/';
         try { return sendJSON(res, 201, await postgresBilling.createModelCatalog(body)); }
         catch (error) { return sendJSON(res, 400, { error: error.message }); }
       }
-      if (!body.modelId) {
-        return sendJSON(res, 400, { error: "模型 ID 为必填项" });
-      }
-      // 已存在就报错
-      if (modelsCatalog.find(m => m.modelId === body.modelId)) {
-        return sendJSON(res, 400, { error: "该模型已存在" });
-      }
+      if (!String(body.displayName || '').trim()) return sendJSON(res, 400, { error: "请输入模型显示名称" });
       const newModel = {
         id: nextId(),
-        modelId: body.modelId,
-        displayName: body.displayName || body.modelId,
-        provider: body.provider || "unknown",
+        modelId: null,
+        displayName: String(body.displayName).trim(),
+        provider: "unknown",
         capability: body.capability || "text",
         visible: body.visible !== false,
         sortOrder: modelsCatalog.length + 1,
+        linkedModels: [],
         createdAt: Date.now(),
       };
       modelsCatalog.push(newModel);
       saveJSON(MODELS_CATALOG_FILE, modelsCatalog);
-      return sendJSON(res, 200, newModel);
+      return sendJSON(res, 201, newModel);
     }
     // POST /api/admin/models-catalog/bulk — 批量添加模型（已存在的跳过）
     if (pathname === "/api/admin/models-catalog/bulk" && req.method === "POST") {
@@ -1992,6 +2469,20 @@ location.href = 'http://localhost:5173/';
       }
     }
 
+    // GET /api/admin/api-keys/:id/usage — 渠道调用明细（管理员可见）
+    const keyUsageMatch = pathname.match(/^\/api\/admin\/api-keys\/([0-9a-f-]{36})\/usage$/i);
+    if (keyUsageMatch && req.method === "GET") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "当前存储未提供可追溯的调用记录" });
+      try {
+        return sendJSON(res, 200, await postgresBilling.listPlatformApiKeyUsage(keyUsageMatch[1], {
+          range: url.searchParams.get("range") || "today",
+          capability: url.searchParams.get("capability") || "全部",
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        }));
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "读取调用明细失败" }); }
+    }
+
     // GET /api/admin/key-stats — 密钥使用统计
     if (pathname === "/api/admin/key-stats" && req.method === "GET") {
       if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPlatformApiKeyStats());
@@ -2042,10 +2533,26 @@ location.href = 'http://localhost:5173/';
 server.listen(PORT, () => {
   // 0046：每 30 秒回收超时在途任务并释放过期预扣额度；发现守恒异常自动写告警。
   if (postgresBilling) {
+    const fileRecoveryWorkerId = `${os.hostname()}:${process.pid}`;
+    setInterval(async () => {
+      try {
+        const jobs = await postgresBilling.claimFileUploadRecoveryJobs(fileRecoveryWorkerId, 10);
+        for (const job of jobs) setImmediate(() => processFileUploadRecoveryJob(job));
+        if (jobs.length) console.log('[file-recovery] claimed', jobs.length);
+      } catch (error) { console.error('[file-recovery] claim failed', error.message); }
+    }, 15000).unref?.();
+
     setInterval(() => {
       postgresBilling.reapStaleTasks()
         .then(r => { if ((r.refunded_tasks||0) > 0 || (r.expired_quota_reservations||0) > 0) console.log("[reaper]", JSON.stringify(r)); })
         .catch(e => console.error("[reaper] failed", e.message));
+    }, 30000).unref?.();
+
+    // 支付事件先持久化，再按退避时间重试；达到次数上限会产生后台告警。
+    setInterval(() => {
+      postgresBilling.processRecoverablePaymentEvents(20)
+        .then(r => { if (r.claimed > 0) console.log("[payment-retry]", JSON.stringify(r)); })
+        .catch(e => console.error("[payment-retry] failed", e.message));
     }, 30000).unref?.();
 
     // 启动恢复：上次进程崩溃/重启时还在 pending 的任务，重新派发给 worker，
@@ -2054,9 +2561,11 @@ server.listen(PORT, () => {
       try {
         const recoverable = await postgresBilling.listRecoverableTasks(50);
         for (const { task, appwriteUserId } of recoverable) {
-          const match = findChannel(task.model || "");
+          const catalogModelId = Number(task.parameters?.__qingyuCatalogModelId) || null;
+          const match = await findChannelForModel(catalogModelId ? `catalog:${catalogModelId}` : (task.model || ""));
           if (!match) { console.error("[recover] no channel for task", task.id, task.model); continue; }
           const bodyObj = task.parameters && typeof task.parameters === "object" ? task.parameters : {};
+          if (match.catalogModelId) bodyObj.model = match.model;
           const identity = { sub: appwriteUserId, role: "customer" };
           // 串行派发，避免启动瞬间打满上游；每个任务内部独立 try/catch。
           setImmediate(() => runGenerationTaskWorker(identity, task, match.channel, bodyObj));

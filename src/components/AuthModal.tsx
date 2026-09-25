@@ -121,7 +121,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 {/* 左侧品牌图区域（后续替换为实际图片） */}
                 <div className="hidden md:flex w-[44%] relative bg-gradient-to-br from-accent via-accent to-accent-hover flex-col items-center justify-center p-10 text-white">
                     <QingyuLogoIcon className="w-16 h-16 text-white" />
-                    <img src="/litzone-wordmark.svg" alt="litzone" className="mt-6 h-8 w-40 object-contain brightness-0 invert" />
+                    <img src="/litzone-wordmark.svg" alt="LitZone" className="mt-6 h-8 w-40 object-contain brightness-0 invert" />
                     <p className="mt-2 text-center text-white/80 text-sm leading-relaxed">
                         {t('auth.brandPlaceholder')}
                     </p>
@@ -138,7 +138,7 @@ export default function AuthModal({ onClose, onSuccess }: { onClose: () => void;
                 <div className="mb-8">
                     <h2 className="text-2xl font-bold text-center text-text flex items-center justify-center gap-2">
                         {t('brand.welcome')}
-                        <img src="/litzone-wordmark.svg" alt="LITZONE" className="h-10 w-auto object-contain dark:invert" />
+                        <img src="/litzone-wordmark.svg" alt="LitZone" className="h-10 w-auto object-contain dark:invert" />
                     </h2>
                     <p className="text-center text-gray-500 mt-2">
                         {mode === 'login' ? t('auth.subtitleLogin') : t('auth.subtitleRegister')}

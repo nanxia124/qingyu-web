@@ -12,6 +12,11 @@ import yaml from 'js-yaml';
 import ts from 'typescript';
 import { loadEnv } from 'vite';
 
+process.on('uncaughtExceptionMonitor', error => {
+  const diagnostic = String(error?.stack || error).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+  console.log(`::error title=Security boundary failure detail::${diagnostic}`);
+});
+
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const directory = await mkdtemp(path.join(scriptDirectory, '.security-test-'));
 const secret = crypto.randomBytes(32).toString('hex');

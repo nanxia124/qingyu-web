@@ -1,15 +1,17 @@
 /**
  * 异步生图任务客户端（0046）
  * 流程：POST /api/generation-tasks 提交即返回 taskId（pending），
- *       前端轮询 GET /api/generation-tasks/:id 直到 succeeded/failed/refunded。
+ *       前端轮询 GET /api/generation-tasks/:id，生成和恢复保存期间保持等待，直到 succeeded/failed/refunded。
  * 目的：避免同步长连接在请求超时后状态不确定；失败/超时由后端自动 refunded 并释放预扣额度。
  */
 
 import i18n from '@canvas/i18n';
+import { billingApi } from '@/lib/billing';
+import { useBillingStore } from '@/stores/useBillingStore';
 
 const API = import.meta.env.VITE_API_URL || '';
 
-export type GenTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'refunded';
+export type GenTaskStatus = 'pending' | 'running' | 'saving' | 'succeeded' | 'failed' | 'refunded';
 
 export interface GenTaskOutput {
   type: string;
@@ -19,6 +21,10 @@ export interface GenTaskOutput {
   fileId?: string | null;
   objectKey?: string | null;
   revisedPrompt?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface GenTask {
@@ -107,10 +113,17 @@ export function resolveOpenImageParams(opts: {
 
 export async function submitImageTask(body: Record<string, unknown>): Promise<{ taskId: string; status: string }> {
   const idempotencyKey = String(body.idempotencyKey || `image-task:${crypto.randomUUID()}`);
+  const quoteParameters = { ...body };
+  for (const key of ['model', 'prompt', 'n', 'referenceAssetIds', 'idempotencyKey', 'creditQuoteId', 'quantity', 'timeoutSeconds']) delete quoteParameters[key];
+  if (!quoteParameters.response_format) quoteParameters.response_format = 'b64_json';
+  const quoteId = String(body.creditQuoteId || '') || (await billingApi.quote({
+    model: String(body.model || ''), taskType: 'image', prompt: String(body.prompt || ''),
+    parameters: quoteParameters, quantity: Number(body.n) || 1,
+  })).id;
   const res = await fetch(`${API}/api/generation-tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, idempotencyKey }),
+    body: JSON.stringify({ ...body, creditQuoteId: quoteId, idempotencyKey }),
     credentials: 'include',
   });
   const data = await res.json().catch(() => ({}));
@@ -119,6 +132,7 @@ export async function submitImageTask(body: Record<string, unknown>): Promise<{ 
       typeof data?.error === 'string' ? data.error : data?.error?.message || i18n.t('imageTools.submitFailed'),
     );
   }
+  void useBillingStore.getState().refreshMe();
   return data;
 }
 
@@ -128,6 +142,7 @@ export async function fetchTask(taskId: string): Promise<GenTask> {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : i18n.t('imageTools.taskQueryFailed'));
+  if (['succeeded', 'failed', 'refunded'].includes(data.status)) void useBillingStore.getState().refreshMe();
   return data as GenTask;
 }
 

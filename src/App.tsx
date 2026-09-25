@@ -28,6 +28,7 @@ const SecurityPage = lazy(() => import('@/pages/account/SecurityPage'))
 const BillingPage = lazy(() => import('@/pages/account/BillingPage'))
 const TeamsPage = lazy(() => import('@/pages/team/TeamsPage'))
 const TeamMembersPage = lazy(() => import('@/pages/team/TeamMembersPage'))
+const EraserPage = lazy(() => import('@/pages/EraserPage'))
 
 // 画布模块原生集成（替代 iframe）：整体懒加载，首次进入 /canvas 才拉取画布 chunk
 const CanvasRoute = lazy(() => import('@canvas/index').then((m) => ({ default: m.CanvasRoute })))
@@ -64,6 +65,7 @@ export default function App() {
           {/* /generate 重定向到真实生图页 */}
           <Route path="/generate" element={<Navigate to="/image" replace />} />
           <Route path="/translate" element={lazyPage(<TranslatePage />, 'workspace')} />
+          <Route path="/eraser" element={lazyPage(<EraserPage />, 'workspace')} />
           <Route path="/plan" element={lazyPage(<PlanPage />, 'workspace')} />
           <Route path="/canvas" element={lazyCanvas(<CanvasRoute />)} />
           <Route path="/canvas/new" element={lazyCanvas(<CanvasNewRoute />)} />

@@ -20,6 +20,9 @@ type CatalogModel = {
   capability: Capability;
   visible: boolean;
   sortOrder: number;
+  creditPrice: number | null;
+  creditPriceUnit: "request" | "output" | "second" | "thousand_chars" | null;
+  creditPriceVersion: number;
   linkedModels: ModelBinding[];
 };
 type ApiChannel = {
@@ -58,6 +61,7 @@ export default function ModelCatalog() {
   const [confirmAction, setConfirmAction] = useState<{ title: string; detail: string; run: () => Promise<void> } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [editingPrice, setEditingPrice] = useState<Record<number, { price: string; unit: CatalogModel["creditPriceUnit"] }>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,7 +115,7 @@ export default function ModelCatalog() {
     } finally { setAdding(false); }
   };
 
-  const updateModel = async (id: number, patch: Partial<Pick<CatalogModel, "displayName" | "capability" | "visible" | "sortOrder">>, successText: string) => {
+  const updateModel = async (id: number, patch: Partial<Pick<CatalogModel, "displayName" | "capability" | "visible" | "sortOrder" | "creditPrice" | "creditPriceUnit">>, successText: string) => {
     setBusyKey(`model:${id}`);
     try {
       await request(`/models-catalog/${id}`, { method: "PUT", body: JSON.stringify(patch) });
@@ -203,6 +207,14 @@ export default function ModelCatalog() {
             <div className="min-w-36 flex-1">
               {editingId === model.id ? <input value={editingName} onChange={event => setEditingName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void updateModel(model.id, { displayName: editingName.trim() }, "显示名称已保存"); if (event.key === "Escape") setEditingId(null); }} className="w-full rounded-lg bg-secondary px-2 py-1.5 text-sm text-text outline-none" autoFocus /> : <div className="font-medium text-text">{model.displayName}</div>}
               <div className="mt-1 text-xs text-text-muted">{model.linkedModels.filter(link => link.isActive).length} 个可用渠道模型</div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2">
+              <span className="text-xs text-text-muted">用户积分价</span>
+              <input aria-label={`${model.displayName}积分价格`} inputMode="decimal" value={editingPrice[model.id]?.price ?? (model.creditPrice == null ? "" : String(model.creditPrice))} onChange={event => setEditingPrice(value => ({ ...value, [model.id]: { price: event.target.value, unit: value[model.id]?.unit ?? model.creditPriceUnit ?? "output" } }))} placeholder="未设置" className="w-20 bg-transparent text-right text-sm text-text outline-none" />
+              <select aria-label={`${model.displayName}计价单位`} value={editingPrice[model.id]?.unit ?? model.creditPriceUnit ?? "output"} onChange={event => setEditingPrice(value => ({ ...value, [model.id]: { price: value[model.id]?.price ?? (model.creditPrice == null ? "" : String(model.creditPrice)), unit: event.target.value as CatalogModel["creditPriceUnit"] } }))} className="bg-transparent text-xs text-text-muted">
+                <option value="request">每次</option><option value="output">每个结果</option><option value="second">每秒</option><option value="thousand_chars">每千字</option>
+              </select>
+              <button type="button" disabled={busyKey === `model:${model.id}`} onClick={() => { const draft = editingPrice[model.id]; void updateModel(model.id, { creditPrice: draft?.price.trim() ? Number(draft.price) : null, creditPriceUnit: draft?.price.trim() ? draft.unit : null }, "用户积分价已保存"); }} className="rounded-md bg-accent/20 px-2 py-1 text-xs text-accent">保存</button>
             </div>
             {editingId === model.id ? <div className="flex gap-1"><button type="button" onClick={() => void updateModel(model.id, { displayName: editingName.trim() }, "显示名称已保存")} disabled={busyKey === `model:${model.id}`} className="rounded-lg bg-emerald-500/10 p-2 text-emerald-300"><Check size={16} /></button><button type="button" onClick={() => setEditingId(null)} className="rounded-lg bg-secondary p-2 text-text-muted"><X size={16} /></button></div> : <button type="button" onClick={() => { setEditingId(model.id); setEditingName(model.displayName); }} className="rounded-lg bg-secondary px-3 py-2 text-xs text-text-secondary">改名称</button>}
             <button type="button" onClick={() => setConfirmAction({ title: model.visible ? "关闭目录模型" : "开启目录模型", detail: model.visible ? `关闭后，用户将不能再选择“${model.displayName}”。` : `开启后，用户可以选择“${model.displayName}”。`, run: async () => { await updateModel(model.id, { visible: !model.visible }, model.visible ? "模型已关闭" : "模型已开启"); setConfirmAction(null); } })} className={`rounded-lg px-3 py-2 text-xs ${model.visible ? "bg-emerald-500/10 text-emerald-300" : "bg-secondary text-text-muted"}`}>{model.visible ? "前台可见" : "已隐藏"}</button>

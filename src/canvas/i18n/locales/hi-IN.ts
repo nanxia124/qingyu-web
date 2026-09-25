@@ -32,6 +32,7 @@ const override={
       historyEmpty: "अभी तक कोई जनरेशन नहीं",
       historyLoading: "लोड हो रहा है…",
       statusRunning: "जनरेट हो रहा है",
+      statusSaving: "नतीजा सहेजा जा रहा है…",
       statusDone: "पूर्ण",
       statusFailed: "विफल",
       statusRefunded: "रिफंड किया गया",

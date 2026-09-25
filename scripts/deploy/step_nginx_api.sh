@@ -36,8 +36,10 @@ server {
         proxy_send_timeout 86400;
     }
 
-    # Appwrite Console
-    location /console/ {
+    # Appwrite Console：上游从根路径提供页面，外部入口使用 /console/。
+    location = /console { return 301 /console/; }
+    location ^~ /console/ {
+        rewrite ^/console/(.*)$ /$1 break;
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -46,6 +48,12 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_set_header Accept-Encoding "";
+        sub_filter_once off;
+        sub_filter '="/assets/' '="/console/assets/';
+        sub_filter '="/logo.svg"' '="/console/logo.svg"';
+        sub_filter '="/favicon.ico"' '="/console/favicon.ico"';
+        sub_filter '="/apple-touch-icon.png"' '="/console/apple-touch-icon.png"';
     }
 
     # Static frontend (SPA)

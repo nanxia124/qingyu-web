@@ -32,6 +32,7 @@ const override={
       historyEmpty: "ยังไม่มีงานสร้าง",
       historyLoading: "กำลังโหลด…",
       statusRunning: "กำลังสร้าง",
+      statusSaving: "กำลังบันทึกผลลัพธ์…",
       statusDone: "เสร็จสิ้น",
       statusFailed: "ล้มเหลว",
       statusRefunded: "คืนเงินแล้ว",

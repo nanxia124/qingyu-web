@@ -32,6 +32,7 @@ const override={
       historyEmpty: "Henüz üretim yok",
       historyLoading: "Yükleniyor…",
       statusRunning: "Üretiliyor",
+      statusSaving: "Sonuç kaydediliyor…",
       statusDone: "Tamamlandı",
       statusFailed: "Başarısız",
       statusRefunded: "İade edildi",

@@ -23,6 +23,7 @@ export function AgentChatTimeline({
     onApproveTool,
     onApprovalDecision,
     onRegenerate,
+    onEditMessage,
 }: {
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     pendingTool: AgentPendingToolCall | null;
@@ -33,6 +34,7 @@ export function AgentChatTimeline({
     onApproveTool: () => void;
     onApprovalDecision: (approval: AgentPendingApproval, decision: "accept" | "acceptForSession" | "decline") => void;
     onRegenerate?: (messageId: string) => void;
+    onEditMessage?: (messageId: string) => void;
 }) {
     const { t } = useTranslation();
     const messages = useAgentStore((state) => state.messages);
@@ -92,7 +94,7 @@ export function AgentChatTimeline({
                     ) : null}
                     {timeline.map((entry) => entry.type === "commands"
                         ? <AgentCommandGroupRow key={entry.id} items={entry.items} theme={theme} />
-                        : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} onRegenerate={onRegenerate} />)}
+                        : <AgentChatMessageRow key={entry.item.id} item={entry.item} theme={theme} onRegenerate={onRegenerate} onEditMessage={onEditMessage} />)}
                     {pendingTool ? (
                         <AgentPendingToolCard
                             summary={summarizeCanvasAgentOps(pendingTool.input?.ops || []) || toolName(pendingTool.name)}
@@ -124,12 +126,17 @@ export function AgentTaskProgress({ theme, busy }: { theme: (typeof canvasThemes
     );
 }
 
-const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme, onRegenerate }: { item: AgentChatItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRegenerate?: (messageId: string) => void }) {
+const AgentChatMessageRow = memo(function AgentChatMessageRow({ item, theme, onRegenerate, onEditMessage }: { item: AgentChatItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRegenerate?: (messageId: string) => void; onEditMessage?: (messageId: string) => void }) {
     const endpoint = useAgentStore((state) => state.url);
     const token = useAgentStore((state) => state.token);
     return (
         <div style={item.streamId ? undefined : historyMessageStyle}>
-            <AgentChatMessage item={agentMessageToChatMessage(item, endpoint, token)} theme={theme} onRegenerate={item.role === "assistant" && onRegenerate ? () => onRegenerate(item.id) : undefined} />
+            <AgentChatMessage
+                item={agentMessageToChatMessage(item, endpoint, token)}
+                theme={theme}
+                onRegenerate={item.role === "assistant" && onRegenerate ? () => onRegenerate(item.id) : undefined}
+                onEditMessage={item.role === "user" && onEditMessage ? () => onEditMessage(item.id) : undefined}
+            />
         </div>
     );
 });

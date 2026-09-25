@@ -1,4 +1,4 @@
-﻿import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { Tooltip } from 'antd'
 import { SpeechInputButton } from '@/components/speech-input-button'
 import { ImageViewer } from '@/components/ImageViewer'
@@ -49,6 +49,7 @@ import { ensureServerConfig } from '@canvas/lib/server-config-bootstrap'
 import { api } from '@/lib/api'
 import { motion } from 'motion/react'
 import { useBillingStore } from '@/stores/useBillingStore'
+import { billingApi, type ModelCreditQuote } from '@/lib/billing'
 
 type TabId = 'generate' | 'blend' | 'translate'
 type ViewMode = 'list' | 'grid' | 'large'
@@ -92,12 +93,6 @@ const tabs: { id?: TabId; label: string; translation?: boolean; width: string }[
 /* ── 生图 Tab ── */
 const MAX_PROMPT_LENGTH = 2000
 
-const models = [
-  '65535 · GPT Image 2-Eco',
-  '65536 · GPT Image 2-Pro',
-  '65537 · GPT Image 2-Max',
-  '65538 · Nano Banana',
-]
 
 function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) {
   const { t } = useTranslation()
@@ -114,6 +109,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [generating, setGenerating] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [model, setModel] = useState('')
+  const [creditQuote, setCreditQuote] = useState<ModelCreditQuote | null>(null)
+  const [quoteLoading, setQuoteLoading] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
@@ -157,6 +154,25 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const only1K = isNanoBanana || isGptImage25
   const disabledCounts = onlyOne ? ['2', '3', '4'] : []
   const disabledQualities = only1K ? ['2K', '4K'] : []
+  const selectedModelForQuote = model || config.imageModel || config.model
+  const isPlatformModel = /catalog:\d+/.test(selectedModelForQuote)
+
+  useEffect(() => {
+    setCreditQuote(null)
+    if (!isLoggedIn || !prompt.trim() || !isPlatformModel) { setQuoteLoading(false); return }
+    let active = true
+    setQuoteLoading(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const imageParams = resolveOpenImageParams({ ratio, quality, model: selectedModelForQuote })
+        const quote = await billingApi.quote({ model: selectedModelForQuote, taskType: 'image', prompt: prompt.trim(), quantity: Math.max(1, Math.min(15, Number(count) || 1)), parameters: { ...imageParams, n: Math.max(1, Math.min(15, Number(count) || 1)), response_format: 'b64_json' } })
+        if (active) setCreditQuote(quote)
+      } catch {
+        if (active) setCreditQuote(null)
+      } finally { if (active) setQuoteLoading(false) }
+    }, 300)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [isLoggedIn, prompt, isPlatformModel, selectedModelForQuote, ratio, quality, count])
 
   const filteredResults = searchKeyword.trim()
     ? results.filter((r) => r.prompt.toLowerCase().includes(searchKeyword.trim().toLowerCase()))
@@ -386,17 +402,22 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       showToast(t('imageTools.submitFailed'), 'error')
       return
     }
-    if (latestBillingUser.memberLevel !== 'free' && latestBillingUser.balance < requestedCount) {
-      showToast(t('imageTools.insufficient', { need: requestedCount, balance: latestBillingUser.balance }), 'error')
-      return
+    const selectedModel = model || config.imageModel || config.model
+    const catalogPricingEnabled = /catalog:\d+/.test(selectedModel)
+    const imgParams = resolveOpenImageParams({ ratio, quality, model: selectedModel })
+    const billableParameters = { ...imgParams, n: requestedCount, response_format: 'b64_json' }
+    let quote: ModelCreditQuote | null = null
+    if (catalogPricingEnabled) {
+      try { quote = await billingApi.quote({ model: selectedModel, taskType: 'image', prompt: prompt.trim(), parameters: billableParameters, quantity: requestedCount }) }
+      catch (error) { showToast(error instanceof Error ? error.message : '无法确认本次积分价格', 'error'); return }
     }
-    if (latestBillingUser.memberLevel === 'free' && (latestBillingUser.dailyUsed ?? 0) >= (latestBillingUser.dailyLimit ?? 20)) {
-      showToast('今日免费次数已用完，请明天再来或升级会员', 'error')
+    setCreditQuote(quote)
+    if (quote && latestBillingUser.balance < quote.totalCredits) {
+      showToast(`本次需要 ${quote.totalCredits} 积分，当前余额 ${latestBillingUser.balance}，请先订阅或充值`, 'error')
       return
     }
     setGenerating(true)
     try {
-      const selectedModel = model || config.imageModel || config.model
       const requestConfig = {
         ...config,
         model: selectedModel,
@@ -431,17 +452,18 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           })
         : null
       let sourceGenerationTaskId: string | undefined
-      const generated = references.length
+      const generated = references.length && !catalogPricingEnabled
         ? await requestEdit(requestConfig, prompt.trim(), references)
         : await (async () => {
             // 0046 生图改异步任务：提交即返回 taskId，后台生成，前端轮询。
-            const imgParams = resolveOpenImageParams({ ratio, quality, model: selectedModel })
             const { taskId } = await submitImageTask({
               model: selectedModel,
               prompt: prompt.trim(),
               n: requestedCount,
               ...imgParams,
               response_format: 'b64_json',
+              ...(catalogPricingEnabled ? { creditQuoteId: quote?.id } : {}),
+              ...(references.length ? { referenceAssetIds } : {}),
             })
             sourceGenerationTaskId = taskId
             const task = await pollImageTask(taskId)
@@ -454,6 +476,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             }
             return taskOutputToDataUrls(task).map((dataUrl) => ({ id: nanoid(), dataUrl }))
           })()
+      await refreshBillingUser()
       const now = new Date()
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const modelLabel = selectedModel.split('::').pop() || selectedModel
@@ -488,15 +511,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     }
   }
 
-  const qualityCost = quality === '1K' ? 1 : quality === '2K' ? 3 : 8
-  const estimatedCost = qualityCost * Number(count || 1)
   const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
-  const isFreeUser = !billingUser || billingUser.memberLevel === 'free'
-  const insufficientBalance = !isFreeUser && billingUser.balance < requestedCount
-  const freeDailyUsed = billingUser?.dailyUsed ?? 0
-  const freeDailyLimit = billingUser?.dailyLimit ?? 20
-  const freeQuotaExhausted = isFreeUser && freeDailyUsed >= freeDailyLimit
-  const quotaExhausted = insufficientBalance || freeQuotaExhausted
+  const estimatedCost = creditQuote?.totalCredits ?? null
+  const insufficientBalance = Boolean(creditQuote && billingUser && billingUser.balance < creditQuote.totalCredits)
+  const quoteUnavailable = Boolean(isPlatformModel && prompt.trim() && (quoteLoading || !creditQuote))
+  const quotaExhausted = insufficientBalance
 
   return (
     <div className="flex h-full gap-2">
@@ -739,10 +758,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
         {/* 生成按钮 */}
         <div className="shrink-0 px-5 pb-4 pt-1">
-          <button onClick={generate} disabled={!prompt.trim() || generating || quotaExhausted}
-            title={quotaExhausted ? (freeQuotaExhausted ? `今日免费次数已用完（${freeDailyUsed}/${freeDailyLimit}）` : t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 })) : undefined}
+          <button onClick={generate} disabled={!prompt.trim() || generating || quotaExhausted || quoteUnavailable}
+            title={quotaExhausted ? `本次需要 ${estimatedCost} 积分，当前余额 ${billingUser?.balance ?? 0}` : quoteUnavailable ? '正在获取平台报价，或该模型尚未配置积分价格' : undefined}
             className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45">
-            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : quotaExhausted ? (freeQuotaExhausted ? `今日免费次数已用完（${freeDailyUsed}/${freeDailyLimit}）` : t('imageTools.insufficient', { need: requestedCount, balance: billingUser?.balance ?? 0 })) : (prompt.trim() ? `${t('imageTools.startGen')} · ${t('imageTools.estimated')} ${estimatedCost}` : t('imageTools.inputPromptFirst'))}
+            {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : quotaExhausted ? `积分不足：需要 ${estimatedCost}，余额 ${billingUser?.balance ?? 0}` : (prompt.trim() ? `${t('imageTools.startGen')} · ${isPlatformModel ? (quoteLoading ? '正在估价…' : estimatedCost == null ? '积分价格未配置' : `预计扣 ${estimatedCost} 积分 · 余额 ${billingUser?.balance ?? 0}`) : '未接入平台积分价'}` : t('imageTools.inputPromptFirst'))}
           </button>
         </div>
       </div>
@@ -999,6 +1018,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                 const statusLabel = historyItem.status === 'succeeded' ? t('imageTools.statusDone')
                   : historyItem.status === 'refunded' ? t('imageTools.statusRefunded')
                   : historyItem.status === 'failed' ? t('imageTools.statusFailed')
+                  : historyItem.status === 'saving' ? t('imageTools.statusSaving')
                   : t('imageTools.statusRunning')
                 return (
                   <div key={historyItem.id} className="mb-2 flex gap-3 rounded-lg bg-secondary p-2.5">

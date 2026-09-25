@@ -10,9 +10,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { PassThrough, Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
-import { buildAssetObjectKey, writeAssetUpload } from './asset-upload.mjs';
-import { createObjectStore, sniffImageMime, extForMime } from './object-store.mjs';
+import { buildAssetObjectKey, isAssetPreviewVariant, validateUploadSessionSize, writeAssetUpload } from './asset-upload.mjs';
+import { createObjectStore, sniffImageMime, DEFAULT_MAX_UPLOAD_BYTES } from './object-store.mjs';
+import { createAdminPasswordHash, needsAdminPasswordRehash, verifyAdminPassword } from './admin-password.mjs';
 
 const DEFAULT_JWT_SECRET = "qingyu-api-jwt-secret-2026-change-me";
 const configuredJwtSecret = String(process.env.JWT_SECRET || "").trim();
@@ -21,6 +24,16 @@ if (process.env.NODE_ENV === "production" && (!configuredJwtSecret || configured
   process.exit(1);
 }
 const JWT_SECRET = configuredJwtSecret || DEFAULT_JWT_SECRET;
+
+const APPWRITE_INTERNAL_URL = process.env.APPWRITE_INTERNAL_URL || "http://127.0.0.1:8081/v1";
+if (process.env.NODE_ENV !== "production") {
+  const endpoint = new URL(APPWRITE_INTERNAL_URL);
+  if (!["http:", "https:"].includes(endpoint.protocol)
+    || !["localhost", "127.0.0.1", "[::1]", "appwrite", "host.docker.internal"].includes(endpoint.hostname)
+    || endpoint.username || endpoint.password) {
+    throw new Error("APPWRITE_INTERNAL_URL 只允许本机或本地容器，本地开发禁止连接远程身份服务");
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "api-data");
@@ -37,6 +50,8 @@ const PLANS_FILE = path.join(DATA_DIR, "billing_plans.json");       // 会员套
 const SETTINGS_FILE = path.join(DATA_DIR, "billing_settings.json"); // 系统设置（支付开关等）
 const MODELS_CATALOG_FILE = path.join(DATA_DIR, "models_catalog.json"); // 模型目录
 const PORT = process.env.PORT || 3001;
+// 生产固定仅本机可达；本地容器显式放开容器内监听，由 Docker 限制宿主机端口。
+const API_HOST = process.env.NODE_ENV === "production" ? "127.0.0.1" : (process.env.API_HOST || "127.0.0.1");
 // 只有隔离测试环境显式设置 PAYMENT_MODE=mock 才允许模拟支付；生产默认关闭。
 const PAYMENT_MODE = String(process.env.PAYMENT_MODE || '').trim().toLowerCase();
 const CUSTOMER_SESSION_COOKIE = "qingyu_session";
@@ -68,15 +83,13 @@ function saveJSON(file, data) {
 // 管理员账号（首次启动初始化）
 let admin = loadJSON(ADMIN_FILE, null);
 if (!admin) {
-  admin = { username: "admin", password: hashPassword("QingyuAdmin2026!") };
+  admin = { username: "admin", password: await hashPassword("QingyuAdmin2026!") };
   saveJSON(ADMIN_FILE, admin);
   console.log("[init] 管理员已初始化，用户名: admin，密码: QingyuAdmin2026!（请尽快修改）");
 }
 
 // API 密钥列表
 let keys = loadJSON(KEYS_FILE, []);
-
-const APPWRITE_INTERNAL_URL = process.env.APPWRITE_INTERNAL_URL || "http://127.0.0.1:8081/v1";
 
 // 用 Appwrite 短期 JWT 反查当前登录身份，不能相信浏览器单独提交的 userId。
 async function verifyAppwriteUser(appwriteJwt) {
@@ -136,7 +149,7 @@ if (process.env.BILLING_STORE === "postgres") {
 // 默认套餐（首次启动写入）
 const DEFAULT_PLANS = [
   { id: "free",   name: "免费版", priceCents: 0,      durationDays: 0,   monthlyQuota: 0,     level: "free",
-    description: "注册即用", features: ["每日 20 次对话", "3 个画布", "基础模型"] },
+    description: "注册一次赠送50积分，用完需订阅", features: ["一次性赠送50积分", "积分用完后需订阅"] },
   { id: "pro",    name: "Pro",    priceCents: 2900,   durationDays: 30,  monthlyQuota: 50000, level: "pro",
     description: "个人创作者首选", features: ["每月 5 万积分", "全部模型", "50 个画布", "优先响应"] },
   { id: "team",   name: "团队版", priceCents: 9900,   durationDays: 30,  monthlyQuota: 300000, level: "team",
@@ -293,7 +306,9 @@ function requestCorsHeaders(req) {
       "Vary": "Origin",
     };
   }
-  return { "Access-Control-Allow-Origin": "*" };
+  // 白名单外的 Origin 不返回任何 CORS 头，浏览器会直接拦截跨域读取。
+  // 同源请求与 curl/服务端调用不检查 CORS，不受影响。
+  return {};
 }
 
 function applyCors(req, res) {
@@ -351,7 +366,26 @@ function verifyJWT(token) {
 
 // ---------- 工具函数 ----------
 function hashPassword(pw) {
-  return crypto.createHash("sha256").update(pw + "qingyu_salt_2026").digest("hex");
+  return createAdminPasswordHash(pw);
+}
+
+// 本地文件模式按账号限速；生产 PostgreSQL 模式使用持久化的数据库限速记录。
+const adminLoginAttempts = new Map();
+function reserveAdminLoginAttempt(username, now = Date.now()) {
+  const key = crypto.createHash("sha256").update(username.trim().toLowerCase()).digest("hex");
+  for (const [savedKey, attempt] of adminLoginAttempts) {
+    if (attempt.expiresAt <= now) adminLoginAttempts.delete(savedKey);
+  }
+  let attempt = adminLoginAttempts.get(key);
+  // 限制内存占用；容量满时不淘汰已有账号，避免攻击者挤掉限速记录。
+  if (!attempt && adminLoginAttempts.size >= 4096) return { retryAfter: 60 };
+  if (!attempt) {
+    attempt = { count: 0, expiresAt: now + 15 * 60 * 1000 };
+    adminLoginAttempts.set(key, attempt);
+  }
+  if (attempt.count >= 10) return { retryAfter: Math.max(1, Math.ceil((attempt.expiresAt - now) / 1000)) };
+  attempt.count += 1; // 在异步查询之前占位，并发请求不能越过次数限制。
+  return { key, retryAfter: 0 };
 }
 
 function maskKey(key) {
@@ -396,7 +430,7 @@ function parseRawBody(req, maxBytes = 1024 * 1024) {
 function sendJSON(res, status, data, headers = {}) {
   const body = JSON.stringify(data);
   const corsHeaders = {
-    "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") || "*",
+    ...(res.getHeader("Access-Control-Allow-Origin") ? { "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") } : {}),
     "Access-Control-Allow-Headers": res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization, X-Qingyu-Requested-With",
     "Access-Control-Allow-Methods": res.getHeader("Access-Control-Allow-Methods") || "GET, POST, PUT, DELETE, OPTIONS",
   };
@@ -491,6 +525,7 @@ function proxyRequest(req, res, targetPath) {
       return sendJSON(res, 502, { error: "没有可用的 API 渠道，请先在管理后台添加并启用 API Key" });
     }
     const { channel, model } = match;
+    if (!match.catalogModelId) return sendJSON(res, 402, { error: "该模型不属于平台积分计费目录，不能使用平台积分生成" });
 
     // 替换模型名为纯模型名（去掉 channelId 前缀）
     if (modelField.includes("::") || match.catalogModelId) {
@@ -501,6 +536,7 @@ function proxyRequest(req, res, targetPath) {
     const proxyRequestId = String(req.headers["x-request-id"] || crypto.randomUUID()).slice(0, 160);
     const usageKey = `proxy:${proxyRequestId}`;
     const requestedQuantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
+    const requestHash = crypto.createHash("sha256").update(JSON.stringify({ targetPath, modelField, bodyObj })).digest("hex");
     if (postgresBilling) {
       try {
         await postgresBilling.recordProviderUsage(proxyIdentity.sub, {
@@ -509,12 +545,15 @@ function proxyRequest(req, res, targetPath) {
           quantity: requestedQuantity,
           provider: channel.provider,
           model,
-          metadata: { targetPath, channelId: channel.id, phase: "started", ...(match.catalogModelId ? { catalogModelId: match.catalogModelId, requestedModel: modelField } : {}) },
+          catalogModelId: match.catalogModelId,
+          requestHash,
+          metadata: { targetPath, channelId: channel.id, phase: "started", catalogModelId: match.catalogModelId, requestedModel: modelField, requestHash, prompt: String(bodyObj.prompt || bodyObj.input || '').slice(0, 4000), duration: Number(bodyObj.duration || bodyObj.seconds || 0) },
         });
       } catch (error) {
         console.error("[proxy usage] unable to persist request", error.message);
+        if (/同一代理请求编号/.test(String(error.message || ""))) return sendJSON(res, 409, { error: error.message });
         if (/积分|额度|余额|quota|insufficient|daily/i.test(String(error.message || ""))) {
-          return sendJSON(res, 402, { error: "积分不足，请充值或等待免费额度恢复后再试" });
+          return sendJSON(res, 402, { error: error.message || "积分不足，请订阅后继续使用" });
         }
         return sendJSON(res, 503, { error: "当前服务无法记录本次请求，请稍后重试" });
       }
@@ -623,7 +662,334 @@ function buildUpstreamImageUrl(baseUrl) {
   return new URL(/\/v1$/i.test(base) ? `${base}/images/generations` : `${base}/v1/images/generations`);
 }
 
-async function callUpstreamImage(channel, bodyObj) {
+function buildUpstreamImageEditUrl(baseUrl) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  if (!base) throw new Error("渠道未配置 base_url");
+  return new URL(/\/v1$/i.test(base) ? `${base}/images/edits` : `${base}/v1/images/edits`);
+}
+
+async function callUpstreamImage(channel, bodyObj, onBase64Output, referenceFiles = []) {
+  if (referenceFiles.length) return callUpstreamImageEditStreaming(channel, bodyObj, referenceFiles, onBase64Output);
+  return callUpstreamImageStreaming(channel, bodyObj, onBase64Output);
+}
+
+function createStreamingJsonReader(source, maxBytes) {
+  const iterator = source[Symbol.asyncIterator]();
+  const decoder = new StringDecoder('utf8');
+  let text = '';
+  let offset = 0;
+  let totalBytes = 0;
+  let ended = false;
+
+  async function fill() {
+    if (offset < text.length) return true;
+    if (ended) return false;
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) {
+        text = decoder.end();
+        offset = 0;
+        ended = true;
+        return text.length > 0;
+      }
+      totalBytes += next.value.length;
+      if (totalBytes > maxBytes) throw new Error('上游图片响应超过允许的大小限制');
+      text = decoder.write(next.value);
+      offset = 0;
+      if (text.length) return true;
+    }
+  }
+
+  async function peek() { return await fill() ? text[offset] : null; }
+  async function next() { return await fill() ? text[offset++] : null; }
+  async function expect(expected) {
+    const actual = await next();
+    if (actual !== expected) throw new Error('上游图片响应格式无效');
+  }
+  async function skipWhitespace() {
+    while (/\s/.test(await peek() || '')) await next();
+  }
+  async function readEscape() {
+    const escaped = await next();
+    if (escaped === '"' || escaped === '\\' || escaped === '/') return escaped;
+    if (escaped === 'b') return '\b';
+    if (escaped === 'f') return '\f';
+    if (escaped === 'n') return '\n';
+    if (escaped === 'r') return '\r';
+    if (escaped === 't') return '\t';
+    if (escaped === 'u') {
+      let hex = '';
+      for (let i = 0; i < 4; i++) hex += await next() || '';
+      if (!/^[0-9a-f]{4}$/i.test(hex)) throw new Error('上游图片响应包含无效转义');
+      return String.fromCharCode(Number.parseInt(hex, 16));
+    }
+    throw new Error('上游图片响应包含无效转义');
+  }
+  async function readString(onChunk, maxCharacters = 1024 * 1024) {
+    await expect('"');
+    let characterCount = 0;
+    let piece = '';
+    const emit = async value => {
+      characterCount += value.length;
+      if (characterCount > maxCharacters) throw new Error('上游图片响应中的文字字段过长');
+      piece += value;
+      if (piece.length >= 64 * 1024) {
+        if (onChunk) await onChunk(piece);
+        piece = '';
+      }
+    };
+    while (true) {
+      await fill();
+      if (offset >= text.length) throw new Error('上游图片响应中的字符串未结束');
+      let special = text.length;
+      for (const delimiter of ['"', '\\']) {
+        const found = text.indexOf(delimiter, offset);
+        if (found >= 0 && found < special) special = found;
+      }
+      for (let i = offset; i < special; i++) {
+        if (text.charCodeAt(i) < 0x20) throw new Error('上游图片响应包含无效控制字符');
+      }
+      if (special > offset) {
+        const value = text.slice(offset, special);
+        offset = special;
+        await emit(value);
+        continue;
+      }
+      const delimiter = await next();
+      if (delimiter === '"') break;
+      if (delimiter !== '\\') throw new Error('上游图片响应格式无效');
+      await emit(await readEscape());
+    }
+    if (piece) {
+      if (onChunk) await onChunk(piece);
+      else return piece;
+    }
+    if (!onChunk) return '';
+    return undefined;
+  }
+  return { peek, next, expect, skipWhitespace, readString };
+}
+
+async function writeStreamChunk(stream, chunk) {
+  if (!chunk.length || stream.destroyed) return;
+  if (stream.write(chunk)) return;
+  await new Promise((resolve, reject) => {
+    const onDrain = () => { cleanup(); resolve(); };
+    const onError = error => { cleanup(); reject(error); };
+    const onClose = () => { cleanup(); reject(new Error('COS 图片上传流已关闭')); };
+    const cleanup = () => {
+      stream.off('drain', onDrain);
+      stream.off('error', onError);
+      stream.off('close', onClose);
+    };
+    stream.once('drain', onDrain);
+    stream.once('error', onError);
+    stream.once('close', onClose);
+    if (stream.destroyed) onClose();
+  });
+}
+
+async function readBase64StringToStream(reader, stream) {
+  let encodedTail = '';
+  let decodedBytes = 0;
+  let sinkError = null;
+  let paddingSeen = false;
+
+  const consume = async chunk => {
+    if (paddingSeen ? !/^={1,2}$/.test(chunk) : !/^[A-Za-z0-9+/]*={0,2}$/.test(chunk)) {
+      throw new Error('上游返回的图片编码无效');
+    }
+    if (chunk.includes('=')) paddingSeen = true;
+    encodedTail += chunk;
+
+    const alignedLength = encodedTail.length - (encodedTail.length % 4);
+    const paddingOffset = encodedTail.indexOf('=');
+    const flushLength = paddingOffset < 0 ? alignedLength : Math.min(alignedLength, Math.floor(paddingOffset / 4) * 4);
+    if (!flushLength) return;
+    const encoded = encodedTail.slice(0, flushLength);
+    if (!/^[A-Za-z0-9+/]+$/.test(encoded)) throw new Error('上游返回的图片编码无效');
+    encodedTail = encodedTail.slice(flushLength);
+    const decoded = Buffer.from(encoded, 'base64');
+    decodedBytes += decoded.length;
+    if (decodedBytes > DEFAULT_MAX_UPLOAD_BYTES) throw new Error('生成图片超过允许的大小限制');
+    if (!sinkError) {
+      try { await writeStreamChunk(stream, decoded); }
+      catch (error) { sinkError = error; }
+    }
+  };
+
+  try {
+    await reader.readString(consume, Math.ceil(DEFAULT_MAX_UPLOAD_BYTES / 3) * 4 + 4);
+    if (encodedTail.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encodedTail)) {
+      throw new Error('上游返回的图片编码无效');
+    }
+    if (encodedTail) {
+      const decoded = Buffer.from(encodedTail, 'base64');
+      decodedBytes += decoded.length;
+      if (decodedBytes > DEFAULT_MAX_UPLOAD_BYTES) throw new Error('生成图片超过允许的大小限制');
+      if (!sinkError) {
+        try { await writeStreamChunk(stream, decoded); }
+        catch (error) { sinkError = error; }
+      }
+    }
+    if (decodedBytes === 0) throw new Error('上游返回的图片内容为空');
+    if (sinkError) stream.destroy(sinkError);
+    else stream.end();
+    return { decodedBytes, sinkError };
+  } catch (error) {
+    stream.destroy(error);
+    throw error;
+  }
+}
+
+async function parseJsonValue(reader, depth = 0) {
+  if (depth > 64) throw new Error('上游图片响应嵌套层级过深');
+  await reader.skipWhitespace();
+  const first = await reader.peek();
+  if (first === '"') {
+    let value = '';
+    await reader.readString(chunk => { value += chunk; }, 1024 * 1024);
+    return value;
+  }
+  if (first === '{') {
+    await reader.next();
+    const object = {};
+    await reader.skipWhitespace();
+    if (await reader.peek() === '}') { await reader.next(); return object; }
+    while (true) {
+      await reader.skipWhitespace();
+      const key = await readSmallJsonString(reader, 256);
+      await reader.skipWhitespace(); await reader.expect(':');
+      object[key] = await parseJsonValue(reader, depth + 1);
+      await reader.skipWhitespace();
+      const delimiter = await reader.next();
+      if (delimiter === '}') return object;
+      if (delimiter !== ',') throw new Error('上游图片响应格式无效');
+    }
+  }
+  if (first === '[') {
+    await reader.next();
+    const values = [];
+    await reader.skipWhitespace();
+    if (await reader.peek() === ']') { await reader.next(); return values; }
+    while (true) {
+      values.push(await parseJsonValue(reader, depth + 1));
+      await reader.skipWhitespace();
+      const delimiter = await reader.next();
+      if (delimiter === ']') return values;
+      if (delimiter !== ',') throw new Error('上游图片响应格式无效');
+    }
+  }
+  let token = '';
+  while (true) {
+    const character = await reader.peek();
+    if (character === null || /[\s,}\]]/.test(character)) break;
+    token += await reader.next();
+    if (token.length > 128) throw new Error('上游图片响应格式无效');
+  }
+  if (token === 'true') return true;
+  if (token === 'false') return false;
+  if (token === 'null') return null;
+  if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(token)) return Number(token);
+  throw new Error('上游图片响应格式无效');
+}
+
+async function readSmallJsonString(reader, maxCharacters) {
+  let value = '';
+  await reader.readString(chunk => { value += chunk; }, maxCharacters);
+  return value;
+}
+
+async function parseImageOutput(reader, index, onBase64Output) {
+  await reader.expect('{');
+  const output = {};
+  let savePromise = null;
+  await reader.skipWhitespace();
+  if (await reader.peek() === '}') { await reader.next(); return output; }
+  while (true) {
+    await reader.skipWhitespace();
+    const key = await readSmallJsonString(reader, 256);
+    await reader.skipWhitespace(); await reader.expect(':');
+    await reader.skipWhitespace();
+    if (key === 'b64_json' && await reader.peek() === '"') {
+      if (output.__hasBase64) throw new Error('上游图片响应重复包含图片字段');
+      output.__hasBase64 = true;
+      const body = new PassThrough({ highWaterMark: 64 * 1024 });
+      body.on('error', () => {});
+      savePromise = Promise.resolve()
+        .then(() => onBase64Output(index, { body }))
+        .then(value => ({ value }), error => ({ error }));
+      await readBase64StringToStream(reader, body);
+    } else {
+      output[key] = await parseJsonValue(reader, 1);
+    }
+    await reader.skipWhitespace();
+    const delimiter = await reader.next();
+    if (delimiter === '}') break;
+    if (delimiter !== ',') throw new Error('上游图片响应格式无效');
+  }
+  if (savePromise) {
+    const saved = await savePromise;
+    if (saved.error) output.__saveError = String(saved.error?.message || '图片保存失败').slice(0, 300);
+    else output.__savedOutput = saved.value;
+  }
+  return output;
+}
+
+async function parseImageGenerationResponse(source, onBase64Output, maxBytes) {
+  const reader = createStreamingJsonReader(source, maxBytes);
+  await reader.skipWhitespace(); await reader.expect('{');
+  const payload = {};
+  await reader.skipWhitespace();
+  if (await reader.peek() === '}') { await reader.next(); return payload; }
+  while (true) {
+    await reader.skipWhitespace();
+    const key = await readSmallJsonString(reader, 256);
+    await reader.skipWhitespace(); await reader.expect(':');
+    await reader.skipWhitespace();
+    if (key === 'data' && await reader.peek() === '[') {
+      await reader.next();
+      const outputs = [];
+      await reader.skipWhitespace();
+      if (await reader.peek() !== ']') {
+        while (true) {
+          await reader.skipWhitespace();
+          outputs.push(await reader.peek() === '{'
+            ? await parseImageOutput(reader, outputs.length, onBase64Output)
+            : await parseJsonValue(reader));
+          await reader.skipWhitespace();
+          const delimiter = await reader.next();
+          if (delimiter === ']') break;
+          if (delimiter !== ',') throw new Error('上游图片响应格式无效');
+        }
+      } else await reader.next();
+      payload[key] = outputs;
+    } else {
+      payload[key] = await parseJsonValue(reader);
+    }
+    await reader.skipWhitespace();
+    const delimiter = await reader.next();
+    if (delimiter === '}') break;
+    if (delimiter !== ',') throw new Error('上游图片响应格式无效');
+  }
+  await reader.skipWhitespace();
+  if (await reader.peek() !== null) throw new Error('上游图片响应包含多余内容');
+  return payload;
+}
+
+async function readUpstreamErrorText(source, maxBytes = 1024 * 1024) {
+  const chunks = [];
+  let size = 0;
+  for await (const value of source) {
+    if (size >= maxBytes) { source.destroy(); break; }
+    const chunk = Buffer.from(value);
+    const take = Math.min(chunk.length, maxBytes - size);
+    if (take) { chunks.push(chunk.subarray(0, take)); size += take; }
+  }
+  return Buffer.concat(chunks, size).toString('utf8');
+}
+
+async function callUpstreamImageStreaming(channel, bodyObj, onBase64Output) {
   return new Promise((resolve, reject) => {
     let url;
     try { url = buildUpstreamImageUrl(channel.base_url); } catch (error) { reject(error); return; }
@@ -641,9 +1007,20 @@ async function callUpstreamImage(channel, bodyObj) {
       },
       timeout: 600000,
     }, (upstreamRes) => {
-      const chunks = [];
-      upstreamRes.on("data", c => chunks.push(c));
-      upstreamRes.on("end", () => resolve({ status: upstreamRes.statusCode || 502, text: Buffer.concat(chunks).toString("utf-8") }));
+      const status = upstreamRes.statusCode || 502;
+      if (status < 200 || status >= 300) {
+        void readUpstreamErrorText(upstreamRes).then(text => {
+          let payload = {};
+          try { payload = JSON.parse(text); } catch {}
+          resolve({ status, text, payload });
+        }, reject);
+        return;
+      }
+      const outputCount = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
+      const maxResponseBytes = Math.ceil(DEFAULT_MAX_UPLOAD_BYTES * outputCount * 4 / 3) + 4 * 1024 * 1024;
+      void parseImageGenerationResponse(upstreamRes, onBase64Output, maxResponseBytes)
+        .then(payload => resolve({ status, payload }))
+        .catch(reject);
     });
     proxyReq.on("error", (e) => reject(e));
     proxyReq.on("timeout", () => { proxyReq.destroy(); reject(new Error("生成超时")); });
@@ -652,12 +1029,12 @@ async function callUpstreamImage(channel, bodyObj) {
   });
 }
 
-// 上游只回 URL 不回 b64_json 时，后端把图片下载并转成 base64，
-// 与"response_format=b64_json"的成功产物统一，前端无需再区分两种形态。
-async function fetchUrlAsBase64(imageUrl) {
+// 上游给图片地址时保留响应流，避免先把整张图片读进服务器内存。
+async function fetchUrlAsStream(imageUrl) {
   return await new Promise((resolve, reject) => {
     let target;
     try { target = new URL(imageUrl); } catch { return reject(new Error("无效图片 URL")); }
+    if (!['http:', 'https:'].includes(target.protocol)) return reject(new Error("图片 URL 协议无效"));
     const lib = target.protocol === "https:" ? https : http;
     const req = lib.request({
       hostname: target.hostname,
@@ -667,32 +1044,13 @@ async function fetchUrlAsBase64(imageUrl) {
       timeout: 30000,
     }, (upstreamRes) => {
       if (upstreamRes.statusCode >= 300) { upstreamRes.resume(); return reject(new Error("图片下载失败: " + upstreamRes.statusCode)); }
-      const chunks = [];
-      upstreamRes.on("data", c => chunks.push(c));
-      upstreamRes.on("end", () => resolve(Buffer.concat(chunks).toString("base64")));
-    });
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("图片下载超时")); });
-    req.end();
-  });
-}
-// 与 fetchUrlAsBase64 同源，返回 Buffer 而非 base64 字符串，供对象存储落盘使用。
-async function fetchUrlAsBuffer(imageUrl) {
-  return await new Promise((resolve, reject) => {
-    let target;
-    try { target = new URL(imageUrl); } catch { return reject(new Error("无效图片 URL")); }
-    const lib = target.protocol === "https:" ? https : http;
-    const req = lib.request({
-      hostname: target.hostname,
-      port: target.port || (target.protocol === "https:" ? 443 : 80),
-      path: target.pathname + target.search,
-      method: "GET",
-      timeout: 30000,
-    }, (upstreamRes) => {
-      if (upstreamRes.statusCode >= 300) { upstreamRes.resume(); return reject(new Error("图片下载失败: " + upstreamRes.statusCode)); }
-      const chunks = [];
-      upstreamRes.on("data", c => chunks.push(c));
-      upstreamRes.on("end", () => resolve(Buffer.concat(chunks)));
+      const rawLength = upstreamRes.headers['content-length'];
+      const contentLength = rawLength !== undefined && /^\d+$/.test(String(rawLength)) ? Number(rawLength) : undefined;
+      if (contentLength !== undefined && (!Number.isSafeInteger(contentLength) || contentLength > DEFAULT_MAX_UPLOAD_BYTES)) {
+        upstreamRes.destroy();
+        return reject(new Error('生成图片超过允许的大小限制'));
+      }
+      resolve({ body: upstreamRes, contentLength, contentType: String(upstreamRes.headers['content-type'] || '').split(';')[0].toLowerCase() });
     });
     req.on("error", reject);
     req.on("timeout", () => { req.destroy(); reject(new Error("图片下载超时")); });
@@ -700,28 +1058,148 @@ async function fetchUrlAsBuffer(imageUrl) {
   });
 }
 
-// 把生成图直接写 COS，再登记 file_objects/generation_outputs；不允许退回本地磁盘或数据库正文。
-async function persistGeneratedImage(identity, task, index, buffer, revisedPrompt) {
-  if (!postgresBilling?.recordGeneratedOutput || !task.workspaceId) throw new Error('COS 图片保存所需的数据库或空间信息不可用');
-  const mime = sniffImageMime(buffer);
-  const ext = extForMime(mime);
-  const createdAt = new Date(task.createdAt || Date.now());
-  const year = String(createdAt.getUTCFullYear());
-  const month = String(createdAt.getUTCMonth() + 1).padStart(2, '0');
-  const fileId = crypto.randomUUID();
-  const objectKey = `workspaces/${task.workspaceId}/generated/images/${year}/${month}/${task.id}/${fileId}${ext}`;
-  const put = await objectStore.putObject({ key: objectKey, buffer, contentType: mime });
-  let rec;
-  try {
-    rec = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
-      ...put, index, fileId,
-    });
-  } catch (error) {
-    try { await objectStore.deleteObject(objectKey); }
-    catch (cleanupError) { console.error('[generation-output] COS cleanup failed', task.id, cleanupError.message); }
-    throw error;
+function sniffGeneratedMediaMime(type, prefix, reportedType = '') {
+  if (type === 'image') return sniffImageMime(prefix);
+  const reported = String(reportedType || '').split(';')[0].trim().toLowerCase();
+  if (reported.startsWith(`${type}/`) && !reported.includes('json')) return reported;
+  if (type === 'video') {
+    if (prefix.length >= 8 && prefix.toString('ascii', 4, 8) === 'ftyp') return 'video/mp4';
+    if (prefix.length >= 4 && prefix[0] === 0x1a && prefix[1] === 0x45 && prefix[2] === 0xdf && prefix[3] === 0xa3) return 'video/webm';
   }
-  return { type: "image", index, b64_json: null, url: null, fileId: rec.fileId, objectKey: rec.objectKey, revisedPrompt: revisedPrompt || null };
+  if (type === 'audio') {
+    if (prefix.subarray(0, 3).toString('ascii') === 'ID3') return 'audio/mpeg';
+    if (prefix.length >= 2 && prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+    if (prefix.subarray(0, 4).toString('ascii') === 'OggS') return 'audio/ogg';
+    if (prefix.subarray(0, 4).toString('ascii') === 'fLaC') return 'audio/flac';
+    if (prefix.subarray(0, 4).toString('ascii') === 'RIFF' && prefix.subarray(8, 12).toString('ascii') === 'WAVE') return 'audio/wav';
+  }
+  throw new Error(`上游返回内容不是有效的${type === 'video' ? '视频' : '音频'}文件`);
+}
+
+async function callUpstreamImageEditStreaming(channel, bodyObj, referenceFiles, onBase64Output) {
+  if (!Array.isArray(referenceFiles) || referenceFiles.length < 1 || referenceFiles.length > 100) {
+    throw new Error('参考图数量无效');
+  }
+  const boundary = `qingyu-${crypto.randomBytes(24).toString('hex')}`;
+  const fields = Object.entries(bodyObj).filter(([key, value]) => /^[a-zA-Z0-9_-]{1,64}$/.test(key) && key !== 'referenceAssetIds' && value !== undefined && value !== null && ['string','number','boolean'].includes(typeof value));
+  const fieldParts = fields.map(([key, value]) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${String(value)}\r\n`));
+  const fileParts = [];
+  for (let index = 0; index < referenceFiles.length; index += 1) {
+    const file = referenceFiles[index];
+    if (file.storageProvider !== 'cos' || file.bucket !== objectStore.getBucket() || file.mediaType !== 'image'
+      || !String(file.mimeType || '').startsWith('image/') || !Number.isSafeInteger(file.sizeBytes) || file.sizeBytes < 1
+      || file.sizeBytes > DEFAULT_MAX_UPLOAD_BYTES || !file.objectKey) {
+      throw new Error('参考图未保存、格式无效或不属于当前存储空间');
+    }
+    const mimeType = String(file.mimeType).replace(/[\r\n]/g, '').slice(0, 120);
+    const extension = extForMime(mimeType) || 'bin';
+    const name = referenceFiles.length > 1 ? 'image[]' : 'image';
+    const header = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"; filename="reference-${index + 1}.${extension}"\r\nContent-Type: ${mimeType}\r\n\r\n`);
+    fileParts.push({ file, header, tail: Buffer.from('\r\n') });
+  }
+  const closing = Buffer.from(`--${boundary}--\r\n`);
+  const contentLength = fieldParts.reduce((sum, part) => sum + part.length, 0)
+    + fileParts.reduce((sum, part) => sum + part.header.length + part.file.sizeBytes + part.tail.length, 0)
+    + closing.length;
+  if (!Number.isSafeInteger(contentLength) || contentLength > DEFAULT_MAX_UPLOAD_BYTES) throw new Error('参考图总大小超过允许限制');
+  const url = buildUpstreamImageEditUrl(channel.base_url);
+  const lib = url.protocol === 'https:' ? https : http;
+  const body = Readable.from((async function* () {
+    for (const part of fieldParts) yield part;
+    for (const { file, header, tail } of fileParts) {
+      yield header;
+      const stored = await objectStore.getObjectStream(file.objectKey);
+      for await (const chunk of stored.stream) yield chunk;
+      yield tail;
+    }
+    yield closing;
+  })());
+  return await new Promise((resolve, reject) => {
+    const proxyReq = lib.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': contentLength,
+        Authorization: `Bearer ${channel.api_key}`,
+      },
+      timeout: 600000,
+    }, upstreamRes => {
+      const status = upstreamRes.statusCode || 502;
+      if (status < 200 || status >= 300) {
+        void readUpstreamErrorText(upstreamRes).then(text => {
+          let payload = {};
+          try { payload = JSON.parse(text); } catch {}
+          resolve({ status, text, payload });
+        }, reject);
+        return;
+      }
+      const maxResponseBytes = Math.ceil(DEFAULT_MAX_UPLOAD_BYTES * Math.max(1, Math.min(15, Number(bodyObj.n) || 1)) * 4 / 3) + 4 * 1024 * 1024;
+      void parseImageGenerationResponse(upstreamRes, onBase64Output, maxResponseBytes)
+        .then(payload => resolve({ status, payload }))
+        .catch(reject);
+    });
+    proxyReq.on('error', reject);
+    proxyReq.on('timeout', () => { proxyReq.destroy(); reject(new Error('生成超时')); });
+    body.on('error', error => { proxyReq.destroy(error); reject(error); });
+    body.pipe(proxyReq);
+  });
+}
+
+async function peekStreamPrefix(source, prefixSize = 12) {
+  const iterator = source[Symbol.asyncIterator]();
+  const chunks = [];
+  let size = 0;
+  let pending = null;
+  let ended = false;
+  while (size < prefixSize) {
+    const next = await iterator.next();
+    if (next.done) { ended = true; break; }
+    const chunk = Buffer.isBuffer(next.value) ? next.value : Buffer.from(next.value);
+    const take = Math.min(prefixSize - size, chunk.length);
+    if (take) { chunks.push(chunk.subarray(0, take)); size += take; }
+    if (take < chunk.length) { pending = chunk.subarray(take); break; }
+  }
+  const prefix = Buffer.concat(chunks, size);
+  const body = Readable.from((async function* () {
+    if (prefix.length) yield prefix;
+    if (pending?.length) yield pending;
+    if (!ended) {
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) break;
+        yield next.value;
+      }
+    }
+  })());
+  return { prefix, body };
+}
+
+// 把生成图直接写 COS，再登记 file_objects/generation_outputs；不允许退回本地磁盘或数据库正文。
+async function persistGeneratedImage(identity, task, attemptId, index, source, revisedPrompt, slot = null) {
+  if (!postgresBilling?.recordGeneratedOutput || !task.workspaceId) throw new Error('COS 图片保存所需的数据库或空间信息不可用');
+  slot ||= await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, index, {
+    bucket: objectStore.getBucket(),
+  });
+  const body = Buffer.isBuffer(source.body) ? Readable.from([source.body]) : source.body || source;
+  const contentLength = source && typeof source === 'object' && Number.isSafeInteger(source.contentLength) ? source.contentLength : undefined;
+  const { prefix, body: replayableBody } = await peekStreamPrefix(body);
+  const mime = sniffImageMime(prefix);
+  const put = await objectStore.putObject({ key: slot.objectKey, body: replayableBody, contentLength, contentType: mime, preserveOnError: true });
+  const rec = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
+    ...put, index, fileId: slot.fileId, outputId: slot.outputId, revisedPrompt: revisedPrompt || null,
+  });
+  return { type: "image", index, b64_json: null, url: null, fileId: rec.fileId, objectKey: slot.objectKey, revisedPrompt: revisedPrompt || null };
+}
+
+async function persistGeneratedImageUrl(identity, task, attemptId, index, imageUrl, revisedPrompt, slot = null) {
+  slot ||= await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, index, {
+    bucket: objectStore.getBucket(), recoveryUrl: imageUrl, revisedPrompt,
+  });
+  const source = await fetchUrlAsStream(imageUrl);
+  return persistGeneratedImage(identity, task, attemptId, index, source, revisedPrompt, slot);
 }
 
 // 部分上游（如麦子 nano-banana 系列）提交后返回 task_id，需要轮询查询接口拿结果。
@@ -758,29 +1236,288 @@ async function pollAsyncUpstreamTask(channel, taskId, timeoutMs = 600000) {
       return body;
     }
     if (st === "failed" || st === "error" || st === "canceled" || st === "cancelled" || st === "violation") {
-      throw new Error(body.error_msg || body.error?.message || (st === "violation" ? "内容审核未通过" : "上游任务执行失败"));
+      const error = new Error(body.error_msg || body.error?.message || (st === "violation" ? "内容审核未通过" : "上游任务执行失败"));
+      error.code = 'UPSTREAM_TASK_TERMINAL_FAILURE';
+      throw error;
     }
     // queued / pending / processing 都继续等待
     await new Promise(r => setTimeout(r, 5000));
   }
 }
 
+function mediaUpstreamUrl(channel, suffix) {
+  const base = String(channel.base_url || '').replace(/\/+$/, '');
+  return new URL(`${base}${suffix.startsWith('/') ? suffix : `/${suffix}`}`);
+}
+
+async function callUpstreamMediaJson(channel, suffix, bodyObj) {
+  const url = mediaUpstreamUrl(channel, suffix);
+  const lib = url.protocol === 'https:' ? https : http;
+  const body = JSON.stringify(bodyObj);
+  return await new Promise((resolve, reject) => {
+    const request = lib.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search, method: 'POST', headers: { Authorization: `Bearer ${channel.api_key}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), Accept: 'application/json' }, timeout: 120000 }, response => {
+      const chunks = []; let bytes = 0;
+      response.on('data', chunk => { bytes += chunk.length; if (bytes <= 2 * 1024 * 1024) chunks.push(chunk); });
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let payload = {}; try { payload = JSON.parse(text); } catch {}
+        resolve({ status: response.statusCode || 502, payload, text });
+      });
+    });
+    request.on('error', reject);
+    request.on('timeout', () => { request.destroy(); reject(new Error('媒体生成请求超时')); });
+    request.end(body);
+  });
+}
+
+async function callUpstreamAudioStream(channel, bodyObj, onAccepted) {
+  const url = mediaUpstreamUrl(channel, '/audio/speech');
+  const lib = url.protocol === 'https:' ? https : http;
+  const body = JSON.stringify(bodyObj);
+  return await new Promise((resolve, reject) => {
+    const request = lib.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search, method: 'POST', headers: { Authorization: `Bearer ${channel.api_key}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), Accept: 'audio/*, application/json' }, timeout: 600000 }, response => {
+      const contentType = String(response.headers['content-type'] || '').split(';')[0].toLowerCase();
+      const status = response.statusCode || 502;
+      if (status < 200 || status >= 300 || !contentType.startsWith('audio/')) {
+        void readUpstreamErrorText(response).then(text => {
+          let payload = {}; try { payload = JSON.parse(text); } catch {}
+          resolve({ status: status < 300 ? 502 : status, payload, text });
+        }, reject);
+        return;
+      }
+      void Promise.resolve(onAccepted()).then(() => {
+        const rawLength = response.headers['content-length'];
+        const contentLength = rawLength !== undefined && /^\d+$/.test(String(rawLength)) ? Number(rawLength) : undefined;
+        resolve({ status, contentType, contentLength, body: response });
+      }, error => { response.destroy(); reject(error); });
+    });
+    request.on('error', reject);
+    request.on('timeout', () => { request.destroy(); reject(new Error('音频生成请求超时')); });
+    request.end(body);
+  });
+}
+
+function isMiniMaxSpeechModel(model) {
+  return /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/i.test(String(model || '').trim());
+}
+
+async function callUpstreamMiniMaxAudio(channel, { model, text, voice, speed, format }, onAccepted) {
+  const normalizedFormat = String(format || 'mp3').toLowerCase();
+  if (!['mp3', 'wav', 'flac'].includes(normalizedFormat)) {
+    throw new Error('MiniMax 语音目前只支持 MP3、WAV 或 FLAC 格式');
+  }
+  const voiceId = String(voice || 'alloy') === 'alloy' ? 'male-qn-qingse' : String(voice || 'male-qn-qingse');
+  const bodyObj = {
+    model: String(model || ''), text: String(text || ''), stream: false,
+    voice_setting: { voice_id: voiceId, speed: Math.max(0.5, Math.min(2, Number(speed) || 1)), vol: 1, pitch: 0 },
+    audio_setting: { sample_rate: 32000, bitrate: 128000, format: normalizedFormat, channel: 1 },
+    output_format: 'hex',
+  };
+  // 沿用该渠道已配置且有响应的语音路由；其报错表明它要求 MiniMax 原生 body schema。
+  const url = mediaUpstreamUrl(channel, '/audio/speech');
+  const lib = url.protocol === 'https:' ? https : http;
+  const body = JSON.stringify(bodyObj);
+  return await new Promise((resolve, reject) => {
+    const request = lib.request({ hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search, method: 'POST', headers: { Authorization: `Bearer ${channel.api_key}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), Accept: 'application/json, audio/*' }, timeout: 600000 }, response => {
+      const status = response.statusCode || 502;
+      const responseType = String(response.headers['content-type'] || '').split(';')[0].toLowerCase();
+      if (status >= 200 && status < 300 && responseType.startsWith('audio/')) {
+        const rawLength = response.headers['content-length'];
+        const contentLength = rawLength !== undefined && /^\d+$/.test(String(rawLength)) ? Number(rawLength) : undefined;
+        void Promise.resolve(onAccepted()).then(() => resolve({ status, contentType: responseType, contentLength, body: response }), error => {
+          response.destroy(); reject(error);
+        });
+        return;
+      }
+      const chunks = []; let bytes = 0; let tooLarge = false;
+      response.on('data', chunk => {
+        bytes += chunk.length;
+        if (bytes > 48 * 1024 * 1024) { tooLarge = true; response.destroy(); return; }
+        chunks.push(chunk);
+      });
+      response.on('end', async () => {
+        if (tooLarge) { reject(new Error('MiniMax 音频响应超过允许大小')); return; }
+        const raw = Buffer.concat(chunks, bytes).toString('utf8');
+        let payload = {}; try { payload = JSON.parse(raw); } catch {}
+        if (status < 200 || status >= 300 || (payload.base_resp?.status_code != null && Number(payload.base_resp.status_code) !== 0)) {
+          resolve({ status: status < 300 ? 502 : status, payload, text: raw });
+          return;
+        }
+        try {
+          await onAccepted();
+          const audioHex = payload?.data?.audio;
+          if (typeof audioHex !== 'string' || !/^(?:[\da-f]{2})+$/i.test(audioHex)) throw new Error('MiniMax 没有返回有效的十六进制音频');
+          const audio = Buffer.from(audioHex, 'hex');
+          const contentType = normalizedFormat === 'mp3' ? 'audio/mpeg' : `audio/${normalizedFormat}`;
+          resolve({ status, contentType, contentLength: audio.length, body: Readable.from([audio]) });
+        } catch (error) { reject(error); }
+      });
+      response.on('error', reject);
+    });
+    request.on('error', reject);
+    request.on('timeout', () => { request.destroy(); reject(new Error('音频生成请求超时')); });
+    request.end(body);
+  });
+}
+
+async function readStoredImageDataUrl(file) {
+  if (file.storageProvider !== 'cos' || file.bucket !== objectStore.getBucket() || file.mediaType !== 'image'
+      || !String(file.mimeType || '').startsWith('image/') || !Number.isSafeInteger(file.sizeBytes)
+      || file.sizeBytes < 1 || file.sizeBytes > 20 * 1024 * 1024) throw new Error('视频参考图片无效或超过 20 MB');
+  const stored = await objectStore.getObjectStream(file.objectKey);
+  const chunks = []; let length = 0;
+  for await (const value of stored.stream) {
+    const chunk = Buffer.from(value); length += chunk.length;
+    if (length > 20 * 1024 * 1024) throw new Error('视频参考图片超过 20 MB');
+    chunks.push(chunk);
+  }
+  return `data:${file.mimeType};base64,${Buffer.concat(chunks, length).toString('base64')}`;
+}
+
+async function persistGeneratedMedia(identity, task, attemptId, index, source, outputType, slot = null) {
+  slot ||= await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, index,
+    { bucket: objectStore.getBucket(), outputType });
+  const body = Buffer.isBuffer(source.body) ? Readable.from([source.body]) : source.body;
+  const { prefix, body: replayableBody } = await peekStreamPrefix(body);
+  const mime = sniffGeneratedMediaMime(outputType, prefix, source.contentType);
+  const saved = await objectStore.putObject({ key: slot.objectKey, body: replayableBody,
+    contentLength: source.contentLength, contentType: mime, preserveOnError: true });
+  const registered = await postgresBilling.recordGeneratedOutput(identity.sub, task.id, {
+    ...saved, index, fileId: slot.fileId, outputId: slot.outputId, durationMs: source.durationMs || null,
+  });
+  return { type: outputType, index, fileId: registered.fileId, objectKey: slot.objectKey,
+    mimeType: mime, sizeBytes: saved.sizeBytes };
+}
+
+function mediaVideoResultUrl(body) {
+  const list = body?.result_urls || body?.urls || body?.data?.result_urls || body?.data?.urls || [];
+  const candidate = (Array.isArray(list) ? list : []).find(value => typeof value === 'string' && /^https?:\/\//i.test(value));
+  if (candidate) return candidate;
+  const nested = body?.data && typeof body.data === 'object' ? body.data : body;
+  return [nested?.video_url, nested?.result_url, nested?.url, nested?.content?.video_url, nested?.content?.url]
+    .find(value => typeof value === 'string' && /^https?:\/\//i.test(value)) || null;
+}
+
+async function runGenerationTaskMediaWorker(identity, task, channel, params, recovery = {}) {
+  let claimed = task.status === 'running';
+  let attemptId = recovery.attemptId || null;
+  let providerTaskId = recovery.providerTaskId || null;
+  let responseComplete = false;
+  let outputSlot = null;
+  try {
+    if (!claimed) {
+      claimed = await postgresBilling.markTaskRunning(identity.sub, task.id, null);
+      if (!claimed) return;
+      const attempt = await postgresBilling.beginGenerationAttempt(identity.sub, task.id);
+      attemptId = attempt.attemptId;
+    } else if (task.taskType !== 'video' || !attemptId || !providerTaskId) {
+      return; // 音频没有可续查的供应商任务号；避免进程重启后重复调用并重复收费。
+    }
+
+    if (task.taskType === 'video') {
+      const duration = Math.max(1, Math.min(120, Number(params.duration) || 6));
+      if (!providerTaskId) {
+        const refs = await postgresBilling.listGenerationInputFiles(identity.sub, task.id);
+        const images = await Promise.all(refs.filter(file => file.mediaType === 'image').map(readStoredImageDataUrl));
+        const requestBody = { model: task.model, prompt: task.prompt, ratio: String(params.ratio || '16:9'),
+          resolution: String(params.resolution || '720p'), duration,
+          generate_audio: params.generateAudio !== false, watermark: params.watermark === true };
+        if (params.mode === 'frames') {
+          if (images[0]) requestBody.first_frame = images[0];
+          if (images[1]) requestBody.last_frame = images[1];
+        } else if (images.length) requestBody.reference_images = images;
+        const created = await callUpstreamMediaJson(channel, '/videos/generations', requestBody);
+        if (created.status < 200 || created.status >= 300) throw new Error(created.payload?.error?.message || created.payload?.message || created.text || `上游返回状态 ${created.status}`);
+        providerTaskId = created.payload?.id || created.payload?.data?.id || created.payload?.task_id || created.payload?.data?.task_id;
+        if (!providerTaskId || typeof providerTaskId !== 'string') throw new Error('上游没有返回视频任务编号');
+        await postgresBilling.setGenerationAttemptProviderTask(identity.sub, task.id, attemptId, providerTaskId);
+      }
+      const done = await pollAsyncUpstreamTask(channel, providerTaskId, 1500000);
+      const videoUrl = mediaVideoResultUrl(done);
+      if (!videoUrl) {
+        await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attemptId, 0, providerTaskId);
+        responseComplete = true;
+        await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id, providerTaskId);
+        return;
+      }
+      outputSlot = await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, 0,
+        { bucket: objectStore.getBucket(), recoveryUrl: videoUrl, outputType: 'video' });
+      await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attemptId, 1, providerTaskId);
+      responseComplete = true;
+      const source = await fetchUrlAsStream(videoUrl);
+      source.durationMs = duration * 1000;
+      await persistGeneratedMedia(identity, task, attemptId, 0, source, 'video', outputSlot);
+    } else if (task.taskType === 'audio') {
+      const format = String(params.format || 'mp3').toLowerCase();
+      outputSlot = await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, 0,
+        { bucket: objectStore.getBucket(), outputType: 'audio', extension: format });
+      const audioSettings = { model: task.model, text: task.prompt,
+        voice: String(params.voice || 'alloy'), format,
+        speed: Math.max(0.25, Math.min(4, Number(params.speed) || 1)),
+        ...(params.instructions ? { instructions: String(params.instructions).slice(0, 4000) } : {}) };
+      const onAccepted = async () => { await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attemptId, 1); responseComplete = true; };
+      const response = isMiniMaxSpeechModel(task.model)
+        ? await callUpstreamMiniMaxAudio(channel, audioSettings, onAccepted)
+        : await callUpstreamAudioStream(channel, { model: task.model, input: task.prompt,
+          voice: audioSettings.voice, response_format: format, speed: audioSettings.speed,
+          ...(audioSettings.instructions ? { instructions: audioSettings.instructions } : {}) }, onAccepted);
+      if (response.status < 200 || response.status >= 300) throw new Error(response.payload?.error?.message || response.payload?.message || response.text || `上游返回状态 ${response.status}`);
+      await persistGeneratedMedia(identity, task, attemptId, 0, response, 'audio', outputSlot);
+    }
+    await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id, providerTaskId || null);
+  } catch (error) {
+    console.error('[media-task]', task.id, error.message);
+    if (!claimed) return;
+    try {
+      if (responseComplete) await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id, providerTaskId || null);
+      else if (task.taskType === 'video' && providerTaskId && error.code === 'UPSTREAM_TASK_TERMINAL_FAILURE') {
+        await postgresBilling.failTask(identity.sub, task.id, 'upstream_task_failed', String(error.message || '视频生成失败').slice(0, 500), true);
+      }
+      else if (task.taskType === 'video' && providerTaskId) {
+        setTimeout(() => runGenerationTaskMediaWorker(identity, { ...task, status: 'running' }, channel, params,
+          { attemptId, providerTaskId }), 15000).unref?.();
+      } else await postgresBilling.failTask(identity.sub, task.id, 'upstream_error', String(error.message || '媒体生成失败').slice(0, 500), true);
+    } catch (settleError) { console.error('[media-task settlement]', task.id, settleError.message); }
+  }
+}
+
 async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
   let claimed = false;
+  let attempt = null;
+  let responseComplete = false;
   try {
     claimed = await postgresBilling.markTaskRunning(identity.sub, task.id, null);
     if (!claimed) return;
+    attempt = await postgresBilling.beginGenerationAttempt(identity.sub, task.id);
     bodyObj = { ...bodyObj };
     delete bodyObj.__qingyuCatalogModelId;
-    const { status, text } = await callUpstreamImage(channel, bodyObj);
-    let payload = {};
-    try { payload = JSON.parse(text); } catch { payload = {}; }
+    const referenceFiles = await postgresBilling.listGenerationInputFiles(identity.sub, task.id);
+    const { status, payload = {}, text = '' } = await callUpstreamImage(
+      channel,
+      bodyObj,
+      (index, source) => persistGeneratedImage(identity, task, attempt.attemptId, index, source, null),
+      referenceFiles,
+    );
     if (status >= 200 && status < 300 && Array.isArray(payload.data)) {
       // 部分上游返回 task_id 走异步轮询（如麦子 nano-banana）
       const first = payload.data[0] || {};
-      if (first.task_id && !first.b64_json && !first.url) {
+      if (first.task_id && !first.__hasBase64 && !first.b64_json && !first.url) {
         const done = await pollAsyncUpstreamTask(channel, first.task_id);
         const urls = done.result_urls || done.urls || [];
+        const slots = [];
+        for (let i = 0; i < urls.length; i++) {
+          slots.push(await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attempt.attemptId, i, {
+            bucket: objectStore.getBucket(), recoveryUrl: urls[i],
+          }));
+        }
+        await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attempt.attemptId, urls.length, done.id || first.task_id || null);
+        responseComplete = true;
         if (!urls.length) {
           await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游异步任务完成但未返回图片", true);
           return;
@@ -788,53 +1525,63 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
         const outputs = [];
         for (let i = 0; i < urls.length; i++) {
           try {
-            const buffer = await fetchUrlAsBuffer(urls[i]);
-            outputs.push(await persistGeneratedImage(identity, task, i, buffer, null));
+            outputs.push(await persistGeneratedImageUrl(identity, task, attempt.attemptId, i, urls[i], null, slots[i]));
           }
           catch (dlErr) { console.error("[async task] image download failed", task.id, dlErr.message); }
         }
-        if (!outputs.length) {
-          await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游结果图均下载失败", true);
-          return;
-        }
-        await postgresBilling.settleTaskSuccess(identity.sub, task.id, outputs, done.id || first.task_id || null);
+        await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id, done.id || first.task_id || null);
         return;
       }
       // 先筛出至少带一种可用图片引用的条目；一个都没有则视为"没出图"，必须退款，不能结算。
       const raw = payload.data.map((d, i) => ({
         type: "image", index: i,
+        hasBase64: d.__hasBase64 === true, savedOutput: d.__savedOutput || null, saveError: d.__saveError || null,
         b64_json: d.b64_json || null, url: d.url || null,
         revisedPrompt: d.revised_prompt || null,
-      })).filter(o => o.b64_json || o.url);
+      })).filter(o => o.hasBase64 || o.b64_json || o.url);
+      const slotsByIndex = new Map();
+      for (const output of raw) {
+        if (!output.url || output.hasBase64) continue;
+        slotsByIndex.set(output.index, await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attempt.attemptId, output.index, {
+          bucket: objectStore.getBucket(), recoveryUrl: output.url, revisedPrompt: output.revisedPrompt,
+        }));
+      }
+      await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attempt.attemptId, raw.length, payload.id || null);
+      responseComplete = true;
       if (raw.length === 0) {
         await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游返回成功但未包含任何图片", true);
         return;
       }
-      // 统一落盘到对象存储：上游给 b64_json 的直接解码成 buffer，给 url 的下载下来；
-      // 单张失败不影响其他图。
+      // 直接以受限流写入对象存储，不先将图片完整解码或下载到服务器内存；单张失败不影响其他图。
       const outputs = [];
       for (const o of raw) {
         try {
-          const buffer = o.b64_json ? Buffer.from(o.b64_json, "base64") : await fetchUrlAsBuffer(o.url);
-          outputs.push(await persistGeneratedImage(identity, task, o.index, buffer, o.revisedPrompt || null));
+          if (o.savedOutput) {
+            outputs.push({ ...o.savedOutput, revisedPrompt: o.revisedPrompt || null });
+            continue;
+          }
+          if (o.hasBase64 || o.saveError) {
+            console.error("[task worker] image upload failed", task.id, o.saveError || 'Base64 图片未保存');
+            continue;
+          }
+          outputs.push(await persistGeneratedImageUrl(identity, task, attempt.attemptId, o.index, o.url, o.revisedPrompt || null, slotsByIndex.get(o.index)));
         } catch (dlErr) {
           console.error("[task worker] image url download failed", task.id, dlErr.message);
         }
       }
-      if (outputs.length === 0) {
-        await postgresBilling.failTask(identity.sub, task.id, "empty_output", "上游图片 URL 均下载失败", true);
-        return;
-      }
-      await postgresBilling.settleTaskSuccess(identity.sub, task.id, outputs, payload.id || null);
+      await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id, payload.id || null);
     } else {
-      const msg = (payload && payload.error && payload.error.message) || `上游返回状态 ${status}`;
+      const msg = (payload && payload.error && payload.error.message) || text || `上游返回状态 ${status}`;
       await postgresBilling.failTask(identity.sub, task.id, "upstream_error", String(msg).slice(0, 500), true);
     }
   } catch (e) {
     console.error("[task worker]", task.id, e.message);
     // 没领取成功的处理者不能释放另一个处理者正在使用的额度。
     if (claimed) {
-      try { await postgresBilling.failTask(identity.sub, task.id, "upstream_error", e.message, true); }
+      try {
+        if (responseComplete && attempt?.attemptId) await postgresBilling.settleGenerationTaskIfComplete(identity.sub, task.id);
+        else await postgresBilling.failTask(identity.sub, task.id, "upstream_error", e.message, true);
+      }
       catch (settlementError) { console.error('[task settlement]', task.id, settlementError.message); }
     }
   }
@@ -873,7 +1620,7 @@ async function handleBilling(req, res, pathname, method, url) {
         return sendJSON(res, 401, { error: "登录身份校验失败，请重新登录" });
       }
       if (postgresBilling) {
-        const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "");
+        const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "", appwriteUser.$createdAt);
         const session = await postgresBilling.registerSession(body.userId, {
           installationId: body.installationId,
           displayName: body.displayName,
@@ -911,13 +1658,17 @@ async function handleBilling(req, res, pathname, method, url) {
     const me = postgresBilling ? await postgresBilling.getUser(identity.sub) : findUserByAppwriteId(identity.sub);
     if (!me) return sendJSON(res, 404, { error: "用户不存在，请重新登录" });
 
+    if (pathname === "/api/billing/quote" && method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
+      try { return sendJSON(res, 200, await postgresBilling.createModelCreditQuote(identity.sub, await parseBody(req))); }
+      catch (error) { return sendJSON(res, /积分|价格|模型|类型|计费目录/.test(String(error.message || "")) ? 400 : 500, { error: error.message }); }
+    }
+
     // GET /api/billing/me
     if (pathname === "/api/billing/me" && method === "GET") {
       if (postgresBilling) {
         const userOut = { ...me };
-        if (me.memberLevel === "free") {
-          try { const du = await postgresBilling.getFreeDailyUsage(identity.sub); userOut.dailyUsed = du.used; userOut.dailyLimit = du.limit; } catch {}
-        }
         return sendJSON(res, 200, { user: userOut, settings: { currency: "CNY", inviteCode: me.inviteCode, inviteRewardQuota: 0 } });
       }
       return sendJSON(res, 200, { user: publicUser(me), settings: {
@@ -1510,36 +2261,38 @@ async function handleAssets(req, res, pathname, method, url) {
       const input = await parseBody(req);
       const title = String(input.title || '').trim().slice(0, 240);
       const mimeType = String(input.mimeType || 'application/octet-stream').split(';')[0].slice(0, 160);
-      const sizeBytes = Number(input.sizeBytes);
-      if (!title || !Number.isSafeInteger(sizeBytes) || sizeBytes < 16 * 1024 * 1024 || sizeBytes > 5 * 1024 * 1024 * 1024) {
-        return sendJSON(res, 400, { error: '分片上传仅接受16MB至5GB的文件' });
-      }
-      const sourceKind = ['generated','reference_upload','manual_upload','edited'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
+      if (!title) return sendJSON(res, 400, { error: '文件名称不能为空' });
+      const sizeBytes = validateUploadSessionSize(input.sizeBytes);
+      const sourceKind = ['generated','reference_upload','manual_upload','edited','derived'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
       const mediaType = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video'
         : mimeType.startsWith('audio/') ? 'audio' : mimeType.startsWith('text/') ? 'text'
         : /pdf|document|officedocument|msword/.test(mimeType) ? 'document' : 'other';
       const { workspaceId } = await postgresBilling.getAssetUploadScope(identity.sub);
       const fileToken = crypto.randomUUID();
       const requestedBatchId = String(input.uploadBatchId || '');
-      if (!['generated','edited'].includes(sourceKind) && requestedBatchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedBatchId)) {
+      if (!['generated','edited','derived'].includes(sourceKind) && requestedBatchId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedBatchId)) {
         return sendJSON(res, 400, { error: '上传批次编号无效' });
       }
       const editId = sourceKind === 'edited' ? String(input.editId || '') : '';
-      const sourceFileId = sourceKind === 'edited' ? String(input.sourceFileId || '') : '';
+      const sourceFileId = ['edited','derived'].includes(sourceKind) ? String(input.sourceFileId || '').toLowerCase() : '';
+      const previewVariant = sourceKind === 'derived' ? String(input.previewVariant || '') : '';
       const validUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
       if (sourceKind === 'edited' && (!validUuid(editId) || !validUuid(sourceFileId))) return sendJSON(res, 400, { error: '编辑来源记录无效' });
-      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
+      if (sourceKind === 'derived' && (!validUuid(sourceFileId) || !isAssetPreviewVariant(previewVariant) || mediaType !== 'image')) {
+        return sendJSON(res, 400, { error: '预览文件必须是图片，并提供有效的原文件编号和预览规格' });
+      }
+      const uploadBatchId = ['generated','edited','derived'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
       const sourceTaskId = sourceKind === 'generated' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(input.sourceGenerationTaskId || ''))
         ? String(input.sourceGenerationTaskId) : '';
       const groupId = sourceTaskId || editId || uploadBatchId || fileToken;
       const now = new Date();
       const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
-      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType, createdAt: now, groupingId: groupId, fileId: fileToken, extension });
+      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType, createdAt: now, groupingId: groupId, fileId: fileToken, extension, sourceFileId, previewVariant });
       const initialized = await objectStore.multipartInit({ key: objectKey, contentType: mimeType });
       try {
         const session = await postgresBilling.createAssetUploadSession(identity.sub, {
           title, mimeType, sizeBytes, sourceKind, mediaType, objectKey, bucket: initialized.bucket, uploadBatchId, fileId: fileToken,
-          providerUploadId: initialized.uploadId, editId, sourceFileId, width: input.width, height: input.height,
+          providerUploadId: initialized.uploadId, editId, sourceFileId, previewVariant, width: input.width, height: input.height,
           durationMs: input.durationMs, completeness: input.completeness,
           idempotencyKey: input.writeIdempotencyKey,
         });
@@ -1573,8 +2326,9 @@ async function handleAssets(req, res, pathname, method, url) {
       const assetMetadata = completionInput.metadata && typeof completionInput.metadata === 'object' && !Array.isArray(completionInput.metadata)
         ? completionInput.metadata : {};
       const session = await postgresBilling.getAssetUploadSession(identity.sub, uploadCompleteMatch[1]);
-      if (session.status === 'completed' && session.assetId) {
-        return sendJSON(res, 200, { id: session.assetId, name: session.assetTitle || session.originalFilename, type: session.assetType, favorited: false });
+      if (session.status === 'completed' && (session.assetId || session.sourceKind === 'derived')) {
+        return sendJSON(res, 200, { id: session.sourceKind === 'derived' ? session.fileId : session.assetId,
+          name: session.assetTitle || session.originalFilename, type: session.assetType || 'file', favorited: false, derived: session.sourceKind === 'derived' });
       }
       if (!['uploading','completing'].includes(session.status) || session.bucket !== objectStore.getBucket()) return sendJSON(res, 409, { error: '上传会话已失效或不属于当前环境' });
       try {
@@ -1598,7 +2352,7 @@ async function handleAssets(req, res, pathname, method, url) {
           checksum: null, sizeBytes: completion.sizeBytes, fileId: session.fileId, workspaceId: session.workspaceId,
           uploadSessionId: session.id, title: session.originalFilename, originalFilename: session.originalFilename,
           assetType, mediaType: session.mediaType, sourceKind: session.sourceKind, mimeType,
-          metadata: { ...assetMetadata, sourceKind: session.sourceKind },
+          metadata: { ...assetMetadata, sourceKind: session.sourceKind, sourceFileId: session.sourceFileId, previewVariant: session.previewVariant },
         });
         return sendJSON(res, 201, asset);
       } catch (error) {
@@ -1614,8 +2368,39 @@ async function handleAssets(req, res, pathname, method, url) {
       await postgresBilling.failAssetUploadSession(identity.sub, session.id, 'user_aborted');
       return sendJSON(res, 200, { aborted: true });
     }
+    const restoreAssetMatch = pathname.match(/^\/assets\/([^/]+)\/restore$/);
+    if (restoreAssetMatch && method === 'PUT') {
+      return sendJSON(res, 200, await postgresBilling.restoreAsset(identity.sub, restoreAssetMatch[1]));
+    }
+    const lifecycleAssetMatch = pathname.match(/^\/assets\/([^/]+)$/);
+    if (lifecycleAssetMatch && method === 'DELETE') {
+      return sendJSON(res, 200, await postgresBilling.deleteAsset(identity.sub, lifecycleAssetMatch[1]));
+    }
     const contentMatch = pathname.match(/^\/assets\/([^/]+)\/content$/);
     const readUrlMatch = pathname.match(/^\/assets\/([^/]+)\/read-url$/);
+    const derivedContentMatch = pathname.match(/^\/files\/([0-9a-f-]+)\/content$/i);
+    if (derivedContentMatch && method === 'GET') {
+      const file = await postgresBilling.getDerivedFile(identity.sub, derivedContentMatch[1]);
+      if (file.storageProvider !== 'cos' || file.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '预览文件不属于当前环境的云存储' });
+      const cdnUrl = objectStore.signCdnReadUrl(file.objectKey);
+      if (cdnUrl) {
+        res.writeHead(302, { Location: cdnUrl, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' });
+        res.end();
+        return true;
+      }
+      const stored = await objectStore.getObjectStream(file.objectKey, { range: req.headers.range });
+      const headers = {
+        'Content-Type': file.mimeType || stored.contentType,
+        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.title)}`,
+        'Cache-Control': 'private, max-age=60',
+        'Accept-Ranges': 'bytes',
+      };
+      if (stored.contentLength) headers['Content-Length'] = stored.contentLength;
+      if (stored.contentRange) headers['Content-Range'] = stored.contentRange;
+      res.writeHead(stored.statusCode === 206 ? 206 : 200, headers);
+      stored.stream.on('error', error => { console.error('[files/content]', error.message); res.destroy(error); }).pipe(res);
+      return true;
+    }
     if (readUrlMatch && method === 'GET') {
       const file = await postgresBilling.getAssetFile(identity.sub, readUrlMatch[1]);
       if (file.storageProvider !== 'cos' || file.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '文件不属于当前环境的云存储' });
@@ -1684,21 +2469,25 @@ async function handleAssets(req, res, pathname, method, url) {
         : /pdf|document|officedocument|msword/.test(mimeType) ? 'documents' : 'other';
       const fileMediaType = mediaType === 'images' ? 'image' : mediaType === 'videos' ? 'video'
         : mediaType === 'documents' ? 'document' : ['audio', 'text'].includes(mediaType) ? mediaType : 'other';
-      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited'].includes(metadata.sourceKind)
+      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited', 'derived'].includes(metadata.sourceKind)
         ? metadata.sourceKind : 'manual_upload';
       const extension = path.extname(title).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
       const { workspaceId } = await postgresBilling.getAssetUploadScope(identity.sub);
       const editId = sourceKind === 'edited' ? String(metadata.editId || '') : '';
-      const sourceFileId = sourceKind === 'edited' ? String(metadata.sourceFileId || '') : '';
+      const sourceFileId = ['edited', 'derived'].includes(sourceKind) ? String(metadata.sourceFileId || '').toLowerCase() : '';
+      const previewVariant = sourceKind === 'derived' ? String(metadata.previewVariant || '') : '';
       const validUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
       if (sourceKind === 'edited' && (!validUuid(editId) || !validUuid(sourceFileId))) return sendJSON(res, 400, { error: '编辑来源记录无效' });
-      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
+      if (sourceKind === 'derived' && (!validUuid(sourceFileId) || !isAssetPreviewVariant(previewVariant) || fileMediaType !== 'image')) {
+        return sendJSON(res, 400, { error: '预览文件必须是图片，并提供有效的原文件编号和预览规格' });
+      }
+      const uploadBatchId = ['generated','edited','derived'].includes(sourceKind) ? null : requestedBatchId || crypto.randomUUID();
       const fileId = crypto.randomUUID();
       const createdAt = new Date();
       const sourceTaskId = sourceKind === 'generated' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(metadata.sourceGenerationTaskId || ''))
         ? String(metadata.sourceGenerationTaskId) : '';
       const groupId = sourceTaskId || editId || uploadBatchId || fileId;
-      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType: fileMediaType, createdAt, groupingId: groupId, fileId, extension });
+      const objectKey = buildAssetObjectKey({ workspaceId, sourceKind, mediaType: fileMediaType, createdAt, groupingId: groupId, fileId, extension, sourceFileId, previewVariant });
       const stored = await writeAssetUpload(req, objectStore, objectKey, mimeType);
       try {
         const asset = await postgresBilling.createAssetFromFile(identity.sub, {
@@ -1716,7 +2505,7 @@ async function handleAssets(req, res, pathname, method, url) {
         throw error;
       }
     }
-    if (pathname === "/assets" && method === "GET") return sendJSON(res, 200, await postgresBilling.listAssets(identity.sub, url.searchParams.get('type') || 'all', url.searchParams.get('keyword') || ''));
+    if (pathname === "/assets" && method === "GET") return sendJSON(res, 200, await postgresBilling.listAssets(identity.sub, url.searchParams.get('type') || 'all', url.searchParams.get('keyword') || '', url.searchParams.get('status') || 'active'));
     if (pathname === "/favorites" && method === "GET") return sendJSON(res, 200, await postgresBilling.listFavorites(identity.sub));
     const likeMatch = pathname.match(/^\/assets\/([^/]+)\/like$/);
     if (likeMatch && (method === "PUT" || method === "DELETE")) {
@@ -1736,7 +2525,7 @@ async function handleAssets(req, res, pathname, method, url) {
     return true;
   } catch (error) {
     console.error("[assets]", error.message);
-    sendJSON(res, 400, { error: error.message || "资产操作失败" });
+    sendJSON(res, error.status || 400, { error: error.message || "资产操作失败" });
     return true;
   }
 }
@@ -1759,118 +2548,55 @@ function publicUser(u) {
 }
 
 // ---------- 路由 ----------
-const server = http.createServer(async (req, res) => {
-  applyCors(req, res);
-  // Cookie 会随浏览器请求自动携带；对写操作验证来源，避免第三方页面借用登录态。
-  if (isUnsafeMethod(req.method) && readCookie(req, CUSTOMER_SESSION_COOKIE) && !hasTrustedMutationOrigin(req)) {
-    return sendJSON(res, 403, { error: "请求来源不受信任，请刷新页面后重试" });
-  }
-  // CORS 预检
-  if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") || "*",
-      "Access-Control-Allow-Headers": res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization, X-Qingyu-Requested-With",
-      "Access-Control-Allow-Methods": res.getHeader("Access-Control-Allow-Methods") || "GET, POST, PUT, DELETE, OPTIONS",
-      ...(res.getHeader("Access-Control-Allow-Credentials") ? { "Access-Control-Allow-Credentials": res.getHeader("Access-Control-Allow-Credentials") } : {}),
-      ...(res.getHeader("Vary") ? { Vary: res.getHeader("Vary") } : {}),
-    });
-    return res.end();
-  }
-
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = url.pathname;
-
+async function processGeneratedOutputRecoveryJob(job) {
   try {
-    // POST /api/payment/webhooks/:provider — 只接收经过 HMAC 校验的供应商事件，收到不等于已入账
-    const paymentWebhookMatch = pathname.match(/^\/api\/payment\/webhooks\/([A-Za-z0-9_-]+)$/);
-    if (paymentWebhookMatch && req.method === 'POST') {
-      const secret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
-      if (!secret) return sendJSON(res, 503, { error: '支付回调尚未配置服务端密钥' });
-      const raw = await parseRawBody(req);
-      const signature = String(req.headers['x-payment-signature'] || '');
-      const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
-      const signatureBytes = Buffer.from(signature); const expectedBytes = Buffer.from(expected);
-      if (!signature || signatureBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(signatureBytes, expectedBytes)) return sendJSON(res, 401, { error: '支付回调签名无效' });
-      let event; try { event = JSON.parse(raw.toString('utf8')); } catch { return sendJSON(res, 400, { error: '支付回调 JSON 无效' }); }
-      if (!postgresBilling) return sendJSON(res, 503, { error: '计费数据库暂不可用' });
-      return sendJSON(res, 202, await postgresBilling.recordPaymentEvent(paymentWebhookMatch[1], event));
+    const output = await postgresBilling.getGenerationOutputRecoveryContext(job);
+    if (output.task_status !== 'saving' || !output.response_complete || output.availability !== 'awaiting') {
+      await postgresBilling.cancelFileUploadRecoveryJob(job);
+      return;
+    }
+    if (output.bucket !== objectStore.getBucket()) throw new Error('生成结果恢复记录与当前存储环境不匹配');
+
+    let stored = null;
+    try {
+      stored = await objectStore.headObject(output.object_key);
+    } catch (error) {
+      const code = String(error.code || error.Code || error.statusCode || '');
+      if (!['404', 'NoSuchKey', 'NotFound', 'NotFoundException'].includes(code)) throw error;
     }
 
-    // ===== 公开接口（无需认证）=====
-
-    // GET /api/config/public — 公开模型配置
-    if (pathname === "/api/config/public" && req.method === "GET") {
-      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPublicModelCatalogChannels());
-      const catalogConfigs = modelsCatalog.filter(model => model.visible !== false).flatMap(model => {
-        const links = (model.linkedModels || []).filter(link => link.isActive !== false)
-          .map(link => ({ link, channel: keys.find(key => String(key.id) === String(link.channelId) && key.is_active === 1) }))
-          .filter(entry => entry.channel);
-        if (!links.length) return [];
-        const provider = links[0].channel.provider;
-        const modelName = `catalog:${model.id}`;
-        return [{ id: `catalog-${model.id}`, name: model.displayName, provider, base_url: links[0].channel.base_url, model: modelName, models: [{ name: modelName, displayName: model.displayName, capability: model.capability }] }];
-      });
-      return sendJSON(res, 200, catalogConfigs);
+    let saved;
+    if (stored && stored.sizeBytes > 0 && (output.size_bytes == null || Number(output.size_bytes) === stored.sizeBytes)) {
+      saved = stored;
+    } else if (output.recoveryUrl) {
+      const source = await fetchUrlAsStream(output.recoveryUrl);
+      const { prefix, body } = await peekStreamPrefix(source.body);
+      const mime = sniffGeneratedMediaMime(output.output_type || 'image', prefix, source.contentType);
+      saved = await objectStore.putObject({ key: output.object_key, body, contentLength: source.contentLength, contentType: mime, preserveOnError: true });
+    } else {
+      const result = await postgresBilling.failGeneratedOutputRecoveryJob(job, 'base64_source_unavailable', 1);
+      console.error('[generation-recovery] source unavailable', job.id, result.status);
+      return;
     }
 
-    // POST /api/feedback — 反馈允许匿名提交，但必须进入 PostgreSQL；数据库不可用时明确失败。
-    if (pathname === "/api/feedback" && req.method === "POST") {
-      if (!postgresBilling) return sendJSON(res, 503, { error: "反馈服务暂不可用，请稍后重试" });
-      const body = await parseBody(req);
-      const identity = getBillingIdentity(req);
-      try {
-        const saved = await postgresBilling.createFeedback({
-          appwriteUserId: identity?.role === "customer" ? identity.sub : null,
-          feedbackType: body.type,
-          content: body.content,
-          contact: body.contact,
-          requestId: req.headers["x-request-id"] || crypto.randomUUID(),
-        });
-        return sendJSON(res, 201, saved);
-      } catch (error) {
-        return sendJSON(res, 400, { error: error.message || "反馈保存失败，请稍后重试" });
-      }
+    const completed = await postgresBilling.finishGeneratedOutputRecoveryJob(job, saved);
+    await postgresBilling.settleGenerationTaskIfComplete(job.appwriteUserId, completed.taskId);
+    console.log('[generation-recovery] completed', job.id, completed.outputId);
+  } catch (error) {
+    try {
+      const result = await postgresBilling.failGeneratedOutputRecoveryJob(job, error.code || 'persist_failed');
+      console.error('[generation-recovery] retry scheduled', job.id, result.status, error.message);
+    } catch (leaseError) {
+      console.error('[generation-recovery] lease lost', job.id, leaseError.message);
     }
-
-    // POST /api/proxy/openai/* — AI 请求代理
-    if (pathname.startsWith("/api/proxy/openai/") && req.method === "POST") {
-      const targetPath = pathname.replace("/api/proxy/openai", "");
-      return proxyRequest(req, res, targetPath);
-    }
-
-    // ===== 异步生图任务（0046）：提交即返回 task_id，后台执行，前端轮询 =====
-    // ===== 本地开发专用：一键登录 =====
-    // 仅允许本地开发环境使用；生产环境或非本机请求一律 404。
-    // 访问 http://localhost:3001/api/dev-login 自动签 token 并跳回前端。
-    if (pathname === "/api/dev-login" && req.method === "GET") {
-      const remoteAddress = req.socket.remoteAddress || "";
-      const isLoopback = remoteAddress === "127.0.0.1"
-        || remoteAddress === "::1"
-        || remoteAddress === "::ffff:127.0.0.1";
-      if (process.env.DEV_LOGIN !== "1" || process.env.NODE_ENV === "production" || !isLoopback) {
-        return sendJSON(res, 404, { error: "not found" });
-      }
-      if (!postgresBilling) return sendJSON(res, 503, { error: "db not ready" });
-      const uid = url.searchParams.get("user") || "local-dev-user";
-      const email = url.searchParams.get("email") || `${uid}@local.dev`;
-      try {
-        const user = await postgresBilling.ensureUser(uid, email, "");
-        const session = await postgresBilling.registerSession(uid, {
-          clientType: "dev-login",
-          installationId: url.searchParams.get("installationId") || "",
-        });
-        const exp = Math.floor(Date.now() / 1000) + CUSTOMER_SESSION_MAX_AGE_SECONDS;
-        const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
-        const cookieHeaders = { "Set-Cookie": customerSessionCookie(token) };
-        // JSON 模式：浏览器自动保存 HttpOnly Cookie，页面脚本不接触登录票。
-        if (url.searchParams.get("format") === "json" || (req.headers.accept || "").includes("application/json")) {
-          return sendJSON(res, 200, { uid, email: user.email }, cookieHeaders);
+  }
 }
 
 async function processFileUploadRecoveryJob(job) {
+  if (job.generationOutputId) return processGeneratedOutputRecoveryJob(job);
   try {
     const session = await postgresBilling.getAssetUploadSession(job.appwriteUserId, job.uploadSessionId);
-    if (session.status === 'completed' && session.assetId) {
+    if (session.status === 'completed' && (session.assetId || session.sourceKind === 'derived')) {
       await postgresBilling.finishFileUploadRecoveryJob(job);
       return;
     }
@@ -1904,7 +2630,7 @@ async function processFileUploadRecoveryJob(job) {
       mediaType: session.mediaType, sourceKind: session.sourceKind,
       metadata: { sourceKind: session.sourceKind, width: session.width, height: session.height,
         durationMs: session.durationMs, completeness: session.completeness,
-        editId: session.editId, sourceFileId: session.sourceFileId },
+        editId: session.editId, sourceFileId: session.sourceFileId, previewVariant: session.previewVariant },
       idempotencyKey: session.writeIdempotencyKey,
     });
     await postgresBilling.finishFileUploadRecoveryJob(job);
@@ -1918,6 +2644,178 @@ async function processFileUploadRecoveryJob(job) {
     }
   }
 }
+
+const server = http.createServer(async (req, res) => {
+  applyCors(req, res);
+  // Cookie 会随浏览器请求自动携带；对写操作验证来源，避免第三方页面借用登录态。
+  if (isUnsafeMethod(req.method) && readCookie(req, CUSTOMER_SESSION_COOKIE) && !hasTrustedMutationOrigin(req)) {
+    return sendJSON(res, 403, { error: "请求来源不受信任，请刷新页面后重试" });
+  }
+  // CORS 预检
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      ...(res.getHeader("Access-Control-Allow-Origin") ? { "Access-Control-Allow-Origin": res.getHeader("Access-Control-Allow-Origin") } : {}),
+      "Access-Control-Allow-Headers": res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization, X-Qingyu-Requested-With",
+      "Access-Control-Allow-Methods": res.getHeader("Access-Control-Allow-Methods") || "GET, POST, PUT, DELETE, OPTIONS",
+      ...(res.getHeader("Access-Control-Allow-Credentials") ? { "Access-Control-Allow-Credentials": res.getHeader("Access-Control-Allow-Credentials") } : {}),
+      ...(res.getHeader("Vary") ? { Vary: res.getHeader("Vary") } : {}),
+    });
+    return res.end();
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const pathname = url.pathname;
+
+  try {
+    // POST /api/payment/webhooks/:provider — 只接收经过 HMAC 校验的供应商事件，收到不等于已入账
+    const paymentWebhookMatch = pathname.match(/^\/api\/payment\/webhooks\/([A-Za-z0-9_-]+)$/);
+    if (paymentWebhookMatch && req.method === 'POST') {
+      const secret = String(process.env.PAYMENT_WEBHOOK_SECRET || '');
+      if (!secret) return sendJSON(res, 503, { error: '支付回调尚未配置服务端密钥' });
+      const raw = await parseRawBody(req);
+      const signature = String(req.headers['x-payment-signature'] || '');
+      const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
+      const signatureBytes = Buffer.from(signature); const expectedBytes = Buffer.from(expected);
+      if (!signature || signatureBytes.length !== expectedBytes.length || !crypto.timingSafeEqual(signatureBytes, expectedBytes)) return sendJSON(res, 401, { error: '支付回调签名无效' });
+      let event; try { event = JSON.parse(raw.toString('utf8')); } catch { return sendJSON(res, 400, { error: '支付回调 JSON 无效' }); }
+      if (!postgresBilling) return sendJSON(res, 503, { error: '计费数据库暂不可用' });
+      return sendJSON(res, 202, await postgresBilling.recordPaymentEvent(paymentWebhookMatch[1], event));
+    }
+
+    // ===== 公开接口（无需认证）=====
+
+    // GET /api/config/public — 公开模型配置
+    if (pathname === "/api/config/public" && req.method === "GET") {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      if (req.headers["x-qingyu-client"] !== "web") return sendJSON(res, 403, { error: "forbidden" });
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.listPublicModelCatalogChannels());
+      const catalogConfigs = modelsCatalog.filter(model => model.visible !== false).flatMap(model => {
+        const links = (model.linkedModels || []).filter(link => link.isActive !== false)
+          .map(link => ({ link, channel: keys.find(key => String(key.id) === String(link.channelId) && key.is_active === 1) }))
+          .filter(entry => entry.channel);
+        if (!links.length) return [];
+        const provider = String(links[0].channel.provider).toLowerCase() === "gemini" ? "gemini" : "openai";
+        const modelName = `catalog:${model.id}`;
+        // 与数据库分支保持一致，只返回协议占位地址，不下发真实渠道地址。
+        const baseUrl = provider === "gemini" ? "https://generativelanguage.googleapis.com" : "https://api.openai.com";
+        return [{ id: `catalog-${model.id}`, name: model.displayName, provider, base_url: baseUrl, model: modelName, models: [{ name: modelName, displayName: model.displayName, capability: model.capability }] }];
+      });
+      return sendJSON(res, 200, catalogConfigs);
+    }
+
+    // POST /api/feedback — 反馈允许匿名提交，但必须进入 PostgreSQL；数据库不可用时明确失败。
+    if (pathname === "/api/feedback" && req.method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "反馈服务暂不可用，请稍后重试" });
+      const body = await parseBody(req);
+      const identity = getBillingIdentity(req);
+      try {
+        const saved = await postgresBilling.createFeedback({
+          appwriteUserId: identity?.role === "customer" ? identity.sub : null,
+          feedbackType: body.type,
+          content: body.content,
+          contact: body.contact,
+          requestId: req.headers["x-request-id"] || crypto.randomUUID(),
+        });
+        return sendJSON(res, 201, saved);
+      } catch (error) {
+        return sendJSON(res, 400, { error: error.message || "反馈保存失败，请稍后重试" });
+      }
+    }
+
+    // ===== AI 对话：对话与消息 CRUD =====
+    const chatConvMatch = pathname.match(/^\/api\/chat\/conversations(?:\/([A-Za-z0-9-]+))?(?:\/messages)?$/);
+    if (chatConvMatch && (req.method === "GET" || req.method === "POST" || req.method === "PATCH" || req.method === "DELETE")) {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "对话服务暂不可用" });
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录后再使用对话" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
+      const convId = chatConvMatch[1];
+      const isMessagesSubpath = /\/messages$/.test(pathname);
+
+      // GET /api/chat/conversations — 列对话
+      if (!convId && req.method === "GET") {
+        return sendJSON(res, 200, { conversations: await postgresBilling.listChatConversations(identity.sub) });
+      }
+      // POST /api/chat/conversations — 建对话
+      if (!convId && req.method === "POST") {
+        const body = await parseBody(req);
+        return sendJSON(res, 201, await postgresBilling.createChatConversation(identity.sub, body || {}));
+      }
+      if (!convId) return sendJSON(res, 404, { error: "not found" });
+
+      // GET /api/chat/conversations/:id/messages — 拉消息
+      if (isMessagesSubpath && req.method === "GET") {
+        const msgs = await postgresBilling.listChatMessages(identity.sub, convId);
+        if (!msgs) return sendJSON(res, 404, { error: "对话不存在" });
+        return sendJSON(res, 200, { messages: msgs });
+      }
+      // POST /api/chat/conversations/:id/messages — 追加一条消息
+      if (isMessagesSubpath && req.method === "POST") {
+        const body = await parseBody(req);
+        try {
+          const saved = await postgresBilling.appendChatMessage(identity.sub, convId, {
+            role: body.role, content: body.content,
+            tokensIn: body.tokensIn, tokensOut: body.tokensOut, status: body.status,
+          });
+          return sendJSON(res, 201, saved);
+        } catch (e) { return sendJSON(res, 400, { error: e.message }); }
+      }
+      if (isMessagesSubpath) return sendJSON(res, 405, { error: "method not allowed" });
+
+      // GET /api/chat/conversations/:id — 对话详情
+      if (req.method === "GET") {
+        const conv = await postgresBilling.getChatConversation(identity.sub, convId);
+        if (!conv) return sendJSON(res, 404, { error: "对话不存在" });
+        return sendJSON(res, 200, { conversation: conv });
+      }
+      // PATCH /api/chat/conversations/:id — 改标题/设置
+      if (req.method === "PATCH") {
+        const body = await parseBody(req);
+        try {
+          return sendJSON(res, 200, await postgresBilling.updateChatConversation(identity.sub, convId, body || {}));
+        } catch (e) { return sendJSON(res, 400, { error: e.message }); }
+      }
+      // DELETE /api/chat/conversations/:id — 删对话
+      if (req.method === "DELETE") {
+        try {
+          return sendJSON(res, 200, await postgresBilling.deleteChatConversation(identity.sub, convId));
+        } catch (e) { return sendJSON(res, 400, { error: e.message }); }
+      }
+      return sendJSON(res, 405, { error: "method not allowed" });
+    }
+    // POST /api/proxy/openai/* — AI 请求代理
+    if (pathname.startsWith("/api/proxy/openai/") && req.method === "POST") {
+      const targetPath = pathname.replace("/api/proxy/openai", "");
+      return proxyRequest(req, res, targetPath);
+    }
+
+    // ===== 异步生图与媒体任务：提交即返回 task_id，后台执行并保存到 COS =====
+    // ===== 本地开发专用：一键登录 =====
+    // 仅允许本地开发环境使用；Vite 只为本机浏览器请求添加专用标记，API 端口也仅绑定本机。
+    // 访问 http://localhost:5173/dev-login 自动签发本地开发会话。
+    if (pathname === "/api/dev-login" && req.method === "GET") {
+      const trustedLocalDevRequest = req.headers["x-qingyu-local-dev-login"] === "1";
+      if (process.env.DEV_LOGIN !== "1" || process.env.NODE_ENV === "production" || !trustedLocalDevRequest) {
+        return sendJSON(res, 404, { error: "not found" });
+      }
+      if (!postgresBilling) return sendJSON(res, 503, { error: "db not ready" });
+      const uid = url.searchParams.get("user") || "local-dev-user";
+      const email = url.searchParams.get("email") || `${uid}@local.dev`;
+      try {
+        const user = await postgresBilling.ensureUser(uid, email, "", new Date().toISOString());
+        const session = await postgresBilling.registerSession(uid, {
+          clientType: "dev-login",
+          installationId: url.searchParams.get("installationId") || "",
+        });
+        const exp = Math.floor(Date.now() / 1000) + CUSTOMER_SESSION_MAX_AGE_SECONDS;
+        const token = signJWT({ sub: uid, role: "customer", sid: session.id, iat: Math.floor(Date.now()/1000), exp });
+        const cookieHeaders = { "Set-Cookie": customerSessionCookie(token) };
+        // JSON 模式：浏览器自动保存 HttpOnly Cookie，页面脚本不接触登录票。
+        if (url.searchParams.get("format") === "json" || (req.headers.accept || "").includes("application/json")) {
+          return sendJSON(res, 200, { uid, email: user.email }, cookieHeaders);
+}
+
         // 返回一个只写非敏感演示身份状态并跳转的 HTML 页；登录票由响应头保存。
         // zustand persist 的 auth-store 也要写，否则 checkSession 会强制查 Appwrite 把登录态清掉。
         const authStoreState = {
@@ -1947,6 +2845,48 @@ location.href = 'http://localhost:5173/';
         return sendJSON(res, 500, { error: e.message });
       }
     }
+    if (pathname === "/api/generation-tasks/media" && req.method === "POST") {
+      if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "请先登录后再使用 AI 服务" });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
+      const body = await parseBody(req);
+      const taskType = String(body.taskType || '').toLowerCase();
+      if (!['video','audio'].includes(taskType)) return sendJSON(res, 400, { error: '只支持视频或音频任务' });
+      const modelField = String(body.model || '');
+      const match = await findChannelForModel(modelField);
+      if (!match || String(match.channel.provider || '').toLowerCase() === 'gemini') return sendJSON(res, 400, { error: '当前媒体模型渠道暂不支持服务器恢复' });
+      const params = body.parameters && typeof body.parameters === 'object' ? body.parameters : {};
+      const parameters = taskType === 'video' ? {
+        duration: Math.max(1, Math.min(120, Number(params.duration) || 6)),
+        ratio: String(params.ratio || '16:9').slice(0, 16),
+        resolution: String(params.resolution || '720').slice(0, 24),
+        generateAudio: params.generateAudio !== false,
+        watermark: params.watermark === true,
+        mode: params.mode === 'reference' ? 'reference' : 'frames',
+      } : {
+        voice: String(params.voice || 'alloy').slice(0, 80),
+        format: String(params.format || 'mp3').toLowerCase().slice(0, 16),
+        speed: Math.max(0.25, Math.min(4, Number(params.speed) || 1)),
+        instructions: String(params.instructions || '').slice(0, 4000),
+      };
+      const references = Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds : [];
+      const idempotencyKey = String(body.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `${taskType}-task:${crypto.randomUUID()}`;
+      try {
+        const task = await postgresBilling.createGenerationTask(identity.sub, {
+          taskType, provider: match.channel.provider, model: match.model, modelCatalogId: match.catalogModelId,
+          prompt: String(body.prompt || '').slice(0, 4000), parameters, quantity: 1,
+          idempotencyKey, referenceAssetIds: references, timeoutSeconds: 1800, creditQuoteId: body.creditQuoteId,
+        });
+        setImmediate(() => runGenerationTaskMediaWorker(identity, task, match.channel, parameters));
+        return sendJSON(res, 202, { taskId: task.id, status: task.status });
+      } catch (error) {
+        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(error.message || ''))) return sendJSON(res, 402, { error: error.message });
+        if (/参考素材编号|参考素材不存在|参考素材不能|同一任务编号不能/.test(String(error.message || ''))) return sendJSON(res, 400, { error: error.message });
+        console.error('[media-task] create failed', error.message);
+        return sendJSON(res, 500, { error: '媒体生成任务创建失败，请稍后重试' });
+      }
+    }
     if (pathname === "/api/generation-tasks" && req.method === "POST") {
       if (!postgresBilling) return sendJSON(res, 503, { error: "计费数据库暂不可用" });
       const identity = getBillingIdentity(req);
@@ -1959,17 +2899,18 @@ location.href = 'http://localhost:5173/';
       const channel = match.channel;
       const bodyObj = { ...body };
       const referenceAssetIds = Array.isArray(bodyObj.referenceAssetIds) ? bodyObj.referenceAssetIds : [];
+      const creditQuoteId = bodyObj.creditQuoteId;
       const idempotencyKey = String(bodyObj.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `image-task:${crypto.randomUUID()}`;
-      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds; delete bodyObj.referenceAssetIds;
+      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds; delete bodyObj.referenceAssetIds; delete bodyObj.creditQuoteId;
       if (modelField.includes("::") || match.catalogModelId) bodyObj.model = match.model;
       if (match.catalogModelId) bodyObj.__qingyuCatalogModelId = match.catalogModelId;
       bodyObj.response_format = bodyObj.response_format || "b64_json";
       const quantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
       try {
         const task = await postgresBilling.createGenerationTask(identity.sub, {
-           taskType: "image", provider: channel.provider, model: match.model,
+           taskType: "image", provider: channel.provider, model: match.model, modelCatalogId: match.catalogModelId,
            prompt: String(bodyObj.prompt || "").slice(0, 4000), parameters: bodyObj, quantity,
-           idempotencyKey, referenceAssetIds,
+           idempotencyKey, referenceAssetIds, creditQuoteId,
            timeoutSeconds: 600,
         });
         // 立即返回，不等待上游；后台异步执行避免请求超时导致状态不确定。
@@ -2016,7 +2957,7 @@ location.href = 'http://localhost:5173/';
         const outputs = await postgresBilling.listGeneratedOutputs(identity.sub, taskId);
         const found = outputs.find(o => o.index === wantIndex)
                    || (wantIndex === 0 ? outputs[0] : null);
-        if (!found) return sendJSON(res, 404, { error: "图片不存在" });
+        if (!found) return sendJSON(res, 404, { error: "生成结果不存在" });
         if (found.storageProvider === 'cos') {
           if (found.bucket !== objectStore.getBucket()) return sendJSON(res, 404, { error: '图片不属于当前环境的存储桶' });
           const cdnUrl = objectStore.signCdnReadUrl(found.objectKey);
@@ -2027,7 +2968,7 @@ location.href = 'http://localhost:5173/';
           }
           const stored = await objectStore.getObjectStream(found.objectKey, { range: req.headers.range });
           const headers = {
-            'Content-Type': found.contentType || stored.contentType || 'image/png',
+            'Content-Type': found.contentType || stored.contentType || 'application/octet-stream',
             'Cache-Control': 'private, max-age=31536000, immutable',
             'Accept-Ranges': 'bytes',
           };
@@ -2040,15 +2981,15 @@ location.href = 'http://localhost:5173/';
           // 只为读取 COS 接入前已经存在的结果保留兼容；新结果不会再写本地。
           const root = path.resolve(LEGACY_OBJECT_DATA_DIR);
           const filePath = path.resolve(root, found.objectKey);
-          if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '图片文件已失效' });
+          if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) return sendJSON(res, 404, { error: '生成结果文件已失效' });
           const stat = fs.statSync(filePath);
           res.writeHead(200, {
-            'Content-Type': found.contentType || 'image/png',
+            'Content-Type': found.contentType || 'application/octet-stream',
             'Content-Length': stat.size,
             'Cache-Control': 'private, max-age=31536000, immutable',
           });
           fs.createReadStream(filePath).on('error', error => { console.error('[generation-output/content]', error.message); res.destroy(error); }).pipe(res);
-        } else return sendJSON(res, 501, { error: '该图片使用的存储方式不受支持' });
+        } else return sendJSON(res, 501, { error: '该生成结果使用的存储方式不受支持' });
         return;
       } catch (e) {
         return sendJSON(res, 404, { error: e.message });
@@ -2058,12 +2999,48 @@ location.href = 'http://localhost:5173/';
     // POST /api/admin/login — 管理员登录
     if (pathname === "/api/admin/login" && req.method === "POST") {
       const body = await parseBody(req);
+      if (!body || typeof body.username !== "string" || !body.username.trim() || body.username.trim().length > 64
+        || body.username.length > 200
+        || typeof body.password !== "string" || body.password.length > 1024) {
+        return sendJSON(res, 400, { error: "请输入有效的用户名和密码" });
+      }
+      const attempt = postgresBilling
+        ? await postgresBilling.reserveAdminLoginAttempt(body.username)
+        : reserveAdminLoginAttempt(body.username);
+      if (attempt.retryAfter) {
+        return sendJSON(res, 429, { error: "登录尝试过于频繁，请稍后再试" }, { "Retry-After": String(attempt.retryAfter) });
+      }
       const account = postgresBilling
         ? await postgresBilling.getAdminAccount(body.username)
         : (body.username === admin.username ? admin : null);
-      const accountPasswordHash = account?.password_hash || account?.password;
-      if (account && (account.status || "active") === "active" && hashPassword(body.password || "") === accountPasswordHash) {
-        if (postgresBilling) await postgresBilling.touchAdminLogin(account.username);
+      let accountPasswordHash = account?.password_hash || account?.password;
+      if (account && (account.status || "active") === "active" && await verifyAdminPassword(body.password, accountPasswordHash)) {
+        if (postgresBilling) {
+          const touched = await postgresBilling.touchAdminLogin(account.username);
+          if (!touched || !await verifyAdminPassword(body.password, touched.password_hash)) {
+            return sendJSON(res, 401, { error: "用户名或密码错误" });
+          }
+          accountPasswordHash = touched.password_hash;
+        }
+        if (needsAdminPasswordRehash(accountPasswordHash)) {
+          const upgradedHash = await hashPassword(body.password);
+          if (postgresBilling) {
+            const upgraded = await postgresBilling.upgradeAdminPasswordHash(account.username, accountPasswordHash, upgradedHash);
+            if (!upgraded) {
+              const latest = await postgresBilling.getAdminAccount(account.username);
+              if (!latest || (latest.status || "active") !== "active" || !await verifyAdminPassword(body.password, latest.password_hash)) {
+                return sendJSON(res, 401, { error: "用户名或密码错误" });
+              }
+            }
+          } else if (admin.password === accountPasswordHash) {
+            admin.password = upgradedHash;
+            saveJSON(ADMIN_FILE, admin);
+          } else if (!await verifyAdminPassword(body.password, admin.password)) {
+            return sendJSON(res, 401, { error: "用户名或密码错误" });
+          }
+        }
+        if (postgresBilling) await postgresBilling.clearAdminLoginAttempts(body.username);
+        else adminLoginAttempts.delete(attempt.key);
         const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60; // 24h
         const token = signJWT({ sub: account.username, role: "admin", iat: Math.floor(Date.now() / 1000), exp });
         return sendJSON(res, 200, { token });
@@ -2120,6 +3097,20 @@ location.href = 'http://localhost:5173/';
       if (postgresBilling && !(await postgresBilling.isSessionActive(requestIdentity.sub, requestIdentity.sid))) {
         return sendJSON(res, 401, { error: "当前设备处于离线状态，请在本设备重新登录后接管在线状态" });
       }
+    }
+    const outputAssetMatch = pathname.match(/^\/api\/generation-tasks\/([^/]+)\/outputs\/(\d+)\/asset$/);
+    if (outputAssetMatch && req.method === 'POST') {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== 'customer') return sendJSON(res, 401, { error: '请先登录' });
+      if (!postgresBilling) return sendJSON(res, 503, { error: '计费数据库暂不可用' });
+      if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid))) return sendJSON(res, 401, { error: '当前登录设备已离线，请重新登录' });
+      try {
+        const body = await parseBody(req);
+        const task = await postgresBilling.getGenerationTask(identity.sub, outputAssetMatch[1]);
+        if (task.status !== 'succeeded' || !['video','audio'].includes(task.taskType)) return sendJSON(res, 409, { error: '媒体结果尚未完成或类型不支持' });
+        const asset = await postgresBilling.createAssetFromGeneratedOutput(identity.sub, task.id, Number(outputAssetMatch[2]), body.title || `${task.taskType === 'video' ? '生成视频' : '生成音频'}`, body.metadata || {});
+        return sendJSON(res, 200, asset);
+      } catch (error) { return sendJSON(res, 400, { error: error.message || '生成结果登记失败' }); }
     }
 
     // ===== 计费系统路由（客户 + 管理端计费）===== 
@@ -2181,7 +3172,7 @@ location.href = 'http://localhost:5173/';
       if (!payload) {
         return sendJSON(res, 401, { error: "未登录或登录已过期" });
       }
-      if (payload.role && payload.role !== "admin") {
+      if (payload.role !== "admin") {
         return sendJSON(res, 403, { error: "无管理员权限" });
       }
     }
@@ -2502,19 +3493,26 @@ location.href = 'http://localhost:5173/';
     // POST /api/admin/change-password — 修改密码
     if (pathname === "/api/admin/change-password" && req.method === "POST") {
       const body = await parseBody(req);
-      if (!body.newPassword || body.newPassword.length < 6) {
-        return sendJSON(res, 400, { error: "新密码至少 6 位" });
+      if (!body || typeof body.newPassword !== "string" || body.newPassword.length < 6 || body.newPassword.length > 1024) {
+        return sendJSON(res, 400, { error: "新密码长度必须为 6 至 1024 个字符" });
       }
-      if (body.newPassword !== body.confirmPassword) {
+      if (typeof body.confirmPassword !== "string" || body.newPassword !== body.confirmPassword) {
         return sendJSON(res, 400, { error: "两次输入的新密码不一致" });
       }
-      const oldHash = hashPassword(body.oldPassword || "");
-      const newHash = hashPassword(body.newPassword);
+      const oldPassword = typeof body.oldPassword === "string" ? body.oldPassword : "";
+      const newHash = await hashPassword(body.newPassword);
       if (postgresBilling) {
-        const changed = await postgresBilling.changeAdminPassword(requestIdentity?.sub || "", oldHash, newHash);
-        if (!changed) return sendJSON(res, 400, { error: "原密码错误" });
+        const username = requestIdentity?.sub || "";
+        const account = await postgresBilling.getAdminAccount(username);
+        if (!account || account.status !== "active" || !await verifyAdminPassword(oldPassword, account.password_hash)) {
+          return sendJSON(res, 400, { error: "原密码错误" });
+        }
+        const changed = await postgresBilling.changeAdminPassword(username, account.password_hash, newHash);
+        if (!changed) return sendJSON(res, 409, { error: "密码已在其他操作中更新，请重新验证后重试" });
       } else {
-        if (oldHash !== admin.password) return sendJSON(res, 400, { error: "原密码错误" });
+        const currentHash = admin.password;
+        if (!await verifyAdminPassword(oldPassword, currentHash)) return sendJSON(res, 400, { error: "原密码错误" });
+        if (admin.password !== currentHash) return sendJSON(res, 409, { error: "密码已在其他操作中更新，请重新验证后重试" });
         admin.password = newHash;
         saveJSON(ADMIN_FILE, admin);
       }
@@ -2530,7 +3528,7 @@ location.href = 'http://localhost:5173/';
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, API_HOST, () => {
   // 0046：每 30 秒回收超时在途任务并释放过期预扣额度；发现守恒异常自动写告警。
   if (postgresBilling) {
     const fileRecoveryWorkerId = `${os.hostname()}:${process.pid}`;
@@ -2560,7 +3558,7 @@ server.listen(PORT, () => {
     (async () => {
       try {
         const recoverable = await postgresBilling.listRecoverableTasks(50);
-        for (const { task, appwriteUserId } of recoverable) {
+        for (const { task, appwriteUserId, attemptId, providerTaskId } of recoverable) {
           const catalogModelId = Number(task.parameters?.__qingyuCatalogModelId) || null;
           const match = await findChannelForModel(catalogModelId ? `catalog:${catalogModelId}` : (task.model || ""));
           if (!match) { console.error("[recover] no channel for task", task.id, task.model); continue; }
@@ -2568,7 +3566,11 @@ server.listen(PORT, () => {
           if (match.catalogModelId) bodyObj.model = match.model;
           const identity = { sub: appwriteUserId, role: "customer" };
           // 串行派发，避免启动瞬间打满上游；每个任务内部独立 try/catch。
-          setImmediate(() => runGenerationTaskWorker(identity, task, match.channel, bodyObj));
+          if (['video','audio'].includes(task.taskType)) {
+            setImmediate(() => runGenerationTaskMediaWorker(identity, task, match.channel, bodyObj, { attemptId, providerTaskId }));
+          } else {
+            setImmediate(() => runGenerationTaskWorker(identity, task, match.channel, bodyObj));
+          }
         }
         if (recoverable.length) console.log("[recover] resumed", recoverable.length, "pending tasks");
       } catch (e) { console.error("[recover] failed", e.message); }

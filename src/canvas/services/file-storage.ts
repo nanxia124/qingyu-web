@@ -3,11 +3,13 @@ import { nanoid } from "nanoid";
 
 import { withLocalProxy } from "@canvas/stores/use-config-store";
 
-export type UploadSourceKind = "generated" | "reference_upload" | "manual_upload" | "edited";
+export type UploadSourceKind = "generated" | "reference_upload" | "manual_upload" | "edited" | "derived";
 export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
 export type MediaUploadOptions = {
     signal?: AbortSignal;
     sourceKind?: UploadSourceKind;
+    sourceFileId?: string;
+    previewVariant?: "thumbnail" | "video-cover";
     uploadBatchId?: string;
     originalFilename?: string;
     width?: number;
@@ -21,7 +23,6 @@ export type MediaUploadOptions = {
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const uploadSessionStore = localforage.createInstance({ name: "infinite-canvas", storeName: "upload_sessions" });
 const objectUrls = new Map<string, string>();
-const LARGE_UPLOAD_THRESHOLD = 32 * 1024 * 1024;
 
 function assetIdFromStorageKey(storageKey: string) {
     const separator = storageKey.indexOf(":");
@@ -43,20 +44,21 @@ function normalizedSourceKind(options: MediaUploadOptions): UploadSourceKind {
     const source = String(options.sourceKind || options.assetMetadata?.sourceKind || options.assetMetadata?.source || "");
     if (["generated", "image_generation", "video_generation", "audio_generation", "text_generation"].includes(source)) return "generated";
     if (["reference_upload", "reference"].includes(source)) return "reference_upload";
+    if (source === "derived") return "derived";
     if (source === "edited") return "edited";
     return "manual_upload";
 }
 
-async function uploadLargeBlob(blob: Blob, title: string, metadata: Record<string, unknown>, signal?: AbortSignal, uploadBatchId?: string) {
+async function uploadViaSession(blob: Blob, title: string, metadata: Record<string, unknown>, signal?: AbortSignal, uploadBatchId?: string) {
     const fingerprintSize = Math.min(blob.size, 1024 * 1024);
     const firstChunk = await blob.slice(0, fingerprintSize).arrayBuffer();
     const lastChunk = await blob.slice(Math.max(0, blob.size - fingerprintSize)).arrayBuffer();
     const fingerprint = await crypto.subtle.digest("SHA-256", await new Blob([firstChunk, lastChunk]).arrayBuffer());
     const fingerprintText = Array.from(new Uint8Array(fingerprint), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const fileIdentity = `${title}:${blob.type}:${blob.size}:${typeof File !== "undefined" && blob instanceof File ? blob.lastModified : 0}:${metadata.editId || ""}:${metadata.sourceFileId || ""}:${metadata.writeIdempotencyKey || ""}:${fingerprintText}`;
+    const fileIdentity = `${title}:${blob.type}:${blob.size}:${typeof File !== "undefined" && blob instanceof File ? blob.lastModified : 0}:${metadata.sourceKind || ""}:${metadata.editId || ""}:${metadata.sourceFileId || ""}:${metadata.previewVariant || ""}:${metadata.writeIdempotencyKey || ""}:${fingerprintText}`;
     const sessionKey = `session:${btoa(unescape(encodeURIComponent(fileIdentity)))}`;
     let sessionId = await uploadSessionStore.getItem<string>(sessionKey).catch(() => null);
-    let session: { sessionId?: string; fileId?: string; assetId?: string; partSizeBytes?: number; status?: string; parts?: Array<{ partNumber: number; sizeBytes: number }> };
+    let session: { sessionId?: string; fileId?: string; assetId?: string; sourceKind?: UploadSourceKind; partSizeBytes?: number; status?: string; parts?: Array<{ partNumber: number; sizeBytes: number }> };
     if (sessionId) {
         const response = await fetch(`/api/assets/upload-sessions/${sessionId}`, { cache: "no-store", signal, credentials: "include" });
         if (!response.ok) {
@@ -64,9 +66,9 @@ async function uploadLargeBlob(blob: Blob, title: string, metadata: Record<strin
             sessionId = null;
         } else {
             session = await response.json();
-            if (session.status === "completed" && session.assetId) {
+            if (session.status === "completed" && (session.assetId || session.sourceKind === "derived")) {
                 await uploadSessionStore.removeItem(sessionKey).catch(() => undefined);
-                return session.assetId;
+                return session.sourceKind === "derived" ? session.fileId || "" : session.assetId || "";
             }
             if (!["uploading", "completing"].includes(session.status || "")) {
                 await uploadSessionStore.removeItem(sessionKey).catch(() => undefined);
@@ -91,6 +93,7 @@ async function uploadLargeBlob(blob: Blob, title: string, metadata: Record<strin
                 sourceGenerationTaskId: metadata.sourceGenerationTaskId,
                 editId: metadata.editId,
                 sourceFileId: metadata.sourceFileId,
+                previewVariant: metadata.previewVariant,
                 writeIdempotencyKey: metadata.writeIdempotencyKey,
                 uploadBatchId,
             }),
@@ -143,9 +146,15 @@ async function uploadLargeBlob(blob: Blob, title: string, metadata: Record<strin
 }
 
 async function readRemoteFile(storageKey: string, signal?: AbortSignal) {
+    const generatedOutput = storageKey.match(/^generation:([0-9a-f-]{36}):(\d+)$/i);
     const assetId = assetIdFromStorageKey(storageKey);
-    if (!assetId) return null;
-    const response = await fetch(`/api/assets/${assetId}/content`, { cache: "no-store", signal, credentials: "include" });
+    if (!generatedOutput && !assetId) return null;
+    const contentUrl = generatedOutput
+        ? `/api/generation-tasks/${encodeURIComponent(generatedOutput[1])}/outputs/${generatedOutput[2]}/content`
+        : storageKey.startsWith("file:")
+            ? `/api/files/${assetId}/content`
+            : `/api/assets/${assetId}/content`;
+    const response = await fetch(contentUrl, { cache: "no-store", signal, credentials: "include" });
     if (!response.ok) throw new Error(await readResponseError(response));
     return response.blob();
 }
@@ -172,36 +181,24 @@ export async function uploadMediaFile(input: string | Blob, prefix = "file", opt
     const extension = blob.type.split("/")[1]?.split(";")[0]?.replace(/[^a-z0-9.+-]/gi, "") || "bin";
     const inputFilename = typeof File !== "undefined" && input instanceof File ? input.name : "";
     const originalFilename = (options.originalFilename?.trim() || inputFilename || `${prefix}-${nanoid()}.${extension}`).slice(0, 240);
+    const sourceKind = normalizedSourceKind(options);
+    if (sourceKind === "derived" && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(options.sourceFileId || "")
+        || !options.previewVariant || !["thumbnail", "video-cover"].includes(options.previewVariant) || !blob.type.startsWith("image/"))) {
+        throw new Error("预览文件必须是图片，并提供有效的原文件编号和预览规格");
+    }
     const metadata = {
         ...(options.assetMetadata || {}),
-        sourceKind: normalizedSourceKind(options),
+        sourceKind,
+        ...(sourceKind === "derived" ? { sourceFileId: options.sourceFileId, previewVariant: options.previewVariant } : {}),
+        ...(options.writeIdempotencyKey ? { writeIdempotencyKey: options.writeIdempotencyKey } : {}),
         ...(options.width ? { width: options.width } : {}),
         ...(options.height ? { height: options.height } : {}),
         ...(options.durationMs !== undefined ? { durationMs: options.durationMs } : {}),
         ...(blob.type.startsWith("text/") ? { completeness: options.completeness || "complete" } : {}),
     };
-    let assetId: string;
-    if (blob.size >= LARGE_UPLOAD_THRESHOLD) {
-        assetId = await uploadLargeBlob(blob, originalFilename, metadata, options.signal, options.uploadBatchId);
-    } else {
-    const response = await fetch("/api/assets/upload", {
-        method: "POST",
-        headers: {
-            "Content-Type": blob.type || "application/octet-stream",
-            "X-Asset-Name": encodeURIComponent(originalFilename),
-            "X-Asset-Metadata": encodeURIComponent(JSON.stringify({ ...(options.assetMetadata || {}), ...metadata, uploadBatchId: options.uploadBatchId })),
-        },
-        body: blob,
-        signal: options.signal,
-        credentials: "include",
-    });
-    if (!response.ok) throw new Error(await readResponseError(response));
-    const asset = await response.json() as { id?: string };
-    if (!asset.id) throw new Error("云端没有返回文件编号，无法确认保存结果");
-    assetId = asset.id;
-    }
+    const assetId = await uploadViaSession(blob, originalFilename, metadata, options.signal, options.uploadBatchId);
 
-    const storageKey = `${prefix}:${assetId}`;
+    const storageKey = sourceKind === "derived" ? `file:${assetId}` : `${prefix}:${assetId}`;
     const url = await cacheBlob(storageKey, blob);
     const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
     return {

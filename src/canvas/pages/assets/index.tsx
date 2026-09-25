@@ -39,6 +39,8 @@ export default function AssetsPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
+    const restoreAsset = useAssetStore((state) => state.restoreAsset);
+    const [showRecycleBin, setShowRecycleBin] = useState(false);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
     const [page, setPage] = useState(1);
@@ -53,7 +55,7 @@ export default function AssetsPage() {
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
-    const validAssets = assets;
+    const validAssets = assets.filter((asset) => Boolean(asset.deletedAt) === showRecycleBin);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -186,6 +188,7 @@ export default function AssetsPage() {
                 delete payload.id;
                 delete payload.createdAt;
                 delete payload.updatedAt;
+                delete payload.deletedAt;
                 addAsset(payload as Parameters<typeof addAsset>[0]);
             });
             message.success(t("assets.imported", { count: importedAssets.length }));
@@ -199,8 +202,21 @@ export default function AssetsPage() {
     const confirmDelete = () => {
         if (!deletingAsset) return;
         removeAsset(deletingAsset.id);
-        message.success(t("assets.deleted"));
+        message.success(t("assets.movedToRecycleBin"));
         setDeletingAsset(null);
+    };
+
+    const confirmRestore = (asset: Asset) => {
+        Modal.confirm({
+            title: t("assets.restore"),
+            content: t("assets.restoreConfirm", { name: asset.title }),
+            okText: t("assets.restore"),
+            cancelText: t("common.cancel"),
+            onOk: () => {
+                restoreAsset(asset.id);
+                message.success(t("assets.restored"));
+            },
+        });
     };
 
     return (
@@ -245,7 +261,10 @@ export default function AssetsPage() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="flex flex-wrap gap-4">
+                        <div className="flex flex-wrap gap-4">
+                                <button type="button" className="cursor-pointer text-sm font-medium text-zinc-700 underline-offset-4 hover:underline dark:text-zinc-300" onClick={() => { setPage(1); setShowRecycleBin((value) => !value); }}>
+                                    {showRecycleBin ? t("assets.backToAssets") : t("assets.recycleBin")}
+                                </button>
                                 <button
                                     type="button"
                                     className="cursor-pointer text-sm font-medium text-zinc-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-zinc-300"
@@ -275,7 +294,7 @@ export default function AssetsPage() {
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} onRestore={() => confirmRestore(asset)} inRecycleBin={showRecycleBin} />
                         ))}
                     </div>
 
@@ -407,14 +426,14 @@ export default function AssetsPage() {
 
             <input ref={assetInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importAssetZip(event.target.files?.[0])} />
 
-            <Modal title={t("assets.deleteTitle")} open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
+            <Modal title={t("assets.deleteTitle")} open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText={t("assets.moveToRecycleBin")} cancelText={t("common.cancel")}>
                 {t("assets.deleteConfirm", { name: deletingAsset?.title })}
             </Modal>
         </div>
     );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
+function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete, onRestore, inRecycleBin }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void; onRestore: () => void; inRecycleBin: boolean }) {
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const cover = assetCoverUrl(asset);
@@ -462,7 +481,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                 <Button size="small" onClick={onOpen}>
                     {t("common.view")}
                 </Button>
-                {asset.kind === "text" || asset.kind === "image" ? (
+                {!inRecycleBin && (asset.kind === "text" || asset.kind === "image") ? (
                     <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
                         {t("common.edit")}
                     </Button>
@@ -477,9 +496,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                         {t("common.download")}
                     </Button>
                 ) : null}
-                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>
-                    {t("common.delete")}
-                </Button>
+                {inRecycleBin ? <Button size="small" onClick={onRestore}>{t("assets.restore")}</Button> : <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>{t("assets.moveToRecycleBin")}</Button>}
             </div>
         </Card>
     );

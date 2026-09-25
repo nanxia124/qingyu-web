@@ -80,8 +80,8 @@ export const useBillingStore = create<BillingState>((set) => ({
             durationDays: 0,
             monthlyQuota: 0,
             level: "free",
-            description: "注册即用",
-            features: ["每日 20 次对话", "3 个画布", "基础模型"],
+            description: "注册一次赠送50积分，用完需订阅",
+            features: ["一次性赠送50积分", "积分用完后需订阅"],
           },
           {
             id: "pro",

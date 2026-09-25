@@ -14,14 +14,15 @@ const credentials = {
   COS_SECRET_KEY: 'test-secret-key',
 };
 
-function mockCos(urlProvider = () => 'https://example.invalid/object') {
-  const calls = { put: [], delete: [], sign: [], multipartInit: [], multipartPart: [], multipartComplete: [], multipartAbort: [] };
+function mockCos(urlProvider = () => 'https://example.invalid/object', options = {}) {
+  const calls = { put: [], delete: [], head: [], sign: [], multipartInit: [], multipartPart: [], multipartPartBodies: [], multipartComplete: [], multipartAbort: [] };
   const client = {
     putObject(params, callback) {
       calls.put.push(params);
       (async () => {
         const chunks = [];
         for await (const chunk of params.Body) chunks.push(chunk);
+        if (options.failPutResponse) { callback(new Error('模拟 COS 写入完成后响应丢失')); return; }
         callback(null, { VersionId: 'cos-version-7', ETag: 'etag-7', content: Buffer.concat(chunks) });
       })().catch(callback);
     },
@@ -39,15 +40,26 @@ function mockCos(urlProvider = () => 'https://example.invalid/object') {
     },
     multipartUpload(params, callback) {
       calls.multipartPart.push(params);
+      if (options.failMultipartPart || (options.failMultipartPartCount > 0 && options.failMultipartPartCount-- > 0)) { callback(new Error('模拟 COS 分片上传失败')); return; }
       (async () => {
         const chunks = [];
         for await (const chunk of params.Body) chunks.push(chunk);
-        callback(null, { ETag: `etag-${params.PartNumber}`, body: Buffer.concat(chunks) });
+        const body = Buffer.concat(chunks);
+        calls.multipartPartBodies.push(body);
+        callback(null, { ETag: `etag-${params.PartNumber}`, body });
       })().catch(callback);
     },
     multipartComplete(params, callback) {
       calls.multipartComplete.push(params);
+      if (options.failMultipartCompleteResponse) { callback(new Error('模拟 COS 完成后响应丢失')); return; }
       callback(null, { ETag: 'complete-etag', VersionId: 'complete-version' });
+    },
+    headObject(params, callback) {
+      calls.head.push(params);
+      const size = calls.multipartPartBodies.reduce((total, body) => total + body.length, 0);
+      if (options.failMultipartCompleteResponse && calls.multipartComplete.length) {
+        callback(null, { ContentLength: size, VersionId: 'head-version', ContentType: 'image/png' });
+      } else callback(new Error('对象不存在'));
     },
     multipartAbort(params, callback) {
       calls.multipartAbort.push(params);
@@ -70,6 +82,111 @@ test('COS 上传流：按测试环境存储桶写入并返回校验值和版本�
   assert.equal(calls.put[0].Region, 'ap-singapore');
   assert.equal(calls.put[0].ContentLength, body.length);
   assert.equal(calls.put[0].Bucket, credentials.COS_BUCKET_TEST);
+});
+
+test('COS 分段上传接受小于1MB的单段文件作为最后一段', async () => {
+  const { calls, client } = mockCos();
+  const store = createObjectStore({ env: credentials, client });
+  const body = Buffer.from('small text or reference image');
+  const initialized = await store.multipartInit({ key: 'workspaces/w/uploads/other/small.bin', contentType: 'application/octet-stream' });
+  const part = await store.multipartUploadPart({ key: 'workspaces/w/uploads/other/small.bin', uploadId: initialized.uploadId, partNumber: 1, body: Readable.from([body]), contentLength: body.length });
+  const completed = await store.multipartComplete({ key: 'workspaces/w/uploads/other/small.bin', uploadId: initialized.uploadId, parts: [{ partNumber: 1, etag: part.etag, sizeBytes: part.sizeBytes }] });
+  assert.equal(part.sizeBytes, body.length);
+  assert.equal(calls.multipartPartBodies.length, 1);
+  assert.deepEqual(calls.multipartPartBodies[0], body);
+  assert.equal(completed.storageVersionId, 'complete-version');
+});
+
+test('生图上传结果未知时保留 COS 对象，留给恢复作业检查', async () => {
+  const { calls, client } = mockCos(() => 'https://example.invalid/object', { failPutResponse: true });
+  const store = createObjectStore({ env: credentials, client });
+  await assert.rejects(store.putObject({ key: 'workspaces/w/generated/images/result.png',
+    buffer: Buffer.from('generated'), contentType: 'image/png', preserveOnError: true }), /响应丢失/);
+  assert.equal(calls.delete.length, 0);
+});
+
+test('COS 未知大小的小文件仍用普通上传并返回完整校验值', async () => {
+  const { calls, client } = mockCos();
+  const store = createObjectStore({ env: credentials, client });
+  const body = Buffer.from('未知长度的小文件');
+  const result = await store.putObject({ key: 'workspaces/w/generated/images/small.png', body: Readable.from([body]), contentType: 'image/png' });
+  assert.equal(calls.put.length, 1);
+  assert.equal(calls.multipartInit.length, 0);
+  assert.equal(calls.put[0].ContentLength, body.length);
+  assert.equal(result.sizeBytes, body.length);
+  assert.equal(result.sha256, createHash('sha256').update(body).digest('hex'));
+});
+
+test('COS 未知大小的大文件按有界分片上传，超限前不拼成整份文件', async () => {
+  const { calls, client } = mockCos();
+  const store = createObjectStore({ env: credentials, client });
+  const partBytes = 5 * 1024 * 1024;
+  const expectedChunks = [Buffer.alloc(partBytes, 0x31), Buffer.alloc(1024 * 1024 + 17, 0x32)];
+  const expected = Buffer.concat(expectedChunks);
+  const body = Readable.from((async function* () {
+    for (const chunk of expectedChunks) {
+      for (let offset = 0; offset < chunk.length; offset += 64 * 1024) yield chunk.subarray(offset, offset + 64 * 1024);
+    }
+  })());
+
+  const result = await store.putObject({
+    key: 'workspaces/w/generated/images/large.png', body, contentType: 'image/png', maxBytes: expected.length,
+  });
+
+  assert.equal(calls.multipartInit.length, 1);
+  assert.equal(calls.multipartPart.length, 2);
+  assert.deepEqual(calls.multipartPart.map(part => part.ContentLength), [partBytes, 1024 * 1024 + 17]);
+  assert.equal(calls.multipartComplete.length, 1);
+  assert.deepEqual(Buffer.concat(calls.multipartPartBodies), expected);
+  assert.equal(result.sizeBytes, expected.length);
+  assert.equal(result.sha256, createHash('sha256').update(expected).digest('hex'));
+});
+
+test('COS 未知大小的数据流超过上限时拒绝且不保留对象', async () => {
+  const { calls, client } = mockCos();
+  const store = createObjectStore({ env: credentials, client });
+  const body = Readable.from((async function* () {
+    yield Buffer.alloc(8, 0x31);
+    yield Buffer.alloc(8, 0x32);
+  })());
+  await assert.rejects(store.putObject({ key: 'too-large.bin', body, maxBytes: 12 }), /超过允许的大小限制/);
+  assert.equal(calls.put.length, 0);
+  assert.equal(calls.multipartInit.length, 0);
+  assert.equal(calls.delete.length, 0);
+});
+
+test('COS 分片上传失败时重试三次并中止未完成的会话', async () => {
+  const { calls, client } = mockCos(() => 'https://example.invalid/object', { failMultipartPart: true });
+  const store = createObjectStore({ env: credentials, client });
+  const body = Readable.from((async function* () {
+    yield Buffer.alloc(5 * 1024 * 1024, 0x41);
+    yield Buffer.from('tail');
+  })());
+  await assert.rejects(store.putObject({ key: 'workspaces/w/generated/images/fail.png', body }), /模拟 COS 分片上传失败/);
+  assert.equal(calls.multipartInit.length, 1);
+  assert.equal(calls.multipartPart.length, 3);
+  assert.equal(calls.multipartAbort.length, 1);
+  assert.equal(calls.delete.length, 0);
+});
+
+test('COS 单个分片瞬时失败时复用相同分片重试', async () => {
+  const { calls, client } = mockCos(() => 'https://example.invalid/object', { failMultipartPartCount: 1 });
+  const store = createObjectStore({ env: credentials, client });
+  const body = Buffer.alloc(5 * 1024 * 1024, 0x41);
+  const result = await store.putObject({ key: 'workspaces/w/generated/images/retry.png', body: Readable.from([body]) });
+  assert.equal(calls.multipartPart.length, 2);
+  assert.deepEqual(calls.multipartPart.map(part => part.PartNumber), [1, 1]);
+  assert.equal(result.sizeBytes, body.length);
+});
+
+test('COS 完成对象但响应丢失时按对象大小确认成功，不删除结果', async () => {
+  const { calls, client } = mockCos(() => 'https://example.invalid/object', { failMultipartCompleteResponse: true });
+  const store = createObjectStore({ env: credentials, client });
+  const body = Buffer.alloc(5 * 1024 * 1024, 0x52);
+  const result = await store.putObject({ key: 'workspaces/w/generated/images/complete.png', body: Readable.from([body]), contentType: 'image/png' });
+  assert.equal(result.sizeBytes, body.length);
+  assert.equal(calls.head.length, 1);
+  assert.equal(calls.delete.length, 0);
 });
 
 test('COS 配置按环境选择独立存储桶', async () => {

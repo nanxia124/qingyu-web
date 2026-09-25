@@ -32,6 +32,7 @@ const override={
       historyEmpty: "Пока нет генераций",
       historyLoading: "Загрузка…",
       statusRunning: "Генерация",
+      statusSaving: "Сохранение результата…",
       statusDone: "Завершено",
       statusFailed: "Ошибка",
       statusRefunded: "Возвращено",

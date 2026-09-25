@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, type AiTextMessage } from "@canvas/services/api/image";
 import { imageToDataUrl } from "@canvas/services/image-storage";
+import { uploadMediaFile } from "@canvas/services/file-storage";
+import { checksumTextAsset } from "@canvas/stores/use-asset-store";
 import { requestVideoGeneration, storeGeneratedVideo } from "@canvas/services/api/video";
 import { decodeChannelModel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@canvas/stores/use-config-store";
 import { buildGenerationConfig } from "@canvas/lib/canvas/canvas-generation-helpers";
@@ -81,7 +83,16 @@ export function usePluginHost(params: PluginHostParams) {
                 ensureReady(config);
                 const messages: AiTextMessage[] = [...(options?.system ? [{ role: "system" as const, content: options.system }] : []), { role: "user" as const, content: prompt }];
                 const text = await requestImageQuestion(config, messages, (delta) => options?.onDelta?.(delta), { signal: options?.signal });
-                return { text };
+                if (!text.trim()) throw new Error(t("canvas.projectPage.generationFailed"));
+                const textChecksum = await checksumTextAsset(text);
+                const storedText = await uploadMediaFile(new Blob([text], { type: "text/plain;charset=utf-8" }), "text", {
+                    sourceKind: "generated",
+                    originalFilename: `plugin-text-${textChecksum.slice(0, 16)}.txt`,
+                    completeness: "complete",
+                    assetMetadata: { source: "plugin-text-generation", prompt, model: config.model, reasoningEffort: config.reasoningEffort },
+                    writeIdempotencyKey: `plugin-text:${textChecksum}`,
+                });
+                return { text, storageKey: storedText.storageKey };
             },
             // List configured models for a capability; labels use the model name without the channel prefix.
             listModels: (capability) => selectableModelsByCapability(effectiveConfig, capability as ModelCapability | undefined).map((value) => ({ value, label: decodeChannelModel(value)?.model || value })),

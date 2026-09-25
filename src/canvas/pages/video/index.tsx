@@ -24,7 +24,6 @@ import { useThemeStore } from "@canvas/stores/use-theme-store";
 import type { ReferenceImage } from "@canvas/types/image";
 import i18n from "@canvas/i18n";
 import { useAuthStore } from "@/stores/useAuthStore";
-import { api } from "@/lib/api";
 
 type GeneratedVideo = {
     id: string;
@@ -337,10 +336,21 @@ export default function VideoPage() {
     const refreshLogs = async (resumePending = true) => {
         const localLogs = await readStoredLogs();
         const localVideoKeys = new Set(localLogs.map((log) => log.video?.storageKey).filter((key): key is string => Boolean(key)));
-        const remoteLogs = await readRemoteVideoLogs().catch(() => []);
+        const remoteLogs = await readRemoteVideoLogs().catch((error) => {
+            console.error("[video-workbench] failed to load remote video records", error);
+            message.error(error instanceof Error ? `读取云端视频记录失败：${error.message}` : "读取云端视频记录失败，请稍后重试");
+            return [];
+        });
         const nextLogs = [...localLogs, ...remoteLogs.filter((log) => !localVideoKeys.has(log.video?.storageKey || ""))]
             .sort((left, right) => right.createdAt - left.createdAt);
         setLogs(nextLogs);
+        setResults((current) => {
+            if (current.length) return current;
+            const latestSuccessfulLog = nextLogs.find((log) => log.status === "success" && log.video);
+            return latestSuccessfulLog?.video
+                ? [{ id: latestSuccessfulLog.video.id, status: "success", video: latestSuccessfulLog.video }]
+                : current;
+        });
         if (resumePending) resumePendingLogs(nextLogs);
         return nextLogs;
     };
@@ -1006,9 +1016,22 @@ async function readStoredLogs() {
 }
 
 async function readRemoteVideoLogs(): Promise<GenerationLog[]> {
-    if (typeof window === "undefined" || !localStorage.getItem("billing_token_user")) return [];
-    const assets = await api.get<Array<{ id: string; name: string; type: string; createdAt: string; metadata?: Record<string, unknown> }>>("/assets", { type: "video" });
-    return Promise.all(assets.filter((asset) => asset.type === "video" && asset.metadata?.sourceKind === "generated").map(async (asset) => {
+    if (typeof window === "undefined") return [];
+    if (!localStorage.getItem("billing_token_user")) throw new Error("这个浏览器没有本地开发账号登录状态，请先重新登录本地开发环境");
+    const assets = await fetchCustomerApi<Array<{ id: string; name: string; type: string; createdAt: string; metadata?: Record<string, unknown> }>>("/assets?type=video").catch(() => []);
+    const generatedAssets = assets.filter((asset) => asset.type === "video" && asset.metadata?.sourceKind === "generated");
+    const tasks = await fetchCustomerApi<Array<{
+        id: string;
+        status: string;
+        taskType: string;
+        model?: string;
+        prompt?: string;
+        parameters?: Record<string, unknown>;
+        outputs?: Array<{ type?: string; index?: number; sizeBytes?: number; mimeType?: string; width?: number; height?: number; durationMs?: number }>;
+        createdAt: string;
+    }>>("/generation-tasks");
+    const assetTaskIds = new Set(generatedAssets.map((asset) => String(asset.metadata?.sourceGenerationTaskId || "")).filter(Boolean));
+    const assetLogs = await Promise.all(generatedAssets.map(async (asset) => {
         const metadata = asset.metadata || {};
         const createdAt = Date.parse(asset.createdAt) || Date.now();
         const model = String(metadata.model || "");
@@ -1057,10 +1080,76 @@ async function readRemoteVideoLogs(): Promise<GenerationLog[]> {
             },
         });
     }));
+    const taskLogs = await Promise.all(tasks
+        .filter((task) => task.taskType === "video" && task.status === "succeeded" && !assetTaskIds.has(task.id))
+        .flatMap((task) => (task.outputs || [])
+            .filter((output) => output.type === "video")
+            .map(async (output) => {
+                const metadata = task.parameters || {};
+                const outputIndex = Number(output.index || 0);
+                const createdAt = Date.parse(task.createdAt) || Date.now();
+                const storageKey = `task-output:${task.id}:${outputIndex}`;
+                const references = Array.isArray(metadata.referenceStorageKeys)
+                    ? metadata.referenceStorageKeys.filter((key): key is string => typeof key === "string" && /^(image|video|audio):/.test(key)).map((key, index) => ({
+                        id: `${task.id}-reference-${index}`,
+                        name: `reference-${index + 1}`,
+                        type: "image/png",
+                        dataUrl: "",
+                        storageKey: key,
+                    }))
+                    : [];
+                const model = String(task.model || "");
+                const seconds = String(metadata.duration || "");
+                const resolution = String(metadata.resolution || "");
+                return normalizeLog({
+                    id: `task-${task.id}-${outputIndex}`,
+                    createdAt,
+                    title: task.prompt || model,
+                    prompt: task.prompt || "",
+                    time: new Date(createdAt).toLocaleString(i18n.resolvedLanguage, { hour12: false }),
+                    model,
+                    config: {
+                        model,
+                        videoModel: model,
+                        size: String(metadata.ratio || ""),
+                        vquality: resolution,
+                        videoSeconds: seconds,
+                        videoGenerateAudio: String(metadata.generateAudio ?? true),
+                        videoWatermark: String(metadata.watermark ?? false),
+                        videoMode: String(metadata.mode || (references.length ? "reference" : "frames")),
+                    },
+                    references,
+                    durationMs: Number(output.durationMs) || 0,
+                    size: String(metadata.ratio || ""),
+                    resolution,
+                    seconds,
+                    status: "success",
+                    video: {
+                        id: storageKey,
+                        url: `/api/generation-tasks/${encodeURIComponent(task.id)}/outputs/${outputIndex}/content`,
+                        storageKey,
+                        durationMs: Number(output.durationMs) || 0,
+                        width: Number(output.width) || 1280,
+                        height: Number(output.height) || 720,
+                        bytes: Number(output.sizeBytes) || 0,
+                        mimeType: String(output.mimeType || "video/mp4"),
+                    },
+                });
+            })));
+    return [...assetLogs, ...taskLogs];
+}
+
+async function fetchCustomerApi<T>(path: string): Promise<T> {
+    const response = await fetch(`/api${path}`, { credentials: "include", cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(typeof payload.error === "string" ? payload.error : `请求失败 (${response.status})`);
+    }
+    return payload as T;
 }
 
 async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog> {
-    const video = log.video?.storageKey ? { ...log.video, url: await resolveMediaUrl(log.video.storageKey, log.video.url) } : log.video;
+    const video = log.video?.storageKey?.startsWith("video:") ? { ...log.video, url: await resolveMediaUrl(log.video.storageKey, log.video.url) } : log.video;
     const references = await Promise.all(
         (log.references || []).map(async (item) => {
             void ensureImagePreview(item.storageKey);

@@ -1,8 +1,17 @@
 import { Pool } from "pg";
 import crypto from "node:crypto";
+import { isAdminPasswordHash } from './admin-password.mjs';
+import { isAssetPreviewVariant } from './asset-upload.mjs';
+
+// 模块载入时就检查，数据库测试中后续直接创建 Pool 也不能使用远程 PGHOST。
+const postgresHost = process.env.PGHOST || (process.env.NODE_ENV === 'production' ? '172.19.0.2' : '127.0.0.1');
+if (process.env.NODE_ENV !== 'production'
+  && !['localhost', '127.0.0.1', '::1', 'db', 'qingyu-local-db', 'host.docker.internal'].includes(postgresHost)) {
+  throw new Error('PGHOST 只允许本机或本地数据库容器，本地开发和测试禁止连接远程数据库');
+}
 
 const DEFAULT_PLANS = [
-  { code: "free", name: "免费版", priceCents: 0, durationDays: 0, monthlyQuota: 0, level: "free", description: "注册即用", features: ["每日 20 次对话", "3 个画布", "基础模型"] },
+  { code: "free", name: "免费版", priceCents: 0, durationDays: 0, monthlyQuota: 0, level: "free", description: "注册一次赠送50积分，用完需订阅", features: ["一次性赠送50积分", "积分用完后需订阅"] },
   { code: "pro", name: "Pro", priceCents: 2900, durationDays: 30, monthlyQuota: 50000, level: "pro", description: "个人创作者首选", features: ["每月 5 万积分", "全部模型", "50 个画布", "优先响应"] },
   { code: "team", name: "团队版", priceCents: 9900, durationDays: 30, monthlyQuota: 300000, level: "team", description: "多人协作", features: ["每月 30 万积分", "无限画布", "团队协作", "专属支持"] },
 ];
@@ -165,12 +174,12 @@ function collectCanvasAssetUses(value, path = 'metadata', uses = []) {
   return uses;
 }
 
-export async function createPostgresBillingStore() {
+export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
   if (process.env.NODE_ENV === 'production' && !API_KEY_ENCRYPTION_SECRET) {
     throw new Error('[security] 生产环境必须配置独立的 API_KEY_ENCRYPTION_SECRET');
   }
-  const pool = new Pool({
-    host: process.env.PGHOST || "172.19.0.2",
+  const pool = injectedPool || new Pool({
+    host: postgresHost,
     port: Number(process.env.PGPORT || 5432),
     database: process.env.PGDATABASE || "qingyu_business",
     user: process.env.PGUSER || "user",
@@ -194,7 +203,7 @@ export async function createPostgresBillingStore() {
   async function ensureAdminAccount(username, passwordHash) {
     const cleanUsername = String(username || '').trim().slice(0, 64);
     const cleanHash = String(passwordHash || '').trim();
-    if (!cleanUsername || !/^[a-f0-9]{64}$/i.test(cleanHash)) throw new Error('管理员账号初始化参数无效');
+    if (!cleanUsername || !isAdminPasswordHash(cleanHash)) throw new Error('管理员账号初始化参数无效');
     await pool.query(`insert into app.admin_accounts(username,password_hash)
       values($1,$2) on conflict(username) do nothing`, [cleanUsername, cleanHash]);
     return getAdminAccount(cleanUsername);
@@ -211,7 +220,74 @@ export async function createPostgresBillingStore() {
   }
 
   async function changeAdminPassword(username, oldPasswordHash, newPasswordHash) {
+    if (!isAdminPasswordHash(oldPasswordHash) || !isAdminPasswordHash(newPasswordHash)) throw new Error('管理员密码记录格式无效');
     const result = await pool.query(`update app.admin_accounts set password_hash=$3,updated_at=now() where username=$1 and password_hash=$2 and status='active' returning username`, [String(username || '').trim().slice(0, 64), String(oldPasswordHash || ''), String(newPasswordHash || '')]);
+    return result.rowCount === 1;
+  }
+
+  async function upgradeAdminPasswordHash(username, expectedPasswordHash, newPasswordHash) {
+    if (!isAdminPasswordHash(expectedPasswordHash) || !isAdminPasswordHash(newPasswordHash)) throw new Error('管理员密码记录格式无效');
+    const result = await pool.query(`update app.admin_accounts set password_hash=$3,updated_at=now()
+      where username=$1 and password_hash=$2 and status='active' returning username`,
+    [String(username || '').trim().slice(0, 64), String(expectedPasswordHash), String(newPasswordHash)]);
+    return result.rowCount === 1;
+  }
+
+  function adminLoginAttemptKey(username) {
+    return crypto.createHash('sha256').update(String(username || '').trim().toLowerCase()).digest('hex');
+  }
+
+  async function reserveAdminLoginAttempt(username) {
+    const accountKey = adminLoginAttemptKey(username);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      // 登录很少发生，短事务串行化限速写入；保留原有 4096 条记录上限，防止随机账号撑大表。
+      await client.query('select pg_advisory_xact_lock(70420260924)');
+      await client.query(`delete from app.admin_login_attempt_limits
+        where account_key in (
+          select account_key from app.admin_login_attempt_limits
+          where window_started_at < now() - interval '24 hours'
+          order by window_started_at limit 100 for update skip locked
+        )`);
+      const existing = await client.query(`select account_key from app.admin_login_attempt_limits where account_key=$1`, [accountKey]);
+      if (!existing.rowCount) {
+        const active = await client.query(`select count(*)::integer as count from app.admin_login_attempt_limits
+          where window_started_at >= now() - interval '24 hours'`);
+        if (Number(active.rows[0]?.count || 0) >= 4096) {
+          await client.query('commit');
+          return { retryAfter: 60 };
+        }
+      }
+      const result = await client.query(`insert into app.admin_login_attempt_limits(account_key,attempt_count,window_started_at)
+        values($1,1,now())
+        on conflict(account_key) do update set
+          attempt_count=case
+            when app.admin_login_attempt_limits.window_started_at <= now() - interval '15 minutes' then 1
+            else least(app.admin_login_attempt_limits.attempt_count + 1,11)
+          end,
+          window_started_at=case
+            when app.admin_login_attempt_limits.window_started_at <= now() - interval '15 minutes' then now()
+            else app.admin_login_attempt_limits.window_started_at
+          end
+        returning attempt_count,
+          greatest(1,ceil(extract(epoch from (window_started_at + interval '15 minutes' - now())))::integer) as retry_after`, [accountKey]);
+      const row = result.rows[0];
+      if (!row) throw new Error('管理员登录限速记录未能保存');
+      await client.query('commit');
+      return Number(row.attempt_count) > 10
+        ? { retryAfter: Number(row.retry_after) }
+        : { retryAfter: 0 };
+    } catch (error) {
+      await client.query('rollback').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function clearAdminLoginAttempts(username) {
+    const result = await pool.query(`delete from app.admin_login_attempt_limits where account_key=$1`, [adminLoginAttemptKey(username)]);
     return result.rowCount === 1;
   }
 
@@ -232,14 +308,14 @@ export async function createPostgresBillingStore() {
     }
   }
 
-  async function ensureUser(appwriteUserId, email, inviteCode = "") {
+  async function ensureUser(appwriteUserId, email, inviteCode = "", appwriteCreatedAt = null) {
     const client = await pool.connect();
     try {
       await client.query("begin");
       await seedPlans(client);
       const userResult = await client.query(`insert into app.user_accounts(appwrite_user_id,email)
         values($1,$2) on conflict(appwrite_user_id) do update set email=excluded.email,updated_at=now()
-        returning id,appwrite_user_id,email`, [appwriteUserId, email || ""]);
+        returning id,appwrite_user_id,email,(xmax=0) is_new`, [appwriteUserId, email || ""]);
       const userId = userResult.rows[0].id;
       if (inviteCode) {
         await client.query(`update app.user_accounts target set invited_by_user_id=inviter.id
@@ -251,6 +327,17 @@ export async function createPostgresBillingStore() {
         on conflict(owner_user_id) where type='personal' and status <> 'deleted' do update set updated_at=now() returning id`, [userId, email || "个人空间"]);
       const workspaceId = ws.rows[0].id;
       await client.query(`insert into app.quota_accounts(workspace_id,quota_code) values($1,'monthly') on conflict do nothing`, [workspaceId]);
+      const createdTime = Date.parse(appwriteCreatedAt || "");
+      if (userResult.rows[0].is_new && Number.isFinite(createdTime)) {
+        const policy = await client.query(`select amount,effective_at from app.credit_system_policies where policy_key='signup_gift'`);
+        if (policy.rowCount && createdTime >= new Date(policy.rows[0].effective_at).getTime()) {
+          const account = await client.query(`select id from app.quota_accounts where workspace_id=$1 and quota_code='monthly' for update`, [workspaceId]);
+          const amount = Number(policy.rows[0].amount);
+          const grant = await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata)
+            values($1,$2,'grant',$3,$4,$5::jsonb) on conflict(idempotency_key) do nothing returning id`, [account.rows[0].id, workspaceId, amount, `grant:signup:${userId}`, JSON.stringify({ source: 'signup', appwrite_created_at: appwriteCreatedAt })]);
+          if (grant.rowCount) await client.query(`update app.quota_accounts set granted=granted+$2,version=version+1,updated_at=now() where id=$1`, [account.rows[0].id, amount]);
+        }
+      }
       await client.query("commit");
       return publicUser(await getUser(appwriteUserId));
     } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
@@ -410,19 +497,27 @@ export async function createPostgresBillingStore() {
       const result = ['reserved', 'committed', 'released', 'failed', 'unknown'].includes(input.result) ? input.result : 'reserved';
       const quantity = Number.isFinite(Number(input.quantity)) && Number(input.quantity) >= 0 ? Number(input.quantity) : 1;
       const metadata = input.metadata && typeof input.metadata === 'object' ? input.metadata : {};
-      const existing = await client.query(`select id,quota_reservation_id,daily_reservation_id,result from app.usage_records where idempotency_key=$1`, [idempotencyKey]);
-      if (existing.rowCount) { await client.query('commit'); committed = true; return existing.rows[0]; }
+      const existing = await client.query(`select id,quota_reservation_id,daily_reservation_id,result,metadata from app.usage_records where idempotency_key=$1`, [idempotencyKey]);
+      if (existing.rowCount) {
+        if (!input.requestHash || existing.rows[0].metadata?.requestHash !== input.requestHash) throw new Error('同一代理请求编号不能更换模型或生成内容');
+        await client.query('commit'); committed = true; return existing.rows[0];
+      }
 
-      // 付费订阅走月度额度预占；免费版走每日 20 次预占。
       let reservationId = null;
       let dailyReservationId = null;
-      if (me.member_level !== 'free' && quantity > 0) {
-        const reservation = await client.query(`select app.reserve_quota($1,'monthly',$2,$3,now()+interval '10 minutes') reservation_id`, [me.workspace_id, quantity, idempotencyKey]);
-        reservationId = reservation.rows[0].reservation_id;
-      } else if (quantity > 0) {
-        const reservation = await client.query(`select app.reserve_free_daily_usage($1,$2,'ai_proxy',$3,$4,20,now()+interval '10 minutes') reservation_id`, [me.workspace_id, me.internal_user_id, quantity, idempotencyKey]);
-        dailyReservationId = reservation.rows[0].reservation_id;
-      }
+      const catalogModelId = Number(input.catalogModelId || 0);
+      if (!Number.isSafeInteger(catalogModelId) || catalogModelId <= 0) throw new Error('该模型不属于平台积分计费目录');
+      const modelPrice = await client.query(`select credit_price,credit_price_unit,credit_price_version from app.model_catalog where id=$1 and visible=true`, [catalogModelId]);
+      if (!modelPrice.rowCount || modelPrice.rows[0].credit_price == null) throw new Error('该模型尚未设置用户积分价格，请联系管理员');
+      const price = modelPrice.rows[0];
+      const units = price.credit_price_unit === 'output' ? quantity : price.credit_price_unit === 'second' ? Math.max(1, Number(metadata.duration) || 1) : price.credit_price_unit === 'thousand_chars' ? Math.max(0.001, String(metadata.prompt || '').length / 1000) : 1;
+      const credits = Math.max(0.000001, Number((Number(price.credit_price) * units).toFixed(6)));
+      const reservation = await client.query(`select app.reserve_quota($1,'monthly',$2,$3,now()+interval '10 minutes') reservation_id`, [me.workspace_id, credits, idempotencyKey]);
+      reservationId = reservation.rows[0].reservation_id;
+      metadata.creditPrice = Number(price.credit_price);
+      metadata.creditPriceUnit = price.credit_price_unit;
+      metadata.creditPriceVersion = Number(price.credit_price_version);
+      metadata.credits = credits;
       const row = await client.query(`insert into app.usage_records(workspace_id,user_id,feature_code,provider,model,quantity,unit,result,idempotency_key,request_id,metadata,quota_reservation_id,daily_reservation_id)
         values($1,$2,$3,$4,$5,$6,'request',$7,$8,$9,$10::jsonb,$11,$12)
         on conflict(idempotency_key) do update set metadata=app.usage_records.metadata
@@ -1281,7 +1376,7 @@ export async function createPostgresBillingStore() {
           from app.usage_records where metadata->>'channelId'=$1 and ${windowKey === 'd1'
             ? `occurred_at >= (date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai')
               and occurred_at < ((date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai')`
-            : 'occurred_at >= now() - make_interval(days=>$2)'} group by 1`, [String(key.id), days]);
+            : 'occurred_at >= now() - make_interval(days=>$2)'} group by 1`, windowKey === 'd1' ? [String(key.id)] : [String(key.id), days]);
         const all = { calls: 0, successes: 0, failures: 0, inFlight: 0, released: 0, unknown: 0, successRate: null, failRate: null, connRate: null, avgConnRate: null, avgLatencyMs: null };
         for (const row of rows.rows) {
           const calls = Number(row.calls); const success = Number(row.success); const failure = Number(row.failure);
@@ -1309,21 +1404,25 @@ export async function createPostgresBillingStore() {
     if (!['全部', '图片', '文本', '视频'].includes(capability)) throw new Error('调用类型无效');
     const pageSize = Math.min(100, Math.max(1, Number(limit) || 50));
     const pageOffset = Math.max(0, Number(offset) || 0);
+    const hasDayCount = range !== 'today';
     const timeFilter = range === 'today'
       ? `u.occurred_at >= (date_trunc('day', now() at time zone 'Asia/Shanghai') at time zone 'Asia/Shanghai')
          and u.occurred_at < ((date_trunc('day', now() at time zone 'Asia/Shanghai') + interval '1 day') at time zone 'Asia/Shanghai')`
       : `u.occurred_at >= now() - make_interval(days=>$2)`;
     const days = range === 'd7' ? 7 : 30;
-    const capabilityFilter = capability === '全部' ? '' : `and (case when coalesce(u.metadata->>'targetPath','') like '%video%' then '视频' when coalesce(u.metadata->>'targetPath','') like '%image%' then '图片' else '文本' end)=$${range === 'today' ? 2 : 3}`;
+    const capabilityParameter = hasDayCount ? 3 : 2;
+    const capabilityFilter = capability === '全部' ? '' : `and (case when coalesce(u.metadata->>'targetPath','') like '%video%' then '视频' when coalesce(u.metadata->>'targetPath','') like '%image%' then '图片' else '文本' end)=$${capabilityParameter}`;
     const params = range === 'today' ? [String(channelId)] : [String(channelId), days];
     if (capability !== '全部') params.push(capability);
     const filterSql = `u.metadata->>'channelId'=$1 and ${timeFilter} ${capabilityFilter}`;
     const count = await pool.query(`select count(*)::int total from app.usage_records u where ${filterSql}`, params);
+    const limitParameter = params.length + 1;
+    const offsetParameter = params.length + 2;
     const page = await pool.query(`select u.id,u.request_id,u.occurred_at,u.completed_at,u.provider,u.model,u.quantity,u.result,u.latency_ms,
         u.metadata->>'targetPath' target_path,u.metadata->>'statusCode' status_code,u.metadata->>'phase' phase,
         a.email user_email
       from app.usage_records u left join app.user_accounts a on a.id=u.user_id
-      where ${filterSql} order by u.occurred_at desc,u.id desc limit $${params.length + 1} offset $${params.length + 2}`,
+      where ${filterSql} order by u.occurred_at desc,u.id desc limit $${limitParameter} offset $${offsetParameter}`,
       [...params, pageSize, pageOffset]);
     return {
       total: Number(count.rows[0]?.total || 0), limit: pageSize, offset: pageOffset, range,
@@ -1377,13 +1476,16 @@ export async function createPostgresBillingStore() {
       capability: row.capability,
       visible: row.visible === true,
       sortOrder: Number(row.sort_order),
+      creditPrice: row.credit_price == null ? null : Number(row.credit_price),
+      creditPriceUnit: row.credit_price_unit || null,
+      creditPriceVersion: Number(row.credit_price_version || 1),
       createdAt: new Date(row.created_at).getTime(),
       updatedAt: new Date(row.updated_at).getTime(),
     };
   }
 
   async function listModelCatalog() {
-    const r = await pool.query(`select mc.id,mc.model_id,mc.display_name,mc.provider,mc.capability,mc.visible,mc.sort_order,mc.created_at,mc.updated_at,
+    const r = await pool.query(`select mc.id,mc.model_id,mc.display_name,mc.provider,mc.capability,mc.visible,mc.sort_order,mc.credit_price,mc.credit_price_unit,mc.credit_price_version,mc.created_at,mc.updated_at,
         coalesce(jsonb_agg(jsonb_build_object('id',link.id,'channelId',pak.id,'channelName',pak.name,'provider',pak.provider,'model',link.upstream_model_id,'priority',link.priority,'isActive',link.is_active))
           filter(where link.id is not null),'[]'::jsonb) linked_models
       from app.model_catalog mc
@@ -1493,9 +1595,53 @@ export async function createPostgresBillingStore() {
     const current = await pool.query('select * from app.model_catalog where id=$1', [id]);
     if (!current.rowCount) throw new Error('模型不存在');
     const old = current.rows[0];
-    const r = await pool.query(`update app.model_catalog set display_name=$2,capability=$3,visible=$4,sort_order=$5,updated_at=now()
-      where id=$1 returning *`, [id, body.displayName === undefined ? old.display_name : String(body.displayName).trim().slice(0, 240), body.capability === undefined ? old.capability : String(body.capability).slice(0, 32), body.visible === undefined ? old.visible : Boolean(body.visible), body.sortOrder === undefined ? old.sort_order : Math.max(0, Number(body.sortOrder) || 0)]);
+    const priceChanged = body.creditPrice !== undefined || body.creditPriceUnit !== undefined;
+    const creditPrice = body.creditPrice === undefined ? old.credit_price : body.creditPrice === null || body.creditPrice === '' ? null : Number(body.creditPrice);
+    const creditPriceUnit = body.creditPriceUnit === undefined ? old.credit_price_unit : body.creditPriceUnit || null;
+    if (creditPrice != null && (!Number.isFinite(creditPrice) || creditPrice <= 0)) throw new Error('积分价格必须大于0');
+    if (creditPrice != null && !['request','output','second','thousand_chars'].includes(creditPriceUnit)) throw new Error('积分计价单位无效');
+    if ((creditPrice == null) !== (creditPriceUnit == null)) throw new Error('积分价格和计价单位必须同时填写或同时清空');
+    const client = await pool.connect();
+    let r;
+    try {
+      await client.query('begin');
+      const updated = await client.query(`update app.model_catalog set display_name=$2,capability=$3,visible=$4,sort_order=$5,
+        credit_price=$6,credit_price_unit=$7,credit_price_version=credit_price_version+$8,updated_at=now() where id=$1 returning *`,
+        [id, body.displayName === undefined ? old.display_name : String(body.displayName).trim().slice(0, 240), body.capability === undefined ? old.capability : String(body.capability).slice(0, 32), body.visible === undefined ? old.visible : Boolean(body.visible), body.sortOrder === undefined ? old.sort_order : Math.max(0, Number(body.sortOrder) || 0), creditPrice, creditPriceUnit, priceChanged ? 1 : 0]);
+      r = updated;
+      if (priceChanged) await client.query(`insert into app.model_credit_price_history(model_catalog_id,price_version,credit_price,credit_price_unit,changed_by)
+        values($1,$2,$3,$4,current_setting('app.admin_actor',true))`, [id, updated.rows[0].credit_price_version, creditPrice, creditPriceUnit]);
+      await client.query('commit');
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
     return modelCatalogView(r.rows[0]);
+  }
+
+  async function createModelCreditQuote(appwriteUserId, input = {}) {
+    const modelId = Number(String(input.model || '').match(/catalog:(\d+)/)?.[1]);
+    if (!Number.isSafeInteger(modelId) || modelId <= 0) throw new Error('此生成模型不属于平台积分计费目录');
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const model = await pool.query(`select id,capability,credit_price,credit_price_unit,credit_price_version from app.model_catalog where id=$1 and visible=true`, [modelId]);
+    if (!model.rowCount) throw new Error('模型不可用');
+    const row = model.rows[0];
+    if (row.credit_price == null || !row.credit_price_unit) throw new Error('该模型尚未设置用户积分价格，请联系管理员');
+    const taskType = String(input.taskType || row.capability).slice(0, 32);
+    if (!['image','video','audio','text'].includes(taskType)) throw new Error('生成类型无效');
+    if (row.capability !== taskType) throw new Error('所选模型能力与生成类型不匹配');
+    const parameters = input.parameters && typeof input.parameters === 'object' ? { ...input.parameters } : {};
+    delete parameters.model;
+    delete parameters.__qingyuCatalogModelId;
+    delete parameters.n;
+    const prompt = String(input.prompt || '').slice(0, 4000);
+    const quantity = Math.max(1, Math.min(15, Number(input.quantity) || 1));
+    let units = row.credit_price_unit === 'output' ? quantity : row.credit_price_unit === 'second' ? Math.max(1, Number(parameters.duration) || 1) : row.credit_price_unit === 'thousand_chars' ? Math.max(0.001, prompt.length / 1000) : 1;
+    const totalCredits = Math.max(0.000001, Number((Number(row.credit_price) * units).toFixed(6)));
+    const snapshot = { taskType, prompt, parameters, quantity };
+    const hash = crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+    const quote = await pool.query(`insert into app.model_credit_quotes(workspace_id,user_id,model_catalog_id,task_type,price_version,price_unit,unit_count,credit_price,total_credits,request_hash,request_snapshot,expires_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,now()+interval '5 minutes') returning id,price_version,price_unit,unit_count,credit_price,total_credits,expires_at`,
+      [me.workspace_id, me.internal_user_id, modelId, taskType, row.credit_price_version, row.credit_price_unit, units, row.credit_price, totalCredits, hash, JSON.stringify(snapshot)]);
+    return { id: quote.rows[0].id, modelCatalogId: modelId, taskType, priceVersion: Number(quote.rows[0].price_version), priceUnit: quote.rows[0].price_unit, unitCount: Number(quote.rows[0].unit_count), creditPrice: Number(quote.rows[0].credit_price), totalCredits: Number(quote.rows[0].total_credits), balance: Number(me.balance), expiresAt: new Date(quote.rows[0].expires_at).toISOString() };
   }
 
   async function deleteModelCatalog(id) {
@@ -1584,7 +1730,10 @@ export async function createPostgresBillingStore() {
           join lateral (select id from app.asset_versions where asset_id=a.id and workspace_id=a.workspace_id order by version_no desc limit 1) av on true
           join app.asset_files af on af.asset_version_id=av.id and af.workspace_id=a.workspace_id and af.role='source'
           join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id and f.status='ready'
-          where a.id=any($1::uuid[]) and a.workspace_id=$2 and a.status='active'`, [assetIds, workspaceId]) : { rows: [] };
+          where a.id=any($1::uuid[]) and a.workspace_id=$2 and (a.status='active' or exists(
+            select 1 from app.canvas_project_assets existing
+            where existing.project_id=$3 and existing.workspace_id=$2 and existing.asset_id=a.id
+          ))`, [assetIds, workspaceId, projectId]) : { rows: [] };
         if (linkedAssets.rows.length !== assetIds.length) throw new Error('画布包含不存在、未就绪或不属于当前工作空间的素材');
         await client.query(`delete from app.canvas_project_assets where project_id=$1 and workspace_id=$2
           and not (asset_id=any($3::uuid[]))`, [projectId, workspaceId, assetIds]);
@@ -1695,6 +1844,110 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  // ===== AI 对话：对话与消息 CRUD =====
+  async function getChatWorkspace(appwriteUserId) {
+    const r = await pool.query(`select u.id user_id, w.id workspace_id
+      from app.user_accounts u
+      join app.workspaces w on w.owner_user_id=u.id and w.type='personal' and w.status='active'
+      where u.appwrite_user_id=$1 and u.status='active'`, [appwriteUserId]);
+    if (!r.rowCount) throw new Error('用户不存在，请重新登录');
+    return r.rows[0];
+  }
+
+  async function listChatConversations(appwriteUserId) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const r = await pool.query(`select id,title,model,summary,created_at,updated_at
+      from app.chat_conversations
+      where workspace_id=$1
+      order by updated_at desc
+      limit 200`, [workspaceId]);
+    return r.rows.map(x => ({
+      id: x.id, title: x.title, model: x.model, summary: x.summary,
+      createdAt: new Date(x.created_at).toISOString(),
+      updatedAt: new Date(x.updated_at).toISOString(),
+    }));
+  }
+
+  async function createChatConversation(appwriteUserId, data = {}) {
+    const { user_id: userId, workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const r = await pool.query(`insert into app.chat_conversations(workspace_id,user_id,title,model,system_prompt,temperature,web_search_enabled)
+      values($1,$2,$3,$4,$5,$6,$7) returning id,title,created_at,updated_at`,
+      [workspaceId, userId,
+        String(data.title || '新对话').slice(0, 240),
+        data.model ? String(data.model).slice(0, 160) : null,
+        data.systemPrompt ? String(data.systemPrompt).slice(0, 8000) : null,
+        Math.max(0, Math.min(2, Number(data.temperature) || 0.7)),
+        Boolean(data.webSearchEnabled)]);
+    const row = r.rows[0];
+    return { id: row.id, title: row.title, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString() };
+  }
+
+  async function getChatConversation(appwriteUserId, conversationId) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const r = await pool.query(`select id,title,model,system_prompt,temperature,web_search_enabled,summary,share_id,created_at,updated_at
+      from app.chat_conversations where id=$1 and workspace_id=$2`, [conversationId, workspaceId]);
+    if (!r.rowCount) return null;
+    const x = r.rows[0];
+    return {
+      id: x.id, title: x.title, model: x.model, systemPrompt: x.system_prompt,
+      temperature: Number(x.temperature), webSearchEnabled: x.web_search_enabled,
+      summary: x.summary, shareId: x.share_id,
+      createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString(),
+    };
+  }
+
+  async function listChatMessages(appwriteUserId, conversationId) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const conv = await pool.query(`select id from app.chat_conversations where id=$1 and workspace_id=$2`, [conversationId, workspaceId]);
+    if (!conv.rowCount) return null;
+    const r = await pool.query(`select id,role,content,tokens_in,tokens_out,status,created_at
+      from app.chat_messages where conversation_id=$1 order by created_at`, [conversationId]);
+    return r.rows.map(x => ({
+      id: x.id, role: x.role, content: x.content,
+      tokensIn: Number(x.tokens_in), tokensOut: Number(x.tokens_out),
+      status: x.status, createdAt: new Date(x.created_at).toISOString(),
+    }));
+  }
+
+  async function appendChatMessage(appwriteUserId, conversationId, data) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const conv = await pool.query(`select id from app.chat_conversations where id=$1 and workspace_id=$2`, [conversationId, workspaceId]);
+    if (!conv.rowCount) throw new Error('对话不存在或无权访问');
+    const role = ['user','assistant','system'].includes(data.role) ? data.role : 'user';
+    const r = await pool.query(`insert into app.chat_messages(conversation_id,workspace_id,role,content,tokens_in,tokens_out,status)
+      values($1,$2,$3,$4,$5,$6,$7) returning id,created_at`,
+      [conversationId, workspaceId, role,
+        String(data.content || '').slice(0, 200000),
+        Number(data.tokensIn) || 0, Number(data.tokensOut) || 0,
+        ['completed','aborted','failed'].includes(data.status) ? data.status : 'completed']);
+    await pool.query(`update app.chat_conversations set updated_at=now() where id=$1`, [conversationId]);
+    return { id: r.rows[0].id, createdAt: new Date(r.rows[0].created_at).toISOString() };
+  }
+
+  async function updateChatConversation(appwriteUserId, conversationId, data) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const sets = [];
+    const params = [];
+    let i = 1;
+    if (data.title !== undefined) { sets.push(`title=$${i++}`); params.push(String(data.title).slice(0, 240)); }
+    if (data.model !== undefined) { sets.push(`model=$${i++}`); params.push(data.model ? String(data.model).slice(0, 160) : null); }
+    if (data.systemPrompt !== undefined) { sets.push(`system_prompt=$${i++}`); params.push(data.systemPrompt ? String(data.systemPrompt).slice(0, 8000) : null); }
+    if (data.temperature !== undefined) { sets.push(`temperature=$${i++}`); params.push(Math.max(0, Math.min(2, Number(data.temperature) || 0.7))); }
+    if (data.webSearchEnabled !== undefined) { sets.push(`web_search_enabled=$${i++}`); params.push(Boolean(data.webSearchEnabled)); }
+    if (data.summary !== undefined) { sets.push(`summary=$${i++}`); params.push(data.summary ? String(data.summary).slice(0, 8000) : null); }
+    if (!sets.length) return { updated: false };
+    params.push(conversationId, workspaceId);
+    const r = await pool.query(`update app.chat_conversations set ${sets.join(',')} where id=$${i++} and workspace_id=$${i++} returning id,title`, params);
+    if (!r.rowCount) throw new Error('对话不存在或无权访问');
+    return { updated: true, id: r.rows[0].id, title: r.rows[0].title };
+  }
+
+  async function deleteChatConversation(appwriteUserId, conversationId) {
+    const { workspace_id: workspaceId } = await getChatWorkspace(appwriteUserId);
+    const r = await pool.query(`delete from app.chat_conversations where id=$1 and workspace_id=$2 returning id`, [conversationId, workspaceId]);
+    if (!r.rowCount) throw new Error('对话不存在或无权访问');
+    return { deleted: true };
+  }
   async function listTeams(appwriteUserId) {
     const r = await pool.query(`select t.id,t.name,t.created_at,
       case when tm.user_id=t.owner_user_id then 'owner' else coalesce(rb.role_code,'member') end role,
@@ -1871,24 +2124,67 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  async function listAssets(appwriteUserId, type = 'all', keyword = '') {
+  async function listAssets(appwriteUserId, type = 'all', keyword = '', status = 'active') {
+    const assetStatus = status === 'deleted' ? 'deleted' : 'active';
     const client = await pool.connect();
     try {
     await client.query('begin');
     await setWorkspaceUserContext(client, appwriteUserId);
-    const r = await client.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
+    const r = await client.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.deleted_at,a.created_at,a.updated_at,
       coalesce((select count(*) from app.asset_likes l where l.asset_id=a.id and l.workspace_id=a.workspace_id),0) like_count,
       coalesce((select count(*) from app.asset_comments c where c.asset_id=a.id and c.workspace_id=a.workspace_id and c.deleted_at is null and c.moderation_status='approved'),0) comment_count,
       exists(select 1 from app.asset_likes my_like where my_like.asset_id=a.id and my_like.workspace_id=a.workspace_id and my_like.user_id=(select id from app.user_accounts where appwrite_user_id=$1)) is_liked,
       coalesce((select v.metadata from app.asset_versions v where v.asset_id=a.id order by v.version_no desc limit 1),'{}'::jsonb) metadata,
       exists(select 1 from app.collections c join app.collection_items ci on ci.collection_id=c.id where c.workspace_id=a.workspace_id and c.created_by=(select id from app.user_accounts where appwrite_user_id=$1) and c.name='favorites' and ci.asset_id=a.id) is_favorite
-      from app.assets a where a.status='active' and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword]);
+      from app.assets a where a.status=$4 and ($2='all' or a.asset_type=$2) and ($3='' or a.title ilike '%'||$3||'%') and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$1) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$1) and tm.status='active'))) order by a.updated_at desc limit 200`, [appwriteUserId, type, keyword, assetStatus]);
     await client.query('commit');
-    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, likeCount: Number(x.like_count), commentCount: Number(x.comment_count), liked: Boolean(x.is_liked), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
+    return r.rows.map(x => ({ id: x.id, name: x.title, type: x.asset_type, visibility: x.visibility, status: x.status, deletedAt: x.deleted_at ? new Date(x.deleted_at).toISOString() : null, likeCount: Number(x.like_count), commentCount: Number(x.comment_count), liked: Boolean(x.is_liked), favorited: x.is_favorite, metadata: x.metadata || {}, createdAt: new Date(x.created_at).toISOString(), updatedAt: new Date(x.updated_at).toISOString() }));
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function listFavorites(appwriteUserId) { return listAssets(appwriteUserId, 'all', '').then(items => items.filter(x => x.favorited)); }
+
+  async function changeAssetDeletedStatus(appwriteUserId, assetId, restore) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const access = await client.query(`select a.id,a.workspace_id,a.status,a.title
+        from app.assets a join app.workspaces w on w.id=a.workspace_id
+        where a.id=$1 and a.status in ('active','deleted') and
+          (a.created_by=$2 or w.owner_user_id=$2 or exists(
+            select 1 from app.team_memberships tm
+            join app.role_bindings b on b.user_id=tm.user_id
+            join app.roles r on r.id=b.role_id
+            join app.workspaces rw on rw.id=b.workspace_id
+            where tm.team_id=w.team_id and tm.user_id=$2 and tm.status='active'
+              and rw.id=a.workspace_id and r.code in ('owner','admin')
+          )) for update of a`, [assetId, userId]);
+      if (!access.rowCount) {
+        const error = new Error('素材不存在或你没有管理权限');
+        error.status = 404;
+        throw error;
+      }
+      const asset = access.rows[0];
+      const nextStatus = restore ? 'active' : 'deleted';
+      if (asset.status !== nextStatus) {
+        await client.query(`update app.assets set status=$2,deleted_at=$3,updated_at=now(),version=version+1
+          where id=$1`, [assetId, nextStatus, restore ? null : new Date()]);
+        await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload)
+          values($1,'asset',$2,$3,$4::jsonb)`, [restore ? 'asset.restored' : 'asset.deleted', assetId, asset.workspace_id, JSON.stringify({ title: asset.title })]);
+      }
+      await client.query('commit');
+      return { id: assetId, status: nextStatus };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function deleteAsset(appwriteUserId, assetId) {
+    return changeAssetDeletedStatus(appwriteUserId, assetId, false);
+  }
+
+  async function restoreAsset(appwriteUserId, assetId) {
+    return changeAssetDeletedStatus(appwriteUserId, assetId, true);
+  }
 
   async function toggleFavorite(appwriteUserId, assetId, favorite) {
     const client = await pool.connect();
@@ -2076,11 +2372,12 @@ export async function createPostgresBillingStore() {
       const title = String(input.title || '').trim();
       const mimeType = String(input.mimeType || 'application/octet-stream').slice(0, 160);
       const sizeBytes = Number(input.sizeBytes);
-      const sourceKind = ['generated','reference_upload','manual_upload','edited'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
+      const sourceKind = ['generated','reference_upload','manual_upload','edited','derived'].includes(input.sourceKind) ? input.sourceKind : 'manual_upload';
       const mediaType = ['image','video','audio','text','document','other'].includes(input.mediaType) ? input.mediaType : 'other';
       if (!title || title.length > 240 || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 5 * 1024 * 1024 * 1024) throw new Error('上传文件名称或大小无效');
       const editId = sourceKind === 'edited' ? String(input.editId || '') : null;
-      const sourceFileId = sourceKind === 'edited' ? String(input.sourceFileId || '') : null;
+      const sourceFileId = ['edited','derived'].includes(sourceKind) ? String(input.sourceFileId || '').toLowerCase() : null;
+      const previewVariant = sourceKind === 'derived' ? String(input.previewVariant || '') : null;
       if (sourceKind === 'edited') {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(editId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceFileId)) throw new Error('编辑来源记录无效');
         const source = await client.query(`select 1 from app.content_edits ce join app.content_edit_inputs cei on cei.edit_id=ce.id and cei.workspace_id=ce.workspace_id
@@ -2088,7 +2385,14 @@ export async function createPostgresBillingStore() {
           where ce.id=$1 and ce.workspace_id=$2 and ce.created_by=$3 and cei.file_id=$4 and cei.role='base'`, [editId, workspaceId, userId, sourceFileId]);
         if (!source.rowCount) throw new Error('编辑记录或原始素材不存在、未就绪或不属于当前用户');
       }
-      const uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : String(input.uploadBatchId || crypto.randomUUID());
+      if (sourceKind === 'derived') {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceFileId)
+          || !isAssetPreviewVariant(previewVariant) || mediaType !== 'image') throw new Error('预览文件必须是图片，并提供有效的原文件编号和预览规格');
+        const source = await client.query(`select 1 from app.file_objects where id=$1 and workspace_id=$2 and status='ready'
+          and ($3 <> 'video-cover' or media_type='video')`, [sourceFileId, workspaceId, previewVariant]);
+        if (!source.rowCount) throw new Error('预览原文件不存在、未就绪或类型不匹配');
+      }
+      const uploadBatchId = ['generated','edited','derived'].includes(sourceKind) ? null : String(input.uploadBatchId || crypto.randomUUID());
       if (uploadBatchId) {
         await ensureAssetUploadBatch(client, uploadBatchId, workspaceId, userId);
       }
@@ -2096,14 +2400,14 @@ export async function createPostgresBillingStore() {
       if (!objectKey.startsWith(`workspaces/${workspaceId}/`) || objectKey.includes('..')) throw new Error('上传对象键与当前工作空间不匹配');
       await client.query(`insert into app.file_objects(
         id,workspace_id,uploaded_by,storage_provider,bucket,object_key,size_bytes,mime_type,status,media_type,source_kind,
-        original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,edit_id,source_file_id,write_idempotency_key
-      ) values($1,$2,$3,'cos',$4,$5,$6,$7,'pending',$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16,$17,$18)`, [
+        original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,edit_id,source_file_id,write_idempotency_key,preview_variant
+      ) values($1,$2,$3,'cos',$4,$5,$6,$7,'pending',$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16,$17,$18,$19)`, [
         fileId, workspaceId, userId, input.bucket, objectKey, sizeBytes, mimeType, mediaType, sourceKind, title, uploadBatchId,
         Number.isInteger(input.width) && input.width > 0 ? input.width : null,
         Number.isInteger(input.height) && input.height > 0 ? input.height : null,
         Number.isInteger(input.durationMs) && input.durationMs >= 0 ? input.durationMs : null,
         mediaType === 'text' ? (input.completeness === 'complete' ? 'complete' : 'partial') : null,
-        editId, sourceFileId, idempotencyKey || null,
+        editId, sourceFileId, idempotencyKey || null, previewVariant,
       ]);
       await client.query(`insert into app.upload_sessions(id,workspace_id,file_id,attempt_no,provider_upload_id,status,expires_at)
         values($1,$2,$3,1,$4,'initiated',now()+interval '24 hours')`, [sessionId, workspaceId, fileId, input.providerUploadId]);
@@ -2120,7 +2424,7 @@ export async function createPostgresBillingStore() {
       const userId = await setWorkspaceUserContext(client, appwriteUserId);
       const r = await client.query(`select s.id,s.status,s.provider_upload_id,s.expires_at,f.id file_id,f.workspace_id,
           f.object_key,f.bucket,f.size_bytes,f.mime_type,f.media_type,f.source_kind,f.original_filename,
-          f.width,f.height,f.duration_ms,f.completeness,f.write_idempotency_key,f.edit_id,f.source_file_id,
+          f.width,f.height,f.duration_ms,f.completeness,f.write_idempotency_key,f.edit_id,f.source_file_id,f.preview_variant,
           a.id asset_id,a.asset_type,a.title asset_title
         from app.upload_sessions s join app.file_objects f on f.id=s.file_id and f.workspace_id=s.workspace_id
         join app.workspaces w on w.id=s.workspace_id
@@ -2137,7 +2441,7 @@ export async function createPostgresBillingStore() {
         sizeBytes: Number(x.size_bytes), mimeType: x.mime_type, mediaType: x.media_type, sourceKind: x.source_kind,
         originalFilename: x.original_filename, width: x.width, height: x.height, durationMs: x.duration_ms,
         completeness: x.completeness, writeIdempotencyKey: x.write_idempotency_key,
-        editId: x.edit_id, sourceFileId: x.source_file_id,
+        editId: x.edit_id, sourceFileId: x.source_file_id, previewVariant: x.preview_variant,
         assetId: x.asset_id || null, assetType: x.asset_type || null,
         assetTitle: x.asset_title || null, parts: parts.rows.map(p => ({ partNumber: p.part_number, etag: p.etag, sizeBytes: Number(p.size_bytes), checksum: p.checksum })) };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -2233,8 +2537,301 @@ export async function createPostgresBillingStore() {
     const result = await pool.query(`select * from app.claim_file_upload_recovery_jobs($1,$2)`,
       [owner, Math.max(1, Math.min(50, Number(limit) || 10))]);
     return result.rows.map(row => ({ id: row.id, workspaceId: row.workspace_id, fileId: row.file_id,
-      uploadSessionId: row.upload_session_id, leaseVersion: Number(row.lease_version), attemptCount: Number(row.attempt_count),
+      uploadSessionId: row.upload_session_id, generationOutputId: row.generation_output_id,
+      leaseVersion: Number(row.lease_version), attemptCount: Number(row.attempt_count),
       appwriteUserId: row.appwrite_user_id, leaseOwner: owner }));
+  }
+
+  async function beginGenerationAttempt(appwriteUserId, taskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const task = await client.query(`select id,workspace_id,provider,status from app.generation_tasks
+        where id=$1 and workspace_id=$2 and created_by=$3 for update`, [taskId, me.workspace_id, me.internal_user_id]);
+      if (!task.rowCount || task.rows[0].status !== 'running') throw new Error('任务当前不能启动生成尝试');
+      const attempt = await client.query(`insert into app.generation_attempts(workspace_id,task_id,attempt_no,provider)
+        select $1,$2,coalesce(max(attempt_no),0)+1,$3 from app.generation_attempts where task_id=$2
+        returning id`, [task.rows[0].workspace_id, taskId, task.rows[0].provider || null]);
+      await client.query('commit');
+      return { attemptId: attempt.rows[0].id, workspaceId: task.rows[0].workspace_id };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function setGenerationAttemptProviderTask(appwriteUserId, taskId, attemptId, providerTaskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const result = await client.query(`update app.generation_attempts a set provider_task_id=$4
+        from app.generation_tasks t where a.id=$1 and a.task_id=$2 and a.workspace_id=t.workspace_id
+          and t.id=a.task_id and t.workspace_id=$3 and t.created_by=$5 and t.status='running'
+        returning a.id`, [attemptId, taskId, me.workspace_id, String(providerTaskId || '').slice(0, 200), me.internal_user_id]);
+      if (!result.rowCount) throw new Error('供应商异步任务编号无法写入');
+      await client.query('commit');
+      return true;
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function reserveGeneratedOutput(appwriteUserId, taskId, attemptId, index, { bucket, recoveryUrl = null, revisedPrompt = null, outputType = 'image', extension = null } = {}) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    if (!bucket || !Number.isInteger(index) || index < 0 || index > 14 || !['image','video','audio'].includes(outputType)) throw new Error('生成结果槽位参数无效');
+    let recoveryCiphertext = null;
+    if (recoveryUrl) {
+      const parsed = new URL(String(recoveryUrl));
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password
+        || String(recoveryUrl).length > 24000) throw new Error('上游图片地址无效，无法安全保存恢复信息');
+      recoveryCiphertext = encryptApiKey(String(recoveryUrl));
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const task = await client.query(`select id,workspace_id,created_by,created_at,status,task_type from app.generation_tasks
+        where id=$1 and workspace_id=$2 and created_by=$3 for update`, [taskId, me.workspace_id, me.internal_user_id]);
+      if (!task.rowCount || !['running','saving'].includes(task.rows[0].status)) throw new Error('任务已结束，不能继续保存图片');
+      if (task.rows[0].task_type !== outputType) throw new Error('生成结果类型与任务不匹配');
+      const existing = await client.query(`select o.id output_id,o.file_id,f.object_key
+        from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id
+        where o.task_id=$1 and o.workspace_id=$2 and o.attempt_id=$3 and o.output_index=$4 for update of o,f`,
+      [taskId, task.rows[0].workspace_id, attemptId, index]);
+      if (existing.rowCount) {
+        await client.query(`update app.generation_outputs set recovery_source_ciphertext=coalesce(recovery_source_ciphertext,$2),
+          metadata=metadata||$3::jsonb where id=$1 and availability='awaiting'`,
+        [existing.rows[0].output_id, recoveryCiphertext, JSON.stringify(revisedPrompt ? { revisedPrompt: String(revisedPrompt).slice(0, 4000) } : {})]);
+        await client.query('commit');
+        return { outputId: existing.rows[0].output_id, fileId: existing.rows[0].file_id, objectKey: existing.rows[0].object_key };
+      }
+      const fileId = crypto.randomUUID();
+      const outputId = crypto.randomUUID();
+      const createdAt = new Date(task.rows[0].created_at);
+      const objectKey = `workspaces/${task.rows[0].workspace_id}/generated/${outputType}s/${createdAt.getUTCFullYear()}/${String(createdAt.getUTCMonth()+1).padStart(2,'0')}/${taskId}/${fileId}`;
+      const fallbackExtension = outputType === 'video' ? 'mp4' : outputType === 'audio' ? 'mp3' : 'png';
+      const safeExtension = typeof extension === 'string' && /^[a-z0-9]{2,8}$/i.test(extension) ? extension.toLowerCase() : fallbackExtension;
+      const file = await client.query(`insert into app.file_objects(id,workspace_id,uploaded_by,storage_provider,bucket,object_key,status,mime_type,media_type,source_kind,original_filename,inspection_status)
+        values($1,$2,$3,'cos',$4,$5,'pending',null,$6,'generated',$7,'approved') returning id`,
+      [fileId, task.rows[0].workspace_id, task.rows[0].created_by, bucket, objectKey, outputType, `${fileId}.${safeExtension}`]);
+      const metadata = { source: `${outputType}_generation`, index, ...(revisedPrompt ? { revisedPrompt: String(revisedPrompt).slice(0, 4000) } : {}) };
+      await client.query(`insert into app.generation_outputs(id,task_id,workspace_id,file_id,output_type,content_status,metadata,attempt_id,output_index,availability,recovery_source_ciphertext)
+        values($1,$2,$3,$4,$5,'pending',$6::jsonb,$7,$8,'awaiting',$9)`,
+      [outputId, taskId, task.rows[0].workspace_id, file.rows[0].id, outputType, JSON.stringify(metadata), attemptId, index, recoveryCiphertext]);
+      await client.query(`insert into app.file_jobs(workspace_id,file_id,job_kind,idempotency_key,generation_output_id,next_run_at)
+        values($1,$2,'persist',$3,$4,case when $5::text is null and $6='image' then now() else now()+interval '2 minutes' end)`,
+      [task.rows[0].workspace_id, fileId, `generation-output:${outputId}`, outputId, recoveryCiphertext, outputType]);
+      const complete = await client.query(`select response_complete from app.generation_attempts where id=$1 and task_id=$2 and workspace_id=$3`,
+        [attemptId, taskId, task.rows[0].workspace_id]);
+      if (!complete.rowCount) throw new Error('生成尝试不存在');
+      if (complete.rows[0].response_complete && task.rows[0].status === 'running') {
+        await client.query(`select app.mark_generation_task_saving($1)`, [taskId]);
+      }
+      await client.query('commit');
+      return { outputId, fileId, objectKey };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function completeGenerationAttempt(appwriteUserId, taskId, attemptId, returnedOutputCount, providerTaskId = null) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const attempt = await client.query(`update app.generation_attempts a set response_complete=true,
+          returned_output_count=$4,provider_task_id=coalesce($5,a.provider_task_id),finished_at=now()
+        from app.generation_tasks t where a.id=$1 and a.task_id=$2 and a.workspace_id=$3
+          and t.id=a.task_id and t.workspace_id=a.workspace_id and t.created_by=$6 and t.status in ('running','saving')
+        returning t.id,t.status`, [attemptId, taskId, me.workspace_id, returnedOutputCount, providerTaskId, me.internal_user_id]);
+      if (!attempt.rowCount) throw new Error('生成尝试不存在或无权访问');
+      const pending = await client.query(`select 1 from app.generation_outputs where attempt_id=$1 and availability='awaiting' limit 1`, [attemptId]);
+      if (pending.rowCount && ['running','pending'].includes(attempt.rows[0].status)) {
+        await client.query(`select app.mark_generation_task_saving($1)`, [taskId]);
+      }
+      await client.query('commit');
+      return true;
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function getGenerationOutputRecoveryContext(job) {
+    const me = await getUser(job.appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const result = await client.query(`select j.status job_status,j.file_id,j.generation_output_id,j.lease_owner,j.lease_version,j.lease_until,
+          o.task_id,o.attempt_id,o.output_index,o.output_type,o.availability,o.recovery_source_ciphertext,
+          f.bucket,f.object_key,f.size_bytes,f.mime_type,f.media_type,t.status task_status,a.response_complete
+        from app.file_jobs j join app.generation_outputs o on o.id=j.generation_output_id and o.file_id=j.file_id and o.workspace_id=j.workspace_id
+        join app.file_objects f on f.id=j.file_id and f.workspace_id=j.workspace_id
+        join app.generation_tasks t on t.id=o.task_id and t.workspace_id=o.workspace_id
+        join app.generation_attempts a on a.id=o.attempt_id and a.task_id=o.task_id and a.workspace_id=o.workspace_id
+        where j.id=$1 and j.workspace_id=$2 and o.id=$3 and t.created_by=$4`,
+      [job.id, me.workspace_id, job.generationOutputId, me.internal_user_id]);
+      if (!result.rowCount) throw new Error('图片恢复作业不存在或无权访问');
+      const row = result.rows[0];
+      await client.query('commit');
+      return { ...row, recoveryUrl: row.recovery_source_ciphertext ? decryptApiKey(row.recovery_source_ciphertext).apiKey : null };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function recordGeneratedOutput(appwriteUserId, taskId, file) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const result = await client.query(`select o.id output_id,o.file_id,o.task_id,o.workspace_id,o.output_index,o.output_type,o.availability,t.status task_status
+        from app.generation_outputs o join app.generation_tasks t on t.id=o.task_id and t.workspace_id=o.workspace_id
+        where o.id=$1 and o.task_id=$2 and o.file_id=$3 and o.workspace_id=$4 for update of o,t`,
+      [file.outputId, taskId, file.fileId, me.workspace_id]);
+      if (!result.rowCount) throw new Error('生成图片槽位不存在或不匹配');
+      const slot = result.rows[0];
+      if (slot.availability === 'available') { await client.query('commit'); return { fileId: slot.file_id, outputId: slot.output_id }; }
+      if (slot.availability !== 'awaiting' || !['running','saving'].includes(slot.task_status)) throw new Error('生成任务已结束或图片槽位不可写入');
+      const fileUpdated = await client.query(`update app.file_objects set storage_version_id=$2,checksum=$3,size_bytes=$4,mime_type=$5,
+          width=$6,height=$7,duration_ms=$8,status='ready',inspection_status='approved',updated_at=now()
+        where id=$1 and workspace_id=$9 and status in ('pending','ready')`,
+      [slot.file_id, file.storageVersionId || null, file.sha256 || null, file.sizeBytes, file.contentType || 'application/octet-stream',
+        file.width || null, file.height || null, file.durationMs || null, slot.workspace_id]);
+      if (!fileUpdated.rowCount) throw new Error('图片数据库文件记录不存在或状态不可用');
+      const outputUpdated = await client.query(`update app.generation_outputs set availability='available',content_status='approved',
+          width=$2,height=$3,duration_ms=$4,recovery_source_ciphertext=null where id=$1 and availability='awaiting'`,
+      [slot.output_id, file.width || null, file.height || null, file.durationMs || null]);
+      if (!outputUpdated.rowCount) throw new Error('图片输出槽位状态已变化');
+      await client.query(`update app.file_jobs set status='cancelled',last_error_code='output_saved_inline'
+        where generation_output_id=$1 and status in ('queued','retry_wait')`, [slot.output_id]);
+      await client.query('commit');
+      return { fileId: slot.file_id, outputId: slot.output_id };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function finishGeneratedOutputRecoveryJob(job, file) {
+    const me = await getUser(job.appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      await client.query(`select set_config('app.file_job_lease_owner',$1,true),set_config('app.file_job_lease_version',$2,true)`,
+        [job.leaseOwner, String(job.leaseVersion)]);
+      const result = await client.query(`select j.id,o.id output_id,o.file_id,o.availability,o.task_id,t.status task_status
+        from app.file_jobs j join app.generation_outputs o on o.id=j.generation_output_id and o.file_id=j.file_id and o.workspace_id=j.workspace_id
+        join app.generation_tasks t on t.id=o.task_id and t.workspace_id=o.workspace_id
+        where j.id=$1 and j.generation_output_id=$2 and j.status='running' and j.lease_owner=$3 and j.lease_version=$4
+          and j.lease_until>clock_timestamp() and o.availability='awaiting' and t.status='saving'
+        for update of j,o,t`, [job.id, job.generationOutputId, job.leaseOwner, job.leaseVersion]);
+      if (!result.rowCount) throw new Error('图片恢复任务租约失效或任务已结束');
+      const row = result.rows[0];
+      const fileUpdated = await client.query(`update app.file_objects set storage_version_id=$2,checksum=$3,size_bytes=$4,mime_type=$5,
+          width=$6,height=$7,status='ready',inspection_status='approved',updated_at=now()
+        where id=$1 and status in ('pending','ready') returning id`, [row.file_id, file.storageVersionId || null, file.sha256 || null,
+        file.sizeBytes, file.contentType || 'application/octet-stream', file.width || null, file.height || null]);
+      if (!fileUpdated.rowCount) throw new Error('图片数据库文件记录不存在或状态不可用');
+      const outputUpdated = await client.query(`update app.generation_outputs set availability='available',content_status='approved',width=$2,height=$3,recovery_source_ciphertext=null
+        where id=$1 and availability='awaiting'`, [row.output_id, file.width || null, file.height || null]);
+      if (!outputUpdated.rowCount) throw new Error('图片输出槽位状态已变化');
+      const finished = await client.query(`select app.finish_file_job($1,$2,$3) as finished`, [job.id, job.leaseOwner, job.leaseVersion]);
+      if (!finished.rows[0]?.finished) throw new Error('图片恢复任务租约已失效');
+      await client.query('commit');
+      return { taskId: row.task_id, outputId: row.output_id };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function failGeneratedOutputRecoveryJob(job, errorCode = 'source_unavailable', maxAttempts = 8) {
+    const me = await getUser(job.appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const retry = await client.query(`select * from app.retry_file_job($1,$2,$3,$4,$5)`,
+        [job.id, job.leaseOwner, job.leaseVersion, String(errorCode), maxAttempts]);
+      const status = retry.rows[0]?.status;
+      if (status === 'needs_attention') {
+        const output = await client.query(`update app.generation_outputs set availability='unavailable',recovery_source_ciphertext=null
+          where id=$1 and workspace_id=$2 and availability='awaiting' returning task_id,file_id`, [job.generationOutputId, me.workspace_id]);
+        if (output.rowCount) {
+          await client.query(`update app.file_objects set status='failed',last_error_code=$2,updated_at=now() where id=$1 and status='pending'`,
+            [output.rows[0].file_id, String(errorCode).slice(0,120)]);
+          const pending = await client.query(`select 1 from app.generation_outputs where task_id=$1 and workspace_id=$2 and availability='awaiting' limit 1`,
+            [output.rows[0].task_id, me.workspace_id]);
+          if (!pending.rowCount) {
+            const task = await client.query(`select task_type from app.generation_tasks where id=$1 and workspace_id=$2 for update`,
+              [output.rows[0].task_id, me.workspace_id]);
+            const saved = await client.query(`select coalesce(jsonb_agg(jsonb_build_object('type',o.output_type,'index',o.output_index,'fileId',f.id,
+                'objectKey',f.object_key,'mimeType',f.mime_type,'sizeBytes',f.size_bytes,'width',f.width,'height',f.height,
+                'durationMs',f.duration_ms,'revisedPrompt',o.metadata->>'revisedPrompt') order by o.output_index),'[]'::jsonb) value
+              from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id and f.status='ready'
+              where o.task_id=$1 and o.workspace_id=$2 and o.output_type=$3 and o.availability='available'`,
+            [output.rows[0].task_id, me.workspace_id, task.rows[0]?.task_type || 'image']);
+            await client.query(`update app.generation_tasks set outputs=$2::jsonb where id=$1`, [output.rows[0].task_id, JSON.stringify(saved.rows[0].value || [])]);
+            if (['video','audio'].includes(task.rows[0]?.task_type)) {
+              await client.query(`select app.fail_generation_task_keep_charge($1,'output_unrecoverable','媒体已生成但保存不可恢复；本次扣点保留')`, [output.rows[0].task_id]);
+            } else {
+              await client.query(`select app.fail_generation_task($1,'output_unrecoverable','图片保存失败，已退还本次预扣额度',true)`, [output.rows[0].task_id]);
+            }
+          }
+        }
+      }
+      await client.query('commit');
+      return { status, delaySeconds: Number(retry.rows[0]?.delay_seconds || 0) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function settleGenerationTaskIfComplete(appwriteUserId, taskId, providerRef = null) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const task = await client.query(`select id,status,task_type from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 for update`,
+        [taskId, me.workspace_id, me.internal_user_id]);
+      if (!task.rowCount) throw new Error('任务不存在或无权访问');
+      if (['succeeded','failed','refunded'].includes(task.rows[0].status)) { await client.query('commit'); return apiTask(task.rows[0]); }
+      const counts = await client.query(`select count(*) total,count(*) filter(where availability='awaiting') pending,
+          count(*) filter(where availability='unavailable') unavailable
+        from app.generation_outputs where task_id=$1 and workspace_id=$2 and attempt_id=(
+          select id from app.generation_attempts where task_id=$1 and workspace_id=$2 order by attempt_no desc limit 1)
+        and output_type=$3`, [taskId, me.workspace_id, task.rows[0].task_type]);
+      const { total, pending, unavailable } = counts.rows[0];
+      if (Number(pending) > 0) {
+        if (task.rows[0].status === 'running') await client.query(`select app.mark_generation_task_saving($1)`, [taskId]);
+        const current = await client.query(`select * from app.generation_tasks where id=$1`, [taskId]);
+        await client.query('commit');
+        return apiTask(current.rows[0]);
+      }
+      if (Number(total) === 0 || Number(unavailable) > 0) {
+        const saved = await client.query(`select coalesce(jsonb_agg(jsonb_build_object('type',o.output_type,'index',o.output_index,'fileId',f.id,
+            'objectKey',f.object_key,'sizeBytes',f.size_bytes,'mimeType',f.mime_type,'width',f.width,'height',f.height,
+            'durationMs',f.duration_ms,'revisedPrompt',o.metadata->>'revisedPrompt') order by o.output_index),'[]'::jsonb) value
+          from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id and f.status='ready'
+          where o.task_id=$1 and o.workspace_id=$2 and o.output_type=$3 and o.availability='available'`, [taskId, me.workspace_id, task.rows[0].task_type]);
+        await client.query(`update app.generation_tasks set outputs=$2::jsonb where id=$1`, [taskId, JSON.stringify(saved.rows[0].value || [])]);
+        const failed = ['video','audio'].includes(task.rows[0].task_type)
+          ? await client.query(`select * from app.fail_generation_task_keep_charge($1,'output_unrecoverable','媒体已生成但未能完整保存；本次扣点保留')`, [taskId])
+          : await client.query(`select * from app.fail_generation_task($1,'output_unrecoverable','图片未能完整保存，本次预扣额度已退回',true)`, [taskId]);
+        await client.query('commit');
+        return apiTask(failed.rows[0]);
+      }
+      const outputs = await client.query(`select coalesce(jsonb_agg(jsonb_build_object('type',o.output_type,'index',o.output_index,'fileId',f.id,
+          'objectKey',f.object_key,'sizeBytes',f.size_bytes,'mimeType',f.mime_type,'width',f.width,'height',f.height,
+          'durationMs',f.duration_ms,'revisedPrompt',o.metadata->>'revisedPrompt') order by o.output_index),'[]'::jsonb) value
+        from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id and f.status='ready'
+        where o.task_id=$1 and o.workspace_id=$2 and o.output_type=$3 and o.availability='available'
+          and o.attempt_id=(select id from app.generation_attempts where task_id=$1 and workspace_id=$2 order by attempt_no desc limit 1)`,
+      [taskId, me.workspace_id, task.rows[0].task_type]);
+      const settled = await client.query(`select * from app.settle_generation_task_success($1,$2::jsonb,$3)`,
+        [taskId, JSON.stringify(outputs.rows[0].value || []), providerRef]);
+      await client.query('commit');
+      return apiTask(settled.rows[0]);
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function finishFileUploadRecoveryJob(job) {
@@ -2271,12 +2868,13 @@ export async function createPostgresBillingStore() {
       const workspaceId = owner.rows[0].workspace_id;
       if (file.workspaceId && file.workspaceId !== workspaceId) throw new Error('上传期间工作空间已变化，请重新上传');
       const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : {};
-      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited'].includes(file.sourceKind || metadata.sourceKind)
+      const sourceKind = ['generated', 'reference_upload', 'manual_upload', 'edited', 'derived'].includes(file.sourceKind || metadata.sourceKind)
         ? (file.sourceKind || metadata.sourceKind) : 'manual_upload';
       const mediaType = ['image', 'video', 'audio', 'text', 'document', 'other'].includes(file.mediaType)
         ? file.mediaType : 'other';
       const editId = sourceKind === 'edited' ? String(metadata.editId || '') : null;
-      const sourceFileId = sourceKind === 'edited' ? String(metadata.sourceFileId || '') : null;
+      const sourceFileId = ['edited', 'derived'].includes(sourceKind) ? String(file.sourceFileId || metadata.sourceFileId || '').toLowerCase() : null;
+      const previewVariant = sourceKind === 'derived' ? String(file.previewVariant || metadata.previewVariant || '') : null;
       const idempotencyKey = String(file.idempotencyKey || metadata.writeIdempotencyKey || '').trim();
       if (idempotencyKey && idempotencyKey.length > 160) throw new Error('文件保存编号不能超过160个字符');
       if (sourceKind === 'edited') {
@@ -2286,9 +2884,28 @@ export async function createPostgresBillingStore() {
           where ce.id=$1 and ce.workspace_id=$2 and ce.created_by=$3 and cei.file_id=$4 and cei.role='base'`, [editId, workspaceId, owner.rows[0].id, sourceFileId]);
         if (!source.rowCount) throw new Error('编辑记录或原始素材不存在、未就绪或不属于当前用户');
       }
+      if (sourceKind === 'derived') {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sourceFileId)
+          || !isAssetPreviewVariant(previewVariant) || mediaType !== 'image') throw new Error('预览文件必须是图片，并提供有效的原文件编号和预览规格');
+        const source = await client.query(`select 1 from app.file_objects where id=$1 and workspace_id=$2 and status='ready'
+          and ($3 <> 'video-cover' or media_type='video')`, [sourceFileId, workspaceId, previewVariant]);
+        if (!source.rowCount) throw new Error('预览原文件不存在、未就绪或类型不匹配');
+      }
+      if (sourceKind === 'derived' && idempotencyKey && !file.uploadSessionId) {
+        const existing = await client.query(`select id,object_key,checksum,size_bytes,source_file_id,preview_variant,status
+          from app.file_objects where workspace_id=$1 and write_idempotency_key=$2 for update`, [workspaceId, idempotencyKey]);
+        if (existing.rowCount) {
+          const prior = existing.rows[0];
+          if (prior.status !== 'ready' || String(prior.checksum || '') !== String(file.checksum || '')
+            || Number(prior.size_bytes) !== Number(file.sizeBytes) || String(prior.source_file_id || '').toLowerCase() !== sourceFileId
+            || prior.preview_variant !== previewVariant) throw new Error('同一文件保存编号不能用于不同内容或来源');
+          await client.query('commit');
+          return { id: prior.id, fileId: prior.id, name: title, type: 'file', derived: true, objectKey: prior.object_key, reused: true };
+        }
+      }
       if (idempotencyKey && !file.uploadSessionId) {
         const existing = await client.query(`select a.id,a.title,a.asset_type,a.visibility,a.status,a.created_at,a.updated_at,
-            f.object_key,f.checksum,f.size_bytes,f.source_kind,f.edit_id,f.source_file_id,f.status file_status
+            f.object_key,f.checksum,f.size_bytes,f.source_kind,f.edit_id,f.source_file_id,f.preview_variant,f.status file_status
           from app.file_objects f
           join app.asset_files af on af.file_id=f.id and af.workspace_id=f.workspace_id and af.role='source'
           join app.asset_versions av on av.id=af.asset_version_id and av.workspace_id=f.workspace_id
@@ -2300,7 +2917,8 @@ export async function createPostgresBillingStore() {
           if (prior.file_status !== 'ready' || prior.status !== 'active') throw new Error('同一文件仍在保存，请稍后重试');
           if (String(prior.checksum || '') !== String(file.checksum || '') || Number(prior.size_bytes) !== Number(file.sizeBytes)
             || prior.source_kind !== sourceKind || String(prior.edit_id || '') !== String(editId || '')
-            || String(prior.source_file_id || '') !== String(sourceFileId || '')) {
+            || String(prior.source_file_id || '') !== String(sourceFileId || '')
+            || String(prior.preview_variant || '') !== String(previewVariant || '')) {
             throw new Error('同一文件保存编号不能用于不同内容或来源');
           }
           await client.query('commit');
@@ -2309,16 +2927,18 @@ export async function createPostgresBillingStore() {
             objectKey: prior.object_key, reused: true };
         }
       }
-      let uploadBatchId = ['generated','edited'].includes(sourceKind) ? null : (file.uploadBatchId || crypto.randomUUID());
+      let uploadBatchId = ['generated','edited','derived'].includes(sourceKind) ? null : (file.uploadBatchId || crypto.randomUUID());
       let pendingUpload = null;
       if (file.uploadSessionId) {
-        const pending = await client.query(`select s.id,s.status,s.file_id,s.workspace_id,f.bucket,f.object_key,f.size_bytes,f.upload_batch_id,f.source_kind,f.edit_id,f.source_file_id,f.write_idempotency_key
+        const pending = await client.query(`select s.id,s.status,s.file_id,s.workspace_id,f.bucket,f.object_key,f.size_bytes,f.upload_batch_id,f.source_kind,f.edit_id,f.source_file_id,f.preview_variant,f.write_idempotency_key
           from app.upload_sessions s join app.file_objects f on f.id=s.file_id and f.workspace_id=s.workspace_id
           where s.id=$1 and s.file_id=$2 for update of s,f`, [file.uploadSessionId, file.fileId]);
         if (!pending.rowCount || pending.rows[0].status !== 'completing' || pending.rows[0].workspace_id !== workspaceId) throw new Error('上传会话状态不允许完成或归属不匹配');
         pendingUpload = pending.rows[0];
         if (pendingUpload.bucket !== file.bucket || pendingUpload.object_key !== file.objectKey || Number(pendingUpload.size_bytes) !== Number(file.sizeBytes)) throw new Error('上传文件信息与会话登记不一致');
-        if (pendingUpload.source_kind !== sourceKind || String(pendingUpload.edit_id || '') !== String(editId || '') || String(pendingUpload.source_file_id || '') !== String(sourceFileId || '')) throw new Error('上传会话的文件来源与完成请求不一致');
+        if (pendingUpload.source_kind !== sourceKind || String(pendingUpload.edit_id || '') !== String(editId || '')
+          || String(pendingUpload.source_file_id || '') !== String(sourceFileId || '')
+          || String(pendingUpload.preview_variant || '') !== String(previewVariant || '')) throw new Error('上传会话的文件来源与完成请求不一致');
         if (String(pendingUpload.write_idempotency_key || '') !== idempotencyKey) throw new Error('上传会话的文件保存编号与完成请求不一致');
         uploadBatchId = pendingUpload.upload_batch_id;
       }
@@ -2331,17 +2951,26 @@ export async function createPostgresBillingStore() {
             where id=$1 and workspace_id=$4 and status='pending' returning id`, [file.fileId, file.storageVersionId || null, file.checksum || null, workspaceId])
         : await client.query(`insert into app.file_objects(
         id,workspace_id,uploaded_by,storage_provider,bucket,object_key,storage_version_id,checksum,size_bytes,mime_type,status,
-        media_type,source_kind,original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,write_idempotency_key,edit_id,source_file_id
-      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,$12,$13,$14,$15,$16,$17,$18,'approved',$19,$20,$21) returning id`, [
+        media_type,source_kind,original_filename,upload_batch_id,width,height,duration_ms,completeness,inspection_status,write_idempotency_key,edit_id,source_file_id,preview_variant
+      ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,$12,$13,$14,$15,$16,$17,$18,'approved',$19,$20,$21,$22) returning id`, [
         file.fileId, workspaceId, owner.rows[0].id, file.storageProvider, file.bucket, file.objectKey,
         file.storageVersionId || null, file.checksum, file.sizeBytes, file.mimeType || 'application/octet-stream',
         mediaType, sourceKind, file.originalFilename || file.title || title, uploadBatchId,
         Number.isInteger(metadata.width) && metadata.width > 0 ? metadata.width : null,
         Number.isInteger(metadata.height) && metadata.height > 0 ? metadata.height : null,
         Number.isInteger(metadata.durationMs) && metadata.durationMs >= 0 ? metadata.durationMs : null,
-        completeness, file.idempotencyKey || null, editId, sourceFileId,
+        completeness, file.idempotencyKey || null, editId, sourceFileId, previewVariant,
       ]);
       if (!object.rowCount) throw new Error('待完成文件记录不存在或状态已变化');
+      if (sourceKind === 'derived') {
+        if (pendingUpload) {
+          await client.query(`update app.file_jobs set status='cancelled'
+            where upload_session_id=$1 and job_kind='persist' and status in ('queued','retry_wait')`, [file.uploadSessionId]);
+          await client.query(`update app.upload_sessions set status='completed' where id=$1 and status='completing'`, [file.uploadSessionId]);
+        }
+        await client.query('commit');
+        return { id: file.fileId, fileId: file.fileId, name: title, type: 'file', derived: true, objectKey: file.objectKey };
+      }
       let generationTaskId = null;
       if (sourceKind === 'generated' && metadata.sourceGenerationTaskId) {
         const task = await client.query(`select id,task_type from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 and status='succeeded'`, [metadata.sourceGenerationTaskId, workspaceId, owner.rows[0].id]);
@@ -2371,11 +3000,28 @@ export async function createPostgresBillingStore() {
       from app.assets a join app.asset_versions v on v.asset_id=a.id and v.workspace_id=a.workspace_id and v.version_no=1
       join app.asset_files af on af.asset_version_id=v.id and af.workspace_id=a.workspace_id and af.role='source'
       join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id
-      where a.id=$1 and a.status='active' and f.status='ready' and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$2) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active'))) limit 1`, [assetId, appwriteUserId]);
+      where a.id=$1 and a.status in ('active','deleted') and f.status='ready' and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$2) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active'))) limit 1`, [assetId, appwriteUserId]);
     if (!r.rowCount) throw new Error('资产不存在或无权访问');
     const x = r.rows[0];
     await client.query('commit');
     return { title: x.title, storageProvider: x.storage_provider, bucket: x.bucket, objectKey: x.object_key, mimeType: x.mime_type || 'application/octet-stream', sizeBytes: Number(x.size_bytes || 0), checksum: x.checksum || '' };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function getDerivedFile(appwriteUserId, fileId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const file = await client.query(`select original_filename,storage_provider,bucket,object_key,mime_type,size_bytes,checksum
+        from app.file_objects where id=$1 and workspace_id=$2 and source_kind='derived' and status='ready'`, [fileId, me.workspace_id]);
+      if (!file.rowCount) throw new Error('预览文件不存在或无权访问');
+      const row = file.rows[0];
+      await client.query('commit');
+      return { title: row.original_filename || '预览文件', storageProvider: row.storage_provider, bucket: row.bucket,
+        objectKey: row.object_key, mimeType: row.mime_type || 'application/octet-stream', sizeBytes: Number(row.size_bytes || 0), checksum: row.checksum || '' };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
@@ -2399,6 +3045,7 @@ export async function createPostgresBillingStore() {
       startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
       finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
       timeoutAt: row.timeout_at ? new Date(row.timeout_at).toISOString() : null,
+      chargedCredits: Number(row.charged_credits || 0),
     };
   }
 
@@ -2429,15 +3076,18 @@ export async function createPostgresBillingStore() {
       }
       const idempotencyKey = String(input.idempotencyKey || `task:${crypto.randomUUID()}`).slice(0, 160);
       const quantity = Math.max(0, Math.min(15, Number(input.quantity) || 1));
-      const existingTask = await client.query(`select id from app.generation_tasks where workspace_id=$1 and idempotency_key=$2`, [workspaceId, idempotencyKey]);
+      const existingTask = await client.query(`select id,requested_output_count from app.generation_tasks where workspace_id=$1 and idempotency_key=$2`, [workspaceId, idempotencyKey]);
       const r = await client.query(
-        `select * from app.create_generation_task($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11)`,
+        `select * from app.create_generation_task($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13)`,
         [workspaceId, userId, String(input.taskType || 'image').slice(0, 32),
          String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null,
          String(input.pricingVersion || '').slice(0, 160) || null, String(input.prompt || '').slice(0, 4000),
          JSON.stringify(input.parameters || {}), quantity, idempotencyKey,
-         Math.max(30, Number(input.timeoutSeconds) || 600)]
+         Math.max(30, Number(input.timeoutSeconds) || 600), input.modelCatalogId || null, input.creditQuoteId || null]
       );
+      const savedCount = r.rows[0].requested_output_count;
+      if (savedCount != null && Number(savedCount) !== quantity) throw new Error('同一任务编号不能更换生成数量');
+      if (savedCount == null) await client.query(`update app.generation_tasks set requested_output_count=$2 where id=$1`, [r.rows[0].id, quantity]);
       const currentInputs = await client.query(`select file_id from app.generation_inputs where task_id=$1 and workspace_id=$2 and role='reference' order by position`, [r.rows[0].id, workspaceId]);
       const requestedFileIds = referenceAssetIds.map(id => String(fileByAssetId.get(id)));
       if (existingTask.rowCount) {
@@ -2458,6 +3108,34 @@ export async function createPostgresBillingStore() {
       await client.query('commit');
       return apiTask(r.rows[0]);
     } catch (e) { await client.query('rollback'); throw e; } finally { client.release(); }
+  }
+
+  async function listGenerationInputFiles(appwriteUserId, taskId) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const result = await client.query(`select f.id file_id,f.workspace_id,f.storage_provider,f.bucket,f.object_key,
+          f.mime_type,f.size_bytes,f.media_type
+        from app.generation_tasks t
+        join app.generation_inputs i on i.task_id=t.id and i.workspace_id=t.workspace_id and i.role='reference'
+        join app.file_objects f on f.id=i.file_id and f.workspace_id=i.workspace_id and f.status='ready'
+        where t.id=$1 and t.workspace_id=$2 and t.created_by=$3
+        order by i.position`, [taskId, me.workspace_id, me.internal_user_id]);
+      await client.query('commit');
+      return result.rows.map(row => ({
+        fileId: row.file_id,
+        workspaceId: row.workspace_id,
+        storageProvider: row.storage_provider,
+        bucket: row.bucket,
+        objectKey: row.object_key,
+        mimeType: row.mime_type,
+        sizeBytes: Number(row.size_bytes),
+        mediaType: row.media_type,
+      }));
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function getGenerationTask(appwriteUserId, taskId) {
@@ -2529,48 +3207,6 @@ export async function createPostgresBillingStore() {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
-  // 生图 worker 把 COS 已保存的结果登记到 file_objects + generation_outputs。
-  async function recordGeneratedOutput(appwriteUserId, taskId, file) {
-    const me = await getUser(appwriteUserId);
-    if (!me) throw new Error('用户不存在，请重新登录');
-    if (file.storageProvider !== 'cos' || !file.bucket || !file.objectKey || !file.fileId) throw new Error('生成结果缺少有效的 COS 存储记录');
-    const client = await pool.connect();
-    try {
-      await client.query('begin');
-      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
-      const task = await client.query(
-        `select id, workspace_id, created_by, task_type, provider from app.generation_tasks where id=$1 and workspace_id=$2`,
-        [taskId, me.workspace_id]
-      );
-      if (!task.rowCount) throw new Error('任务不存在或不属于当前工作空间');
-      const workspaceId = task.rows[0].workspace_id;
-      const ownerId = task.rows[0].created_by;
-      const mediaType = ['image', 'video', 'audio', 'text'].includes(task.rows[0].task_type) ? task.rows[0].task_type : 'other';
-      const fileRow = await client.query(
-        `insert into app.file_objects(id,workspace_id,uploaded_by,storage_provider,bucket,object_key,storage_version_id,checksum,size_bytes,mime_type,status,media_type,source_kind,original_filename,width,height,duration_ms,completeness,inspection_status)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ready',$11,'generated',$12,$13,$14,$15,$16,'approved') returning id`,
-        [file.fileId, workspaceId, ownerId, file.storageProvider, file.bucket,
-         file.objectKey, file.storageVersionId || null, file.sha256 || null, file.sizeBytes, file.contentType || 'application/octet-stream',
-         mediaType, file.originalFilename || file.objectKey.split('/').pop(), file.width || null, file.height || null,
-         Number.isInteger(file.durationMs) && file.durationMs >= 0 ? file.durationMs : null,
-         mediaType === 'text' ? 'complete' : null]
-      );
-      const fileId = fileRow.rows[0].id;
-      let attempt = await client.query(`select id from app.generation_attempts where task_id=$1 and workspace_id=$2 order by attempt_no limit 1`, [taskId, workspaceId]);
-      if (!attempt.rowCount) attempt = await client.query(`insert into app.generation_attempts(workspace_id,task_id,attempt_no,provider)
-        values($1,$2,1,$3) returning id`, [workspaceId, taskId, task.rows[0].provider || null]);
-      const outputIndex = Number.isInteger(file.index) && file.index >= 0 ? file.index : 0;
-      const meta = { source: `${mediaType}_generation`, index: outputIndex };
-      await client.query(
-        `insert into app.generation_outputs(task_id,workspace_id,file_id,output_type,width,height,content_status,metadata,attempt_id,output_index,availability)
-         values($1,$2,$3,$4,$5,$6,'approved',$7::jsonb,$8,$9,'available')`,
-        [taskId, workspaceId, fileId, mediaType, file.width || null, file.height || null, JSON.stringify(meta), attempt.rows[0].id, outputIndex]
-      );
-      await client.query('commit');
-      return { fileId, objectKey: file.objectKey };
-    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
-  }
-
   async function listGeneratedOutputs(appwriteUserId, taskId) {
     const me = await getUser(appwriteUserId);
     if (!me) throw new Error('用户不存在，请重新登录');
@@ -2578,17 +3214,18 @@ export async function createPostgresBillingStore() {
     try {
       await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
       const r = await client.query(
-        `select o.id as output_id, o.metadata, o.width, o.height,
+          `select o.id as output_id, o.output_type, o.metadata, o.width, o.height, o.duration_ms,
                 f.id as file_id, f.storage_provider, f.bucket, f.object_key, f.mime_type, f.size_bytes
            from app.generation_outputs o
            join app.file_objects f on f.id = o.file_id and f.workspace_id = o.workspace_id
-          where o.task_id = $1 and o.workspace_id = $2 and o.output_type = 'image' and f.status = 'ready'
+          where o.task_id = $1 and o.workspace_id = $2 and o.availability = 'available' and f.status = 'ready'
           order by (o.metadata->>'index')::int nulls last, o.created_at asc`,
         [taskId, me.workspace_id]
       );
       return r.rows.map(x => ({
         index: x.metadata?.index != null ? Number(x.metadata.index) : null,
         outputId: x.output_id,
+        type: x.output_type,
         fileId: x.file_id,
         objectKey: x.object_key,
         storageProvider: x.storage_provider,
@@ -2597,24 +3234,86 @@ export async function createPostgresBillingStore() {
         sizeBytes: Number(x.size_bytes || 0),
         width: x.width,
         height: x.height,
+        durationMs: x.duration_ms == null ? null : Number(x.duration_ms),
       }));
     } finally { client.release(); }
   }
+
+  async function createAssetFromGeneratedOutput(appwriteUserId, taskId, outputIndex, title, metadata = {}) {
+    const safeTitle = String(title || '').trim().slice(0, 240);
+    if (!safeTitle || !Number.isInteger(outputIndex) || outputIndex < 0) throw new Error('生成素材参数无效');
+    const sourceMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+    const versionMetadata = Object.fromEntries(Object.entries(sourceMetadata).filter(([key, value]) =>
+      ['prompt','model','voice','format','speed','resolution','ratio','seconds','generateAudio','watermark','videoMode'].includes(key)
+      && (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')));
+    if (typeof versionMetadata.prompt === 'string') versionMetadata.prompt = versionMetadata.prompt.slice(0, 4000);
+    if (typeof versionMetadata.model === 'string') versionMetadata.model = versionMetadata.model.slice(0, 160);
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const userId = await setWorkspaceUserContext(client, appwriteUserId);
+      const output = await client.query(`select o.id,o.metadata,o.output_type,o.workspace_id,o.task_id,
+          f.id file_id,f.storage_provider,f.bucket,f.object_key,f.mime_type,f.size_bytes,f.width,f.height,f.duration_ms,
+          t.created_by,t.status task_status
+        from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id
+        join app.generation_tasks t on t.id=o.task_id and t.workspace_id=o.workspace_id
+        where o.task_id=$1 and o.workspace_id=(select workspace_id from app.workspaces where owner_user_id=$2 and type='personal' and status='active')
+          and o.output_index=$3 and o.availability='available' and o.output_type in ('video','audio')
+          and f.status='ready' and t.created_by=$2 and t.status='succeeded'
+        for update of o`, [taskId, userId, outputIndex]);
+      if (!output.rowCount) throw new Error('已保存的媒体结果不存在或无权访问');
+      const row = output.rows[0];
+      const existingAssetId = row.metadata?.assetId;
+      if (existingAssetId) {
+        const existing = await client.query(`select id,title,asset_type,visibility,created_at,updated_at
+          from app.assets where id=$1 and workspace_id=$2 and status='active'`, [existingAssetId, row.workspace_id]);
+        if (existing.rowCount) {
+          await client.query('commit');
+          return { id: existing.rows[0].id, name: existing.rows[0].title, type: existing.rows[0].asset_type,
+            visibility: existing.rows[0].visibility, favorited: false,
+            createdAt: new Date(existing.rows[0].created_at).toISOString(), updatedAt: new Date(existing.rows[0].updated_at).toISOString(),
+            objectKey: row.object_key, fileId: row.file_id, mimeType: row.mime_type, sizeBytes: Number(row.size_bytes || 0),
+            width: row.width, height: row.height, durationMs: row.duration_ms == null ? null : Number(row.duration_ms) };
+        }
+      }
+      const asset = await client.query(`insert into app.assets(workspace_id,created_by,source_generation_id,asset_type,title,visibility,moderation_status,status)
+        values($1,$2,$3,$4,$5,'private','approved','active') returning id,title,asset_type,visibility,created_at,updated_at`,
+      [row.workspace_id, userId, taskId, row.output_type, safeTitle]);
+      const version = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata)
+        values($1,$2,1,$3,$4::jsonb) returning id`,
+      [asset.rows[0].id, row.workspace_id, userId, JSON.stringify({ ...versionMetadata, mimeType: row.mime_type, sizeBytes: Number(row.size_bytes || 0), durationMs: row.duration_ms == null ? null : Number(row.duration_ms), sourceGenerationTaskId: taskId })]);
+      await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`,
+        [version.rows[0].id, row.file_id, row.workspace_id]);
+      await client.query(`update app.generation_outputs set metadata=metadata||jsonb_build_object('assetId',$2::text) where id=$1`,
+        [row.id, asset.rows[0].id]);
+      await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload)
+        values('asset.created','asset',$1,$2,$3::jsonb)`, [asset.rows[0].id, row.workspace_id, JSON.stringify({ title: safeTitle, assetType: row.output_type })]);
+      await client.query('commit');
+      return { id: asset.rows[0].id, name: asset.rows[0].title, type: asset.rows[0].asset_type, visibility: asset.rows[0].visibility,
+        favorited: false, createdAt: new Date(asset.rows[0].created_at).toISOString(), updatedAt: new Date(asset.rows[0].updated_at).toISOString(),
+        objectKey: row.object_key, fileId: row.file_id, mimeType: row.mime_type, sizeBytes: Number(row.size_bytes || 0),
+        width: row.width, height: row.height, durationMs: row.duration_ms == null ? null : Number(row.duration_ms) };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
   // 超时自动回收：在途任务→refunded，过期预占→expired，守恒异常→告警。
   async function reapStaleTasks() {
+    const outputResult = await pool.query(`select app.reap_stale_generation_output_tasks() AS count`);
     const r = await pool.query(`select app.reap_stale_generation_tasks() AS result`);
-    return r.rows[0]?.result || {};
+    return { ...(r.rows[0]?.result || {}), refunded_output_tasks: Number(outputResult.rows[0]?.count || 0) };
   }
 
   // 启动恢复：找出本进程重启前残留的 pending 任务（尚未被任何 worker 领取且未超时），
   // 重新派发后台执行；否则这些任务要等到 timeout_at 才会被 reaper 退款，白白占额度。
   async function listRecoverableTasks(limit = 20) {
-    const r = await pool.query(`select gt.*, u.appwrite_user_id
+    const r = await pool.query(`select gt.*, u.appwrite_user_id, a.id recovery_attempt_id, a.provider_task_id recovery_provider_task_id
       from app.generation_tasks gt
       join app.user_accounts u on u.id = gt.created_by
-      where gt.status = 'pending' and gt.timeout_at > now()
+      left join lateral (select id,provider_task_id from app.generation_attempts where task_id=gt.id order by attempt_no desc limit 1) a on true
+      where gt.timeout_at > now() and (gt.status = 'pending'
+        or (gt.task_type='video' and gt.status='running' and a.provider_task_id is not null))
       order by gt.created_at asc limit $1`, [Math.min(100, Math.max(1, Number(limit) || 20))]);
-    return r.rows.map(row => ({ task: apiTask(row), appwriteUserId: row.appwrite_user_id }));
+    return r.rows.map(row => ({ task: apiTask(row), appwriteUserId: row.appwrite_user_id,
+      attemptId: row.recovery_attempt_id || null, providerTaskId: row.recovery_provider_task_id || null }));
   }
 
 
@@ -2674,5 +3373,5 @@ export async function createPostgresBillingStore() {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, listJobTitles, createJobTitle, listAssets, listFavorites, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, createAssetFromFile, getAssetFile, createGenerationTask, getGenerationTask, listMyGenerationTasks, markTaskRunning, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, createGenerationTask, getGenerationTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

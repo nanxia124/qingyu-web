@@ -23,6 +23,10 @@ function consumeOAuthSessionActivationIntent(): boolean {
 
 /** OAuth 回调地址必须和 Google/Appwrite 控制台登记的地址完全一致。 */
 export function getOAuthOrigin(): string {
+  // 开发与本机预览只回到当前页面，不能被生产回调环境变量带到线上。
+  if (import.meta.env.DEV || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) {
+    return window.location.origin;
+  }
   const configuredOrigin = String(import.meta.env.VITE_OAUTH_ORIGIN || "").trim().replace(/\/$/, "");
   if (configuredOrigin) return configuredOrigin;
   if (window.location.hostname === "litzone.art" || window.location.hostname === "www.litzone.art") {

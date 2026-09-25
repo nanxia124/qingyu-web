@@ -102,7 +102,7 @@ export type AgentChatMessageItem = {
     streamId?: string;
 };
 
-export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onRegenerate }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void; onRegenerate?: () => void }) {
+export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onRegenerate, onEditMessage }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void; onRegenerate?: () => void; onEditMessage?: (id: string) => void }) {
     const copyText = useCopyText();
     const [expanded, setExpanded] = useState(false);
     const isUser = item.role === "user";
@@ -129,7 +129,21 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onR
                 style={{ color }}
             >
                 {isUser ? (
-                    <AgentUserMessageContent text={item.text} references={item.canvasReferences || []} skill={item.skill} theme={theme} />
+                    <div className="group relative inline-block">
+                        <AgentUserMessageContent text={item.text} references={item.canvasReferences || []} skill={item.skill} theme={theme} />
+                        {onEditMessage && !item.streamId ? (
+                            <button
+                                type="button"
+                                className="absolute -left-8 top-0 grid size-7 place-items-center rounded-lg border opacity-0 transition group-hover:opacity-100"
+                                style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.muted }}
+                                onClick={() => onEditMessage(item.id)}
+                                aria-label="编辑消息"
+                                title="编辑消息"
+                            >
+                                <FilePenLine className="size-3.5" />
+                            </button>
+                        ) : null}
+                    </div>
                 ) : (
                     <div className="group relative">
                         <div className={expanded ? "" : "relative max-h-[320px] overflow-hidden"}>

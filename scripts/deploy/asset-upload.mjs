@@ -1,7 +1,28 @@
 // 用户文件从 HTTP 请求流直接传给对象存储，不在服务器磁盘暂存。
 export const MAX_ASSET_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
+export const ASSET_PREVIEW_VARIANTS = Object.freeze(['thumbnail', 'video-cover']);
 
-export function buildAssetObjectKey({ workspaceId, sourceKind, mediaType, createdAt = new Date(), groupingId, fileId, extension = '' }) {
+export function isAssetPreviewVariant(value) {
+  return ASSET_PREVIEW_VARIANTS.includes(String(value || ''));
+}
+
+export function validateUploadSessionSize(value) {
+  const sizeBytes = Number(value);
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > MAX_ASSET_UPLOAD_BYTES) {
+    throw new Error('文件大小必须大于0且不能超过5120MB');
+  }
+  return sizeBytes;
+}
+
+export function buildAssetObjectKey({ workspaceId, sourceKind, mediaType, createdAt = new Date(), groupingId, fileId, extension = '', sourceFileId, previewVariant }) {
+  if (sourceKind === 'derived') {
+    if (!workspaceId || !fileId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(sourceFileId || ''))
+      || !isAssetPreviewVariant(previewVariant) || mediaType !== 'image') {
+      throw new Error('预览文件必须是图片，并提供有效的原文件编号和预览规格');
+    }
+    const safeExtension = String(extension).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 16);
+    return `workspaces/${workspaceId}/previews/${sourceFileId}/${previewVariant}/${fileId}${safeExtension}`;
+  }
   const roots = { generated: 'generated', reference_upload: 'references', manual_upload: 'uploads', edited: 'edits' };
   const categories = { image: 'images', video: 'videos', audio: 'audio', text: 'text', document: 'documents', other: 'other' };
   const root = roots[sourceKind];

@@ -2,7 +2,9 @@ import COS from 'cos-nodejs-sdk-v5';
 import { Readable, Transform } from 'node:stream';
 import { createHash, randomBytes } from 'node:crypto';
 
-const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
+export const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
+const MULTIPART_PART_BYTES = 5 * 1024 * 1024;
+const MULTIPART_PART_RETRIES = 3;
 
 function invoke(client, method, params) {
   return new Promise((resolve, reject) => {
@@ -41,7 +43,7 @@ export function createObjectStore({ env = process.env, client: injectedClient } 
     return client;
   }
 
-  async function putObject({ key, body, buffer, contentType, contentLength, maxBytes = DEFAULT_MAX_UPLOAD_BYTES }) {
+  async function putObject({ key, body, buffer, contentType, contentLength, maxBytes = DEFAULT_MAX_UPLOAD_BYTES, preserveOnError = false }) {
     if (!key || key.startsWith('/') || key.split('/').some(part => part === '..')) {
       throw new Error('非法 COS 对象键');
     }
@@ -49,6 +51,9 @@ export function createObjectStore({ env = process.env, client: injectedClient } 
     const source = buffer ? Readable.from([buffer]) : body;
     if (!source || typeof source.pipe !== 'function') throw new Error('缺少上传内容流');
     const declaredLength = contentLength ?? buffer?.length;
+    if (declaredLength === undefined && !buffer) {
+      return putUnknownLengthStream({ key, source, contentType, maxBytes });
+    }
     if (!Number.isSafeInteger(declaredLength) || declaredLength < 0) {
       throw new Error('COS 流式上传必须提供有效文件大小');
     }
@@ -98,8 +103,8 @@ export function createObjectStore({ env = process.env, client: injectedClient } 
       source.unpipe?.(meter);
       if (!source.destroyed) source.resume?.();
       meter.destroy();
-      // 每次写入都使用新文件编号；超时等结果不明时清理本次唯一对象键。
-      await invoke(cosClient, 'deleteObject', {
+      // 生成图片有数据库恢复作业；超时后不能先删掉 COS 可能已成功写入的对象。
+      if (!preserveOnError) await invoke(cosClient, 'deleteObject', {
         Bucket: config.bucket,
         Region: config.region,
         Key: key,
@@ -161,6 +166,88 @@ export function createObjectStore({ env = process.env, client: injectedClient } 
       Bucket: config.bucket, Region: config.region, Key: key, UploadId: uploadId, Parts: normalized,
     });
     return { bucket: config.bucket, storageProvider: 'cos', storageVersionId: result?.VersionId || null, etag: result?.ETag || null };
+  }
+
+  async function putUnknownLengthStream({ key, source, contentType, maxBytes }) {
+    const bufferedChunks = [];
+    const parts = [];
+    const hash = createHash('sha256');
+    let bufferedBytes = 0;
+    let sizeBytes = 0;
+    let uploadId = null;
+
+    const uploadPart = async () => {
+      const partBody = Buffer.concat(bufferedChunks, bufferedBytes);
+      if (!uploadId) {
+        const initialized = await multipartInit({ key, contentType });
+        uploadId = initialized.uploadId;
+      }
+      const partNumber = parts.length + 1;
+      let result;
+      for (let attempt = 1; attempt <= MULTIPART_PART_RETRIES; attempt++) {
+        try {
+          result = await multipartUploadPart({
+            key, uploadId, partNumber, body: Readable.from([partBody]), contentLength: partBody.length,
+            maxBytes: MULTIPART_PART_BYTES,
+          });
+          break;
+        } catch (error) {
+          if (attempt === MULTIPART_PART_RETRIES) throw error;
+        }
+      }
+      parts.push({ partNumber, etag: result.etag, sizeBytes: result.sizeBytes });
+      bufferedChunks.length = 0;
+      bufferedBytes = 0;
+    };
+
+    try {
+      for await (const value of source) {
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        if (sizeBytes + chunk.length > maxBytes) throw new Error('文件超过允许的大小限制');
+        sizeBytes += chunk.length;
+        hash.update(chunk);
+
+        let offset = 0;
+        while (offset < chunk.length) {
+          const take = Math.min(MULTIPART_PART_BYTES - bufferedBytes, chunk.length - offset);
+          bufferedChunks.push(chunk.subarray(offset, offset + take));
+          bufferedBytes += take;
+          offset += take;
+          if (bufferedBytes === MULTIPART_PART_BYTES) await uploadPart();
+        }
+      }
+
+      if (!uploadId) {
+        return putObject({
+          key, buffer: Buffer.concat(bufferedChunks, bufferedBytes), contentType, contentLength: sizeBytes, maxBytes,
+        });
+      }
+      if (bufferedBytes) await uploadPart();
+      let completed;
+      try {
+        completed = await multipartComplete({ key, uploadId, parts });
+      } catch (error) {
+        // COS 可能已完成对象但响应在网络中丢失；先查对象，确认大小一致就按成功处理。
+        const existing = await headObject(key).catch(() => null);
+        if (existing && existing.sizeBytes === sizeBytes) completed = existing;
+        else throw error;
+      }
+      return {
+        ...completed,
+        bucket: completed.bucket,
+        storageProvider: 'cos',
+        objectKey: key,
+        sizeBytes,
+        sha256: hash.digest('hex'),
+        contentType: contentType || 'application/octet-stream',
+      };
+    } catch (error) {
+      source.destroy?.(error);
+      if (uploadId) {
+        await multipartAbort({ key, uploadId }).catch(() => {});
+      }
+      throw error;
+    }
   }
 
   async function multipartListParts({ key, uploadId }) {

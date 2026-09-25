@@ -353,7 +353,8 @@ input.home-search-input:focus::placeholder {
 html:not(.dark) .prompt-box:focus-within { border-color: var(--color-accent); }
 html:not(.dark) .prompt-box textarea:focus { box-shadow: none; }
 
-/* 聊天输入框：禁止聚焦描边 */
+/* 聊天输入框：禁止聚焦描边，光标白色保证深色底可见 */
+.chat-input { caret-color: #fff; }
 .chat-input:focus { box-shadow: none; }
 
 /* 生图页子功能标签：浅色下未选中标签 hover 底色（Tailwind 变体类未生成，改用确定性 CSS） */

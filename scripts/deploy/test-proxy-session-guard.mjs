@@ -128,6 +128,7 @@ try {
     copyFile(new URL('./api-server.mjs', import.meta.url), path.join(directory, 'api-server.mjs')),
     copyFile(new URL('./asset-upload.mjs', import.meta.url), path.join(directory, 'asset-upload.mjs')),
     copyFile(new URL('./object-store.mjs', import.meta.url), path.join(directory, 'object-store.mjs')),
+    copyFile(new URL('./admin-password.mjs', import.meta.url), path.join(directory, 'admin-password.mjs')),
   ]);
   await assertProductionStartRejected(undefined, '缺少 JWT_SECRET');
   await assertProductionStartRejected('qingyu-api-jwt-secret-2026-change-me', '公开默认 JWT_SECRET');

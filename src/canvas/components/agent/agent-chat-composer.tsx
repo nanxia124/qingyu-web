@@ -1,8 +1,9 @@
-import { useRef, useState, type ReactNode } from "react";
+﻿import { useRef, useState, type ReactNode } from "react";
 import { Button, Dropdown, Tooltip } from "antd";
-import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, Link2, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, Lightbulb, Link2, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useShortcuts } from "@/hooks/use-shortcuts";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@canvas/components/ui/select";
 import { buildCanvasResourceReferences } from "@canvas/lib/canvas/canvas-resource-references";
 import { canvasThemes } from "@canvas/lib/canvas-theme";
@@ -57,6 +58,8 @@ export function AgentChatComposer({
 }) {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [dragActive, setDragActive] = useState(false);
+    const { shortcuts } = useShortcuts();
     const canvasReferences = useAgentStore((state) => state.canvasReferences);
     const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
     const addSelectedCanvasReferences = () => {
@@ -76,7 +79,31 @@ export function AgentChatComposer({
     const selectedCount = useAgentStore((state) => state.canvasContext?.snapshot?.selectedNodeIds?.length || 0);
     return (
         <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
-            <div className="rounded-[24px] border px-3 pb-3 pt-3 canvas-float" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
+            <div
+                className="rounded-[24px] border px-3 pb-3 pt-3 canvas-float transition-colors"
+                style={{
+                    background: theme.toolbar.panel,
+                    borderColor: dragActive ? theme.node.activeStroke : theme.node.stroke,
+                    boxShadow: dragActive ? `0 0 0 2px ${theme.node.activeStroke}40` : undefined,
+                }}
+                onDragOver={(event) => {
+                    if (!onAddFiles) return;
+                    event.preventDefault();
+                    setDragActive(true);
+                }}
+                onDragLeave={(event) => {
+                    if (!onAddFiles) return;
+                    if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                    setDragActive(false);
+                }}
+                onDrop={(event) => {
+                    if (!onAddFiles) return;
+                    event.preventDefault();
+                    setDragActive(false);
+                    const files = Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+                    if (files.length) void onAddFiles(files);
+                }}
+            >
                 {attachments.length ? (
                     <div className="thin-scrollbar mb-2 flex gap-2 overflow-x-auto pb-1">
                         {attachments.map((item) => (
@@ -108,6 +135,24 @@ export function AgentChatComposer({
                         <Tooltip title={selectedCount ? `引用选中的 ${selectedCount} 个画布元素` : "选中画布元素后可引用"}>
                             <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending || !selectedCount} style={{ color: selectedCount ? theme.node.activeStroke : theme.node.muted }} icon={<Link2 className="size-4" />} onClick={addSelectedCanvasReferences} aria-label="引用选中画布元素" />
                         </Tooltip>
+                        <Dropdown
+                            trigger={["click"]}
+                            placement="topLeft"
+                            menu={{
+                                items: shortcuts.map((s) => ({
+                                    key: s.id,
+                                    label: (
+                                        <div className="min-w-48">
+                                            <div className="text-sm font-medium">{s.name}</div>
+                                            <div className="mt-0.5 truncate text-xs opacity-60">{s.prompt}</div>
+                                        </div>
+                                    ),
+                                    onClick: () => onPromptChange(prompt ? `${prompt} ${s.prompt} ` : `${s.prompt} `),
+                                })),
+                            }}
+                        >
+                            <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<Lightbulb className="size-4" />} aria-label="快捷指令" />
+                        </Dropdown>
                         {onConfirmToolsChange ? <ToolConfirmationMenu confirmTools={Boolean(confirmTools)} theme={theme} onChange={onConfirmToolsChange} /> : null}
                         {permissionMode && onPermissionModeChange ? <PermissionModeMenu permissionMode={permissionMode} theme={theme} onChange={onPermissionModeChange} /> : null}
                         {models?.length && model && reasoningEffort && onModelChange && onReasoningEffortChange ? <AgentModelControls models={models} model={model} reasoningEffort={reasoningEffort} onModelChange={onModelChange} onReasoningEffortChange={onReasoningEffortChange} /> : null}
@@ -121,8 +166,11 @@ export function AgentChatComposer({
                         )}
                     </div>
                 </div>
-                <div className="mt-1.5 flex items-center justify-center gap-1 text-[10px] leading-none" style={{ color: theme.node.faint }}>
+                <div className="relative mt-1.5 flex items-center justify-center gap-1 text-[10px] leading-none" style={{ color: theme.node.faint }}>
                     <span>Enter</span><span>发送</span><span className="opacity-40">·</span><span>Shift+Enter</span><span>换行</span>
+                    {prompt.length > 0 && (
+                        <span className="absolute right-0 tabular-nums opacity-60">{prompt.length}</span>
+                    )}
                 </div>
             </div>
         </div>

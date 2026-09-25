@@ -28,6 +28,8 @@ services:
     container_name: qingyu-local-api
     environment:
       PORT: "3001"
+      # 只放开容器内监听，宿主机映射仍限于 127.0.0.1。
+      API_HOST: "0.0.0.0"
       BILLING_STORE: postgres
       PGHOST: db
       PGPORT: "5432"
@@ -42,7 +44,7 @@ services:
       COS_SECRET_ID: ${COS_SECRET_ID:-}
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     volumes:
       # 挂载后端代码，改完自动生效
       - ./scripts/deploy:/app

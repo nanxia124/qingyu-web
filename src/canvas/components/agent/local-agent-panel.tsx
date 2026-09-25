@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
 import dayjs from "dayjs";
@@ -680,15 +680,22 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         const msgs = currentState.messages;
         const idx = msgs.findIndex((m) => m.id === messageId);
         if (idx < 0) return;
-        // 向前找最近一条 user 消息
         for (let i = idx - 1; i >= 0; i--) {
             if (msgs[i].role === "user" && msgs[i].text) {
                 setAgentState({ prompt: msgs[i].text });
-                // 等 prompt 更新后发送
                 setTimeout(() => void sendPrompt(), 0);
                 return;
             }
         }
+    };
+    const editMessage = (messageId: string) => {
+        const currentState = useAgentStore.getState();
+        const msgs = currentState.messages;
+        const idx = msgs.findIndex((m) => m.id === messageId);
+        if (idx < 0 || msgs[idx].role !== "user") return;
+        const text = msgs[idx].text;
+        const trimmed = msgs.slice(0, idx);
+        setAgentState({ messages: trimmed, prompt: text });
     };
     const sendPrompt = async () => {
         const text = prompt.trim();
@@ -1445,7 +1452,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             <div className="ml-10 h-3 w-1/3 animate-pulse rounded" style={{ background: theme.node.stroke }} />
                         </div>
                     ) : (
-                        <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} onRegenerate={regenerateMessage} />
+                        <AgentChatTimeline theme={theme} pendingTool={pendingTool} pendingApprovals={pendingApprovals} sending={sending} waiting={waiting} onRejectTool={rejectPendingTool} onApproveTool={approvePendingTool} onApprovalDecision={decideApproval} onRegenerate={regenerateMessage} onEditMessage={editMessage} />
                     )}
                     <AgentTaskProgress theme={theme} busy={sending || waiting} />
                     {tokenUsage ? <AgentUsageBar usage={tokenUsage} theme={theme} /> : null}

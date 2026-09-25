@@ -15,12 +15,14 @@ import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } f
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@canvas/lib/image-utils";
-import { requestEdit, requestGeneration } from "@canvas/services/api/image";
+import { buildImageTaskRequest, requestEdit, requestGeneration } from "@canvas/services/api/image";
 import { deleteStoredImages, ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@canvas/services/image-storage";
 import { useAssetStore } from "@canvas/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@canvas/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@canvas/types/image";
 import i18n from "@canvas/i18n";
+import { pollImageTask, submitImageTask } from "@/lib/generationTasks";
+import { useBillingStore } from "@/stores/useBillingStore";
 
 type GeneratedImage = {
     id: string;
@@ -179,10 +181,46 @@ export default function ImagePage() {
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
 
-        const tasks = Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot));
-
-        const result = await Promise.allSettled(tasks);
+        let result: PromiseSettledResult<GeneratedImage>[];
+        const taskBody = buildImageTaskRequest(snapshot.config, snapshot.text, generationCount, snapshot.references);
+        if (taskBody) {
+            try {
+                const submitted = await submitImageTask(taskBody);
+                const task = await pollImageTask(submitted.taskId);
+                if (task.status !== "succeeded") throw new Error(task.errorMessage || t("workbench.generationFailed"));
+                const images = task.outputs.map((output) => ({
+                    id: output.fileId || `${task.id}-${output.index}`,
+                    dataUrl: `/api/generation-tasks/${encodeURIComponent(task.id)}/outputs/${output.index}/content`,
+                    storageKey: `generation:${task.id}:${output.index}`,
+                    durationMs: performance.now() - batchStartedAt,
+                    width: output.width || 0,
+                    height: output.height || 0,
+                    bytes: output.sizeBytes || 0,
+                    mimeType: output.mimeType || "image/png",
+                } satisfies GeneratedImage));
+                const byIndex = new Map(images.map((image, index) => [task.outputs[index]?.index ?? index, image]));
+                result = Array.from({ length: generationCount }, (_, index) => {
+                    const image = byIndex.get(index);
+                    if (image) {
+                        setResults((value) => updateResultAt(value, index, { status: "success", image }));
+                        return { status: "fulfilled", value: image } as PromiseFulfilledResult<GeneratedImage>;
+                    }
+                    const error = t("imageWorkbench.missingResult");
+                    setResults((value) => updateResultAt(value, index, { status: "failed", error }));
+                    return { status: "rejected", reason: new Error(error) } as PromiseRejectedResult;
+                });
+            } catch (error) {
+                const reason = error instanceof Error ? error : new Error(t("workbench.generationFailed"));
+                result = Array.from({ length: generationCount }, (_, index) => {
+                    setResults((value) => updateResultAt(value, index, { status: "failed", error: reason.message }));
+                    return { status: "rejected", reason } as PromiseRejectedResult;
+                });
+            }
+        } else {
+            result = await Promise.allSettled(Array.from({ length: generationCount }, (_, index) => runGenerationSlot(index, snapshot)));
+        }
         const successImages = result.filter((item): item is PromiseFulfilledResult<GeneratedImage> => item.status === "fulfilled").map((item) => item.value);
+        await useBillingStore.getState().refreshMe();
         const successCount = successImages.length;
         const failCount = generationCount - successCount;
         const failed = result.find((item): item is PromiseRejectedResult => item.status === "rejected");

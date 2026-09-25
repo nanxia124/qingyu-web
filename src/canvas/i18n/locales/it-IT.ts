@@ -32,6 +32,7 @@ const override={
       historyEmpty: "Nessuna generazione ancora",
       historyLoading: "Caricamento…",
       statusRunning: "Generazione",
+      statusSaving: "Salvataggio del risultato…",
       statusDone: "Completato",
       statusFailed: "Fallito",
       statusRefunded: "Rimborsato",

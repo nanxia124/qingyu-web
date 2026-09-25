@@ -9,6 +9,7 @@ import { buildImageReferencePromptText } from "@canvas/lib/image-reference-promp
 import { imageToDataUrl } from "@canvas/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@canvas/lib/media-size";
 import type { ReferenceImage } from "@canvas/types/image";
+import { useBillingStore } from "@/stores/useBillingStore";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
@@ -96,6 +97,32 @@ type GeminiPayload = {
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
 type RequestOptions = { signal?: AbortSignal };
+
+export function buildImageTaskRequest(config: AiConfig, prompt: string, count: number, references: ReferenceImage[]) {
+    const selectedModel = (config.imageModel || config.model).trim();
+    const requestConfig = resolveModelRequestConfig(config, selectedModel);
+    if (!selectedModel || resolveModelScript(config, selectedModel) || requestConfig.apiFormat === "gemini") return null;
+    const referenceAssetIds = references.map((reference) => {
+        const match = reference.storageKey?.match(/^image:([0-9a-f-]{36})$/i);
+        return match?.[1] || "";
+    });
+    if (referenceAssetIds.some((id) => !id)) return null;
+    const quality = normalizeQuality(config.quality);
+    const size = resolveRequestSize(quality, config.size);
+    const background = normalizeBackground(config.background);
+    const requestPrompt = buildImageReferencePromptText(prompt, references);
+    return {
+        model: selectedModel,
+        prompt: withSystemPrompt(requestConfig, requestPrompt),
+        n: Math.max(1, Math.min(15, Math.floor(Number(count) || 1))),
+        ...(quality ? { quality } : {}),
+        ...(size ? { size } : {}),
+        ...(background ? { background } : {}),
+        ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
+        output_format: IMAGE_OUTPUT_FORMAT,
+        referenceAssetIds,
+    };
+}
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -847,6 +874,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             },
         );
         const images = await parseImagePayload(response.data);
+        void useBillingStore.getState().refreshMe();
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
@@ -914,6 +942,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
         const images = await parseImagePayload(response.data);
+        void useBillingStore.getState().refreshMe();
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
@@ -968,7 +997,9 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
                 .filter((id): id is string => Boolean(id))
                 .sort((a, b) => a.localeCompare(b));
         }
-        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
+        const baseUrl = config.baseUrl.trim().replace(/\/+$/, "");
+        if (!/^https?:\/\//i.test(baseUrl)) throw new Error(apiText("modelReadFailed"));
+        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(withLocalProxy(`${baseUrl}/models`), {
             headers: {
                 Authorization: `Bearer ${config.apiKey}`,
             },

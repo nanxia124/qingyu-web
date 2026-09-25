@@ -23,7 +23,14 @@ export function ensureServerConfig(): Promise<void> {
     let loaded = false;
     inFlight = (async () => {
         try {
-            const res = await fetch("/api/config/public");
+            const res = await fetch("/api/config/public", {
+                headers: { "X-Qingyu-Client": "web" },
+                credentials: "include",
+            });
+            if (res.status === 401) {
+                // 未登录是正常情况，静默退出，等登录后再次调用时重试。
+                return;
+            }
             if (!res.ok) return;
             const configs = await res.json();
             if (!Array.isArray(configs) || configs.length === 0) return;

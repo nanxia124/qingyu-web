@@ -76,11 +76,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     return (
         <div
             data-canvas-no-zoom
+            data-canvas-panel-zoom
             className="rounded-md border p-3 backdrop-blur canvas-float"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
-            onWheel={(event) => event.stopPropagation()}
         >
             <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} uploadedImages={node.metadata?.uploadedImages || []} onRemoveUploadedImage={(index) => onRemoveUploadedImage?.(node.id, index)} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
             <CanvasPromptChipInput

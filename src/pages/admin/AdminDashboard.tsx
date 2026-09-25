@@ -728,7 +728,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="https://api.openai.com/v1" />
                             </div>
                             <div className="col-span-2">
-                                <label className="mb-1 block text-sm text-gray-500">t("pages.admin.dashboard.apiKey"){editId && t("pages.admin.dashboard.apiKeyEdit")}</label>
+                                <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.apiKey")}{editId && t("pages.admin.dashboard.apiKeyEdit")}</label>
                                 <input type="password" value={form.api_key} onChange={e => setForm({...form, api_key: e.target.value})}
                                     className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="sk-..." />
                             </div>

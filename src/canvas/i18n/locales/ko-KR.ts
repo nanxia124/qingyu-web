@@ -32,6 +32,7 @@ const override={
       historyEmpty: "아직 생성 기록이 없습니다",
       historyLoading: "불러오는 중…",
       statusRunning: "생성 중",
+      statusSaving: "결과 저장 중…",
       statusDone: "완료",
       statusFailed: "실패",
       statusRefunded: "환불됨",

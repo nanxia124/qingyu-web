@@ -32,6 +32,7 @@ const override={
       historyEmpty: "Belum ada generasi",
       historyLoading: "Memuat…",
       statusRunning: "Membuat",
+      statusSaving: "Menyimpan hasil…",
       statusDone: "Selesai",
       statusFailed: "Gagal",
       statusRefunded: "Dana dikembalikan",

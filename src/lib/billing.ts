@@ -58,6 +58,18 @@ export interface BillingUser {
   dailyUsed?: number;
   dailyLimit?: number;
 }
+export interface ModelCreditQuote {
+  id: string;
+  modelCatalogId: number;
+  taskType: "image" | "video" | "audio" | "text";
+  priceVersion: number;
+  priceUnit: string;
+  unitCount: number;
+  creditPrice: number;
+  totalCredits: number;
+  balance: number;
+  expiresAt: string;
+}
 export interface Plan {
   id: string;
   name: string;
@@ -140,6 +152,8 @@ export const billingApi = {
     request("/api/billing/login", { method: "POST", body: { ...getBrowserDeviceInfo(navigator.userAgent, navigator.platform), ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web" } }),
   logout: () => request<{ success: boolean }>("/api/billing/logout", { method: "POST", body: {} }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
+  quote: (body: { model: string; taskType: ModelCreditQuote["taskType"]; prompt?: string; parameters?: Record<string, unknown>; quantity?: number }) =>
+    request<ModelCreditQuote>("/api/billing/quote", { method: "POST", body }),
   renewalStatus: () => request<RenewalStatus>("/api/billing/renewal-status"),
   plans: () => request<Plan[]>("/api/billing/plans"),
   createOrder: (planId: string, idempotencyKey: string) =>

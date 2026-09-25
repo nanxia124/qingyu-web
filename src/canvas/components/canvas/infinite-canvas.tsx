@@ -18,6 +18,22 @@ type InfiniteCanvasProps = {
     children: React.ReactNode;
 };
 
+// Node input panels (CanvasNodePromptPanel) let the wheel scroll their prompt box first;
+// once the scroller reaches an edge, the same wheel gesture should zoom the canvas instead.
+function canScrollInDirection(target: EventTarget | null, deltaY: number): boolean {
+    let el = target instanceof Element ? target : null;
+    while (el) {
+        const style = window.getComputedStyle(el);
+        const overflowY = style.overflowY;
+        if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight) {
+            if (deltaY > 0 && el.scrollTop < el.scrollHeight - el.clientHeight - 1) return true;
+            if (deltaY < 0 && el.scrollTop > 0) return true;
+        }
+        el = el.parentElement;
+    }
+    return false;
+}
+
 export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = "dots", onViewportChange, onCanvasMouseDown, onCanvasDeselect, onCanvasDoubleClick, onContextMenu, onDrop, children }: InfiniteCanvasProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const panState = useRef({
@@ -86,7 +102,12 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+        // Node input panel: scroll its prompt box while it has room; zoom the canvas only at an edge.
+        if (target?.closest("[data-canvas-panel-zoom]")) {
+            if (canScrollInDirection(target, event.deltaY)) return;
+        } else if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) {
+            return;
+        }
 
         const delta = -event.deltaY;
         const factor = Math.pow(1.1, delta / 100);
@@ -196,6 +217,13 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         // Prevent canvas scrolling from moving the page while preserving native scrolling inside overlays and dialogs.
         const preventWheelScroll = (event: WheelEvent) => {
             const target = event.target instanceof Element ? event.target : null;
+            if (target?.closest("[data-canvas-panel-zoom]")) {
+                // Inside the node input panel: keep native scrolling while room remains;
+                // at an edge, take over the gesture so it drives canvas zoom.
+                if (canScrollInDirection(target, event.deltaY)) return;
+                event.preventDefault();
+                return;
+            }
             if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
             event.preventDefault();
         };

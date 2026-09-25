@@ -37,6 +37,60 @@ try {
   assert.equal(settled.status, 'succeeded');
   assert.equal(settled.outputs.length, 1);
   assert.equal(await store.markTaskRunning(user, success.id, null), false);
+
+  const recoverable = await store.createGenerationTask(user, { ...input, idempotencyKey: `recoverable:${crypto.randomUUID()}` });
+  assert.equal(await store.markTaskRunning(user, recoverable.id, null), true);
+  const recoverableAttempt = await store.beginGenerationAttempt(user, recoverable.id);
+  const recoverableSlot = await store.reserveGeneratedOutput(user, recoverable.id, recoverableAttempt.attemptId, 0, {
+    bucket: 'generation-verify', recoveryUrl: 'https://provider.example/generated.png?signature=secret-test-value',
+  });
+  const encryptedSource = (await pool.query(`select recovery_source_ciphertext from app.generation_outputs where id=$1`, [recoverableSlot.outputId])).rows[0].recovery_source_ciphertext;
+  assert.ok(encryptedSource);
+  assert.equal(encryptedSource.includes('secret-test-value'), false, '恢复地址必须加密保存');
+  await pool.query(`update app.file_jobs set next_run_at=now() where generation_output_id=$1`, [recoverableSlot.outputId]);
+  await store.completeGenerationAttempt(user, recoverable.id, recoverableAttempt.attemptId, 1, 'provider-ref');
+  assert.equal((await store.getGenerationTask(user, recoverable.id)).status, 'saving');
+  const worker = `generation-recovery:${crypto.randomUUID()}`;
+  const claimed = await store.claimFileUploadRecoveryJobs(worker, 50);
+  const recoveryJob = claimed.find(job => job.generationOutputId === recoverableSlot.outputId);
+  assert.ok(recoveryJob, '已完成上游响应的输出槽位应进入恢复队列');
+  const recoveryContext = await store.getGenerationOutputRecoveryContext(recoveryJob);
+  assert.equal(recoveryContext.recoveryUrl, 'https://provider.example/generated.png?signature=secret-test-value');
+  const finishedOutput = await store.finishGeneratedOutputRecoveryJob(recoveryJob, {
+    sizeBytes: 64, contentType: 'image/png', sha256: 'a'.repeat(64), storageVersionId: 'verify-version',
+  });
+  const recoveredTask = await store.settleGenerationTaskIfComplete(user, finishedOutput.taskId, 'provider-ref');
+  assert.equal(recoveredTask.status, 'succeeded');
+  assert.equal(recoveredTask.outputs.length, 1);
+  const savedRecovery = (await pool.query(`select o.availability,o.recovery_source_ciphertext,f.status file_status,j.status job_status
+    from app.generation_outputs o join app.file_objects f on f.id=o.file_id
+    join app.file_jobs j on j.generation_output_id=o.id where o.id=$1`, [recoverableSlot.outputId])).rows[0];
+  assert.equal(savedRecovery.availability, 'available');
+  assert.equal(savedRecovery.recovery_source_ciphertext, null);
+  assert.equal(savedRecovery.file_status, 'ready');
+  assert.equal(savedRecovery.job_status, 'succeeded');
+
+  const partial = await store.createGenerationTask(user, { ...input, quantity: 2, idempotencyKey: `partial:${crypto.randomUUID()}` });
+  assert.equal(await store.markTaskRunning(user, partial.id, null), true);
+  const partialAttempt = await store.beginGenerationAttempt(user, partial.id);
+  const goodSlot = await store.reserveGeneratedOutput(user, partial.id, partialAttempt.attemptId, 0, { bucket: 'generation-verify' });
+  const badSlot = await store.reserveGeneratedOutput(user, partial.id, partialAttempt.attemptId, 1, { bucket: 'generation-verify' });
+  await store.recordGeneratedOutput(user, partial.id, {
+    outputId: goodSlot.outputId, fileId: goodSlot.fileId, sizeBytes: 32, contentType: 'image/png', sha256: 'b'.repeat(64),
+  });
+  await pool.query(`update app.file_jobs set next_run_at=now() where generation_output_id=$1`, [badSlot.outputId]);
+  await store.completeGenerationAttempt(user, partial.id, partialAttempt.attemptId, 2, 'provider-ref-partial');
+  const partialJobs = await store.claimFileUploadRecoveryJobs(`generation-partial:${crypto.randomUUID()}`, 50);
+  const failedJob = partialJobs.find(job => job.generationOutputId === badSlot.outputId);
+  assert.ok(failedJob);
+  await store.failGeneratedOutputRecoveryJob(failedJob, 'source_unavailable', 1);
+  const refundedPartial = await store.getGenerationTask(user, partial.id);
+  assert.equal(refundedPartial.status, 'refunded');
+  assert.equal(refundedPartial.outputs.length, 1, '失败退款后已保存的那张图片仍要保留');
+  assert.equal((await store.listGeneratedOutputs(user, partial.id)).length, 1);
+  const partialReservation = (await pool.query(`select r.status from app.daily_usage_reservations r
+    join app.generation_tasks t on t.daily_reservation_id=r.id where t.id=$1`, [partial.id])).rows[0];
+  assert.equal(partialReservation.status, 'released');
   console.log('PASS：20 次并发提交、20 次并发领取、跨用户拒绝、终态拒绝、过期拒绝与额度释放');
 } finally {
   await store.close();

@@ -2,7 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import http from 'node:http';
-import { buildAssetObjectKey, MAX_ASSET_UPLOAD_BYTES, writeAssetUpload } from './asset-upload.mjs';
+import { buildAssetObjectKey, MAX_ASSET_UPLOAD_BYTES, validateUploadSessionSize, writeAssetUpload } from './asset-upload.mjs';
+
+test('上传会话允许任意非空小文件，并拒绝空文件、非法大小和超限文件', () => {
+  assert.equal(validateUploadSessionSize(1), 1);
+  assert.equal(validateUploadSessionSize(64 * 1024), 64 * 1024);
+  assert.equal(validateUploadSessionSize(MAX_ASSET_UPLOAD_BYTES), MAX_ASSET_UPLOAD_BYTES);
+  for (const invalid of [0, -1, 1.5, Number.NaN, MAX_ASSET_UPLOAD_BYTES + 1]) {
+    assert.throws(() => validateUploadSessionSize(invalid), /文件大小必须大于0/);
+  }
+});
 
 test('COS 对象键按工作空间、来源、类型、年月和任务或上传批次分组', () => {
   const createdAt = new Date('2026-09-25T23:59:59.000Z');
@@ -19,6 +28,16 @@ test('COS 对象键按工作空间、来源、类型、年月和任务或上传�
     'workspaces/workspace-1/edits/images/2026/09/edit-1/file-3.png',
   );
   assert.throws(() => buildAssetObjectKey({ workspaceId: 'workspace-1', sourceKind: 'unknown', mediaType: 'image', createdAt, groupingId: 'batch-1', fileId: 'file-1' }), /分类或分组信息无效/);
+});
+
+test('COS 预览文件按原文件和后端允许的规格分组，并拒绝缺失或非法来源', () => {
+  const sourceFileId = '123e4567-e89b-42d3-a456-426614174000';
+  assert.equal(
+    buildAssetObjectKey({ workspaceId: 'workspace-1', sourceKind: 'derived', mediaType: 'image', sourceFileId, previewVariant: 'video-cover', fileId: 'preview-1', extension: '.webp' }),
+    `workspaces/workspace-1/previews/${sourceFileId}/video-cover/preview-1.webp`,
+  );
+  assert.throws(() => buildAssetObjectKey({ workspaceId: 'workspace-1', sourceKind: 'derived', mediaType: 'image', sourceFileId, previewVariant: 'arbitrary', fileId: 'preview-1' }), /预览规格/);
+  assert.throws(() => buildAssetObjectKey({ workspaceId: 'workspace-1', sourceKind: 'derived', mediaType: 'video', sourceFileId, previewVariant: 'video-cover', fileId: 'preview-1' }), /必须是图片/);
 });
 
 function requestStream(contentLength) {

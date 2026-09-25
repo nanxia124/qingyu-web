@@ -37,6 +37,8 @@ export default {
         historyEmpty: "還沒有生成記錄",
         historyLoading: "正在載入…",
         statusRunning: "生成中",
+
+        statusSaving: "正在恢復保存",
         statusDone: "已完成",
         statusFailed: "生成失敗",
         statusRefunded: "已退款",

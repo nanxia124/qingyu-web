@@ -32,6 +32,7 @@ const override={
       historyEmpty: "لا توجد توليدات بعد",
       historyLoading: "جارٍ التحميل…",
       statusRunning: "قيد التوليد",
+      statusSaving: "جارٍ حفظ النتيجة…",
       statusDone: "مكتمل",
       statusFailed: "فشل",
       statusRefunded: "تم الاسترداد",

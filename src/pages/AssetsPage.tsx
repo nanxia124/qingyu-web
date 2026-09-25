@@ -20,13 +20,14 @@ const typeTabs: { id: AssetType; label: string }[] = [
   { id: 'file', label: 'pages.assets.file' },
 ]
 
-type Asset = { id: string; name: string; type: string; createdAt: string; favorited: boolean; liked?: boolean; likeCount?: number; commentCount?: number; metadata?: { mimeType?: string; sizeBytes?: number; sourceKind?: string } }
+type Asset = { id: string; name: string; type: string; createdAt: string; favorited: boolean; status?: string; liked?: boolean; likeCount?: number; commentCount?: number; metadata?: { mimeType?: string; sizeBytes?: number; sourceKind?: string } }
 type AssetComment = { id: string; content: string; authorEmail?: string; createdAt: string; parentId?: string | null }
 
 export default function AssetsPage() {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const [tab, setTab] = useState<AssetType>('all')
+  const [showRecycleBin, setShowRecycleBin] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,13 +49,13 @@ export default function AssetsPage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    api.get<Asset[]>('/assets', { type: tab, keyword }).then((data) => {
+    api.get<Asset[]>('/assets', { type: tab, keyword, status: showRecycleBin ? 'deleted' : 'active' }).then((data) => {
       if (!cancelled) setAssets(data)
     }).catch(() => {
       if (!cancelled) setAssets([])
     }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [tab, keyword, reloadSeq])
+  }, [tab, keyword, reloadSeq, showRecycleBin])
 
   useEffect(() => {
     if (!workspaceId) return
@@ -221,6 +222,17 @@ export default function AssetsPage() {
 
   const filtered = assets
 
+  const changeAssetStatus = async (asset: Asset, restore: boolean) => {
+    try {
+      if (restore) await api.put(`/assets/${encodeURIComponent(asset.id)}/restore`)
+      else await api.delete(`/assets/${encodeURIComponent(asset.id)}`)
+      message.success(restore ? '素材已恢复' : '素材已移到回收站')
+      setReloadSeq((value) => value + 1)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : (restore ? '恢复失败，请稍后重试' : '移入回收站失败，请稍后重试'))
+    }
+  }
+
   return (
     <div className="flex h-full flex-col bg-bg">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -243,6 +255,7 @@ export default function AssetsPage() {
             </button>
           ))}
         </div>
+        <button type="button" onClick={() => setShowRecycleBin((value) => !value)} className="rounded-md px-3 py-1.5 text-[12px] font-medium text-text-muted hover:bg-surface-hover hover:text-text-active">{showRecycleBin ? t('pages.assets.backToAssets') : t('pages.assets.recycleBin')}</button>
         <SearchInput value={keyword} onChange={setKeyword} placeholder={t("pages.assets.search")} mode="collapsible" className="ml-auto" />
         <Tooltip title="上传到当前个人空间">
           <label className={cn('flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover', uploading && 'pointer-events-none opacity-50')}>
@@ -266,7 +279,8 @@ export default function AssetsPage() {
               </div>
               <div className="mt-3 flex items-center gap-2 text-[12px] text-text-muted">
                 <button onClick={() => setPreviewAsset(a)} className="rounded-md px-2 py-1 hover:bg-surface-hover">{t('pages.assets.view')}</button>
-                <button onClick={() => void downloadAsset(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover"><Download className="size-3.5" />{t('pages.assets.download')}</button>
+                {!showRecycleBin && <button onClick={() => void downloadAsset(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover"><Download className="size-3.5" />{t('pages.assets.download')}</button>}
+                {showRecycleBin ? <button onClick={() => Modal.confirm({ title: t('pages.assets.restore'), content: t('pages.assets.restoreConfirm', { name: a.name }), okText: t('pages.assets.restore'), cancelText: t('common.cancel'), onOk: () => changeAssetStatus(a, true) })} className="rounded-md px-2 py-1 hover:bg-surface-hover">{t('pages.assets.restore')}</button> : <button onClick={() => Modal.confirm({ title: t('pages.assets.moveToRecycleBin'), content: t('pages.assets.moveToRecycleBinConfirm', { name: a.name }), okText: t('pages.assets.moveToRecycleBin'), cancelText: t('common.cancel'), okButtonProps: { danger: true }, onOk: () => changeAssetStatus(a, false) })} className="rounded-md px-2 py-1 text-red-400 hover:bg-surface-hover">{t('pages.assets.moveToRecycleBin')}</button>}
                 <Tooltip title="点赞">
                   <button onClick={() => void handleLike(a)} className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-hover">
                     <Heart className={cn('size-3.5', a.liked && 'fill-red-400 text-red-400')} /> {a.likeCount || 0}

@@ -4,5 +4,3 @@ echo "=== all container count ==="
 sudo docker compose ps --format "{{.Name}}" 2>&1 | wc -l
 echo "=== running count ==="
 sudo docker compose ps --format "{{.Status}}" 2>&1 | grep -c "Up"
-echo "=== worker-audits logs ==="
-sudo docker logs appwrite-worker-audits 2>&1 | tail -5

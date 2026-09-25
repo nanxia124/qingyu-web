@@ -15,7 +15,7 @@ import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@canvas/lib/image-utils";
 import { imageReferenceLabel } from "@canvas/lib/image-reference-prompt";
 import { canvasThemes, type CanvasBackgroundMode } from "@canvas/lib/canvas-theme";
-import { externalizeTextAsset, useAssetStore } from "@canvas/stores/use-asset-store";
+import { checksumTextAsset, externalizeTextAsset, useAssetStore } from "@canvas/stores/use-asset-store";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { ImageViewer } from "@/components/ImageViewer";
@@ -312,7 +312,7 @@ function InfiniteCanvasPage() {
             if (task.provider !== "plugin") {
                 setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider === "gemini" ? "gemini" : "openai", model: config.model } } : item)));
             }
-            const video = await storeGeneratedVideo(await waitForVideoGenerationTask(config, task, { signal }));
+            const video = await storeGeneratedVideo(await waitForVideoGenerationTask(config, task, { signal }), { prompt, model: config.model, ...extra });
             setNodes((prev) => prev.map((item) => (item.id === nodeId ? applyGeneratedVideo(item, video, { prompt, model: config.model, ...extra }) : item)));
         },
         [],
@@ -337,7 +337,12 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(node.id);
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
                 controller = startGenerationRequest(node.id, node.id, node.id);
-                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal }));
+                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal }), {
+                    prompt: node.metadata?.prompt, model: generationConfig.model, size: generationConfig.size,
+                    seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality,
+                    generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark,
+                    videoMode: generationConfig.videoMode,
+                });
                 setNodes((prev) =>
                     prev.map((item) =>
                         item.id === node.id
@@ -2726,6 +2731,15 @@ function InfiniteCanvasPage() {
                                 { signal: controller.signal },
                             );
                             const content = answer || streamed;
+                            if (!content.trim()) throw new Error(t("canvas.projectPage.generationFailed"));
+                            const textChecksum = await checksumTextAsset(content);
+                            const storedText = await uploadMediaFile(new Blob([content], { type: "text/plain;charset=utf-8" }), "text", {
+                                sourceKind: "generated",
+                                originalFilename: `canvas-text-${rootId}-${textId}.txt`,
+                                completeness: "complete",
+                                assetMetadata: { source: "canvas-text-generation", prompt: effectivePrompt, model: generationConfig.model, reasoningEffort: generationConfig.reasoningEffort },
+                                writeIdempotencyKey: `canvas-text:${rootId}:${textId}:${textChecksum}`,
+                            });
                             setNodes((prev) =>
                                 prev.map((node) =>
                                     node.id === rootId
@@ -2733,14 +2747,14 @@ function InfiniteCanvasPage() {
                                               ...node,
                                               metadata: {
                                                   ...node.metadata,
-                                                  ...(node.metadata?.primaryTextId === textId ? { content } : {}),
-                                                  texts: node.metadata?.texts?.map((item) => (item.id === textId ? { ...item, content, status: NODE_STATUS_SUCCESS } : item)),
+                                                  ...(node.metadata?.primaryTextId === textId ? { content, storageKey: storedText.storageKey, textChecksum } : {}),
+                                                  texts: node.metadata?.texts?.map((item) => (item.id === textId ? { ...item, content, storageKey: storedText.storageKey, textChecksum, status: NODE_STATUS_SUCCESS } : item)),
                                               },
                                           }
                                         : node,
                                 ),
                             );
-                            return { id: textId, status: NODE_STATUS_SUCCESS, content } satisfies CanvasNodeText;
+                            return { id: textId, status: NODE_STATUS_SUCCESS, content, storageKey: storedText.storageKey, textChecksum } satisfies CanvasNodeText;
                         } catch (error) {
                             if (isGenerationCanceled(error)) return null;
                             const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
@@ -2765,6 +2779,8 @@ function InfiniteCanvasPage() {
                                 metadata: {
                                     ...node.metadata,
                                     content: primaryText?.content || "",
+                                    storageKey: primaryText?.storageKey,
+                                    textChecksum: primaryText?.textChecksum,
                                     texts: completedTexts,
                                     primaryTextId: primaryText?.id,
                                     status: primaryText ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
@@ -2866,7 +2882,17 @@ function InfiniteCanvasPage() {
                         },
                         { signal: controller.signal },
                     );
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: answer || streamed, prompt, status: NODE_STATUS_SUCCESS } } : item)));
+                    const content = answer || streamed;
+                    if (!content.trim()) throw new Error(t("canvas.projectPage.generationFailed"));
+                    const textChecksum = await checksumTextAsset(content);
+                    const storedText = await uploadMediaFile(new Blob([content], { type: "text/plain;charset=utf-8" }), "text", {
+                        sourceKind: "generated",
+                        originalFilename: `canvas-text-${node.id}-retry.txt`,
+                        completeness: "complete",
+                        assetMetadata: { source: "canvas-text-retry", prompt, model: generationConfig.model, reasoningEffort: generationConfig.reasoningEffort },
+                        writeIdempotencyKey: `canvas-text:${node.id}:retry:${textChecksum}`,
+                    });
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content, storageKey: storedText.storageKey, textChecksum, prompt, status: NODE_STATUS_SUCCESS } } : item)));
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {

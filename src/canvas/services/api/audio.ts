@@ -1,13 +1,17 @@
 import axios from "axios";
+import { nanoid } from "nanoid";
 
 import i18n from "@canvas/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@canvas/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@canvas/services/file-storage";
 import { billingProxyHeaders, buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
+import { billingApi } from "@/lib/billing";
+import { useBillingStore } from "@/stores/useBillingStore";
 
 type RequestOptions = { signal?: AbortSignal };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
+export type AudioGenerationResult = { blob: Blob } | { generationOutput: { taskId: string; index: number } };
 
 function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
@@ -21,7 +25,7 @@ function aiHeaders(config: AiConfig) {
     };
 }
 
-export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
+export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<AudioGenerationResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
@@ -39,32 +43,48 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
                 params: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: normalizeAudioSpeedValue(config.audioSpeed), instructions: config.audioInstructions.trim() },
                 signal: options?.signal,
             });
-            return await audioPluginBlob(result, format);
+            return { blob: await audioPluginBlob(result, format) };
         } catch (error) {
             throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
         }
     }
     assertAudioConfig(requestConfig, model);
     const instructions = config.audioInstructions.trim();
+    const parameters = { voice: normalizeAudioVoiceValue(config.audioVoice), format,
+        speed: Number(normalizeAudioSpeedValue(config.audioSpeed)), instructions };
+    const selectedModel = config.model || config.audioModel;
+    const quote = await billingApi.quote({ model: selectedModel, taskType: "audio", prompt, parameters, quantity: 1 });
+    const createdResponse = await fetch("/api/generation-tasks/media", {
+        method: "POST", credentials: "include", signal: options?.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskType: "audio", model: selectedModel, prompt, idempotencyKey: `audio-task:${nanoid()}`,
+            creditQuoteId: quote.id, parameters }),
+    });
+    const created = await createdResponse.json().catch(() => ({})) as { taskId?: string; error?: string };
+    if (!createdResponse.ok || !created.taskId) throw new Error(created.error || apiText("audioGenerationFailed"));
+    void useBillingStore.getState().refreshMe();
+    return await pollServerAudioTask(created.taskId, options?.signal);
+}
 
-    try {
-        const response = await axios.post<Blob>(
-            aiApiUrl(requestConfig, "/audio/speech"),
-            {
-                model,
-                input: prompt,
-                voice: normalizeAudioVoiceValue(config.audioVoice),
-                response_format: format,
-                speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
-                ...(instructions ? { instructions } : {}),
-            },
-            { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
-        );
-        await assertAudioBlob(response.data);
-        return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
-    } catch (error) {
-        throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
+async function pollServerAudioTask(taskId: string, signal: AbortSignal | undefined): Promise<AudioGenerationResult> {
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < deadline) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const response = await fetch(`/api/generation-tasks/${encodeURIComponent(taskId)}`, { credentials: "include", signal, cache: "no-store" });
+        const task = await response.json().catch(() => ({})) as { status?: string; errorMessage?: string; outputs?: Array<{ index?: number }> };
+        if (!response.ok) throw new Error(apiText("audioGenerationFailed"));
+        if (task.status === "succeeded") {
+            void useBillingStore.getState().refreshMe();
+            const index = Number(task.outputs?.[0]?.index ?? 0);
+            return { generationOutput: { taskId, index } };
+        }
+        if (["failed", "refunded"].includes(task.status || "")) { void useBillingStore.getState().refreshMe(); throw new Error(task.errorMessage || apiText("audioGenerationFailed")); }
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(resolve, 1500);
+            signal?.addEventListener("abort", () => { clearTimeout(timeout); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+        });
     }
+    throw new Error(apiText("audioGenerationFailed"));
 }
 
 async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
@@ -81,7 +101,19 @@ async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {
     return blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
 }
 
-export async function storeGeneratedAudio(blob: Blob, format = "mp3", assetMetadata: Record<string, unknown> = {}): Promise<UploadedFile> {
+export async function storeGeneratedAudio(result: AudioGenerationResult, format = "mp3", assetMetadata: Record<string, unknown> = {}): Promise<UploadedFile> {
+    if ("generationOutput" in result) {
+        const response = await fetch(`/api/generation-tasks/${encodeURIComponent(result.generationOutput.taskId)}/outputs/${result.generationOutput.index}/asset`, {
+            method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "生成音频", metadata: assetMetadata }),
+        });
+        const asset = await response.json().catch(() => ({})) as { id?: string; sizeBytes?: number; mimeType?: string; durationMs?: number; error?: string };
+        if (!response.ok || !asset.id) throw new Error(asset.error || apiText("audioGenerationFailed"));
+        const mimeType = asset.mimeType || "audio/mpeg";
+        return { url: `/api/assets/${encodeURIComponent(asset.id)}/content`, storageKey: `audio:${asset.id}`,
+            bytes: Number(asset.sizeBytes || 0), mimeType, ...(asset.durationMs != null ? { durationMs: asset.durationMs } : {}) };
+    }
+    const blob = result.blob;
     const audio = blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
     return uploadMediaFile(audio, "audio", { sourceKind: "generated", originalFilename: `generated-audio.${format}`, assetMetadata });
 }

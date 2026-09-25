@@ -47,6 +47,7 @@ scripts/deploy/_*
 # SSH deploy keys (never commit these!)
 .deploy_key
 .deploy_key.pub
+github_actions_deploy
 
 # runtime data & secrets (admin hash, API keys, billing data)
 api-data/

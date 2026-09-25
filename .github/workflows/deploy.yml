@@ -23,11 +23,20 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # 发布前先验证安全边界，失败时不上传网页或服务器配置。
+      - name: Verify security boundaries
+        run: |
+          node --check scripts/deploy/api-server.mjs
+          node scripts/deploy/test-security-boundaries.mjs
+
       - name: Build project
         env:
           # Google OAuth / Appwrite 回调地址必须固定为生产正式域名，不能跟随访问者的 www 或旧域名。
           VITE_OAUTH_ORIGIN: https://litzone.art
         run: npm run build
+
+      - name: Verify duplicate speech model archive is excluded
+        run: test ! -e dist/models/sherpa-onnx-wasm-asr-1pass.zip
 
       - name: Deploy to server via SSH
         uses: appleboy/scp-action@v0.1.7
@@ -37,9 +46,21 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           source: "dist/*"
-          target: "/home/ubuntu/qingyu-upload"
+          target: "/home/ubuntu/qingyu-upload/${{ github.run_id }}-${{ github.run_attempt }}/frontend"
           overwrite: true
           strip_components: 1
+
+      - name: Upload Appwrite translation
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 43.160.249.6
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "scripts/deploy/appwrite-zh.js"
+          target: "/home/ubuntu/qingyu-upload/${{ github.run_id }}-${{ github.run_attempt }}/frontend"
+          overwrite: true
+          strip_components: 2
 
       - name: Upload Nginx configuration
         uses: appleboy/scp-action@v0.1.7
@@ -49,8 +70,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           source: "scripts/deploy/nginx-qingyu-web.conf"
-          target: "/home/ubuntu/qingyu-upload"
+          target: "/home/ubuntu/qingyu-upload/${{ github.run_id }}-${{ github.run_attempt }}/config"
           overwrite: true
+          strip_components: 2
 
       - name: Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
@@ -61,12 +83,13 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -eu
-            test -s /home/ubuntu/qingyu-upload/index.html
+            deploy_root="/home/ubuntu/qingyu-upload/${{ github.run_id }}-${{ github.run_attempt }}"
+            test -s "$deploy_root/frontend/index.html"
+            nginx_conf="$deploy_root/config/nginx-qingyu-web.conf"
+            test -s "$nginx_conf"
             sudo mkdir -p /var/www/qingyu-web
-            sudo cp -a /home/ubuntu/qingyu-upload/. /var/www/qingyu-web/
+            sudo cp -a "$deploy_root/frontend/." /var/www/qingyu-web/
             sudo chown -R www-data:www-data /var/www/qingyu-web
-            nginx_conf=$(find /home/ubuntu/qingyu-upload -name nginx-qingyu-web.conf -type f -print -quit)
-            test -n "$nginx_conf"
             grep -q 'proxy_set_header X-Forwarded-Proto https;' "$nginx_conf"
             grep -q 'proxy_set_header X-Forwarded-Host litzone.art;' "$nginx_conf"
             sudo install -m 0644 "$nginx_conf" /etc/nginx/sites-available/qingyu-web
@@ -75,10 +98,10 @@ jobs:
             if [ -f /home/ubuntu/appwrite/.env ]; then
               sudo sed -i -E 's|^_APP_DOMAIN=.*|_APP_DOMAIN=litzone.art|; s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=litzone.art|; s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=litzone.art|; s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=litzone.art|; s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=litzone.art|; s|^_APP_OPTIONS_FORCE_HTTPS=.*|_APP_OPTIONS_FORCE_HTTPS=enabled|; s|^_APP_OPTIONS_ROUTER_FORCE_HTTPS=.*|_APP_OPTIONS_ROUTER_FORCE_HTTPS=disabled|' /home/ubuntu/appwrite/.env
               cd /home/ubuntu/appwrite
-              printf '%s\n' 'services:' '  appwrite:' '    ports:' '      - "8081:80"' | sudo tee docker-compose.override.yml > /dev/null
+              printf '%s\n' 'services:' '  appwrite:' '    ports:' '      - "127.0.0.1:8081:80"' | sudo tee docker-compose.override.yml > /dev/null
               sudo docker compose up -d
             fi
             curl --fail --silent --show-error http://localhost/ -o /dev/null
-            rm -rf /home/ubuntu/qingyu-upload
+            rm -rf -- "$deploy_root"
             echo "✅ Deploy completed successfully"
 

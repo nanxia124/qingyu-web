@@ -8,6 +8,8 @@ import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } fro
 import { imageToDataUrl } from "@canvas/services/image-storage";
 import { billingProxyHeaders, boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@canvas/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
+import { billingApi } from "@/lib/billing";
+import { useBillingStore } from "@/stores/useBillingStore";
 import type { ReferenceImage } from "@canvas/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@canvas/types/media";
 
@@ -18,7 +20,7 @@ type RequestOptions = { signal?: AbortSignal };
 type VideoMediaOptions = RequestOptions & { videos?: ReferenceVideo[]; audios?: ReferenceAudio[] };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
-export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string; sourceUrl?: string };
+export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string; sourceUrl?: string; generationOutput?: { taskId: string; index: number } };
 export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string; channelId?: string };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
@@ -80,7 +82,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (requestConfig.apiFormat === "gemini") return createGeminiVideoTask(requestConfig, selectedModel, prompt, references, options);
-    return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
+    return createServerVideoTask(config, selectedModel, prompt, references, options);
 }
 
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
@@ -93,6 +95,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
         if (entry) pluginVideoResults.delete(task.id);
         return { status: "failed", error: apiText("pluginVideoExpired") };
     }
+    if (task.id.startsWith("qingyu:")) return pollServerVideoTask({ ...task, id: task.id.slice("qingyu:".length) }, options);
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "gemini") return pollGeminiVideoTask(requestConfig, task, options);
@@ -147,6 +150,17 @@ function videoPluginResult(result: unknown): VideoGenerationResult {
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult, assetMetadata: Record<string, unknown> = {}): Promise<UploadedFile & { sourceUrl?: string }> {
+    if (result.generationOutput) {
+        const response = await fetch(`/api/generation-tasks/${encodeURIComponent(result.generationOutput.taskId)}/outputs/${result.generationOutput.index}/asset`, {
+            method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "生成视频", metadata: assetMetadata }),
+        });
+        const asset = await response.json().catch(() => ({})) as { id?: string; sizeBytes?: number; mimeType?: string; durationMs?: number; error?: string };
+        if (!response.ok || !asset.id) throw new Error(asset.error || apiText("noPlayableVideo"));
+        const mimeType = asset.mimeType || "video/mp4";
+        return { url: `/api/assets/${encodeURIComponent(asset.id)}/content`, storageKey: `video:${asset.id}`,
+            bytes: Number(asset.sizeBytes || 0), mimeType, ...(asset.durationMs != null ? { durationMs: asset.durationMs } : {}) };
+    }
     const sourceUrl = result.sourceUrl || result.url;
     if (result.blob) {
         const stored = await uploadMediaFile(result.blob, "video", { sourceKind: "generated", originalFilename: "generated-video.mp4", assetMetadata });
@@ -157,6 +171,61 @@ export async function storeGeneratedVideo(result: VideoGenerationResult, assetMe
         return { ...stored, sourceUrl };
     }
     throw new Error(apiText("noPlayableVideo"));
+}
+
+async function createServerVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
+    const referenceAssetIds = await Promise.all(references.map((image) => ensureReferenceAsset(image, options?.signal)));
+    const duration = Number(clampVideoSecondsToModel(config.videoSeconds, model));
+    const parameters = {
+        duration,
+        ratio: inferVideoRatio(config.size),
+        resolution: normalizeVideoResolutionToModel(config.vquality, model, duration),
+        generateAudio: boolConfig(config.videoGenerateAudio, true),
+        watermark: boolConfig(config.videoWatermark, false),
+        mode: resolveVideoMode(config.videoMode, references.length),
+    };
+    const quote = await billingApi.quote({ model, taskType: "video", prompt, parameters, quantity: 1 });
+    const response = await fetch("/api/generation-tasks/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        signal: options?.signal,
+        body: JSON.stringify({
+            taskType: "video",
+            model,
+            prompt,
+            referenceAssetIds,
+            idempotencyKey: `video-task:${nanoid()}`,
+            creditQuoteId: quote.id,
+            parameters,
+        }),
+    });
+    const data = await response.json().catch(() => ({})) as { taskId?: string; error?: string };
+    if (!response.ok || !data.taskId) throw new Error(data.error || apiText("videoTaskCreateFailed"));
+    void useBillingStore.getState().refreshMe();
+    return { id: `qingyu:${data.taskId}`, provider: "openai", model, channelId: channelIdOf(model) };
+}
+
+async function pollServerVideoTask(task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    const response = await fetch(`/api/generation-tasks/${encodeURIComponent(task.id)}`, { credentials: "include", signal: options?.signal, cache: "no-store" });
+    const payload = await response.json().catch(() => ({})) as { status?: string; outputs?: Array<{ index?: number; mimeType?: string }>; errorMessage?: string; error?: string };
+    if (!response.ok) return { status: "pending", transient: true };
+    if (["pending", "running", "saving"].includes(payload.status || "")) return { status: "pending" };
+    void useBillingStore.getState().refreshMe();
+    if (payload.status !== "succeeded") return { status: "failed", error: payload.errorMessage || payload.error || apiText("videoGenerationFailed") };
+    const outputIndex = Number(payload.outputs?.[0]?.index ?? 0);
+    return { status: "completed", result: { mimeType: payload.outputs?.[0]?.mimeType || "video/mp4",
+        generationOutput: { taskId: task.id, index: outputIndex } } };
+}
+
+async function ensureReferenceAsset(image: ReferenceImage, signal?: AbortSignal): Promise<string> {
+    const savedId = image.storageKey?.match(/^[^:]+:([0-9a-f-]{36})$/i)?.[1];
+    if (savedId) return savedId;
+    const blob = await (await fetch(image.dataUrl, { signal })).blob();
+    const uploaded = await uploadMediaFile(blob, "image", { signal, sourceKind: "reference_upload", originalFilename: image.name || "video-reference.png" });
+    const id = uploaded.storageKey.match(/^[^:]+:([0-9a-f-]{36})$/i)?.[1];
+    if (!id) throw new Error(apiText("referenceImageReadFailed"));
+    return id;
 }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {

@@ -32,6 +32,7 @@ const override={
       historyEmpty: "まだ生成履歴はありません",
       historyLoading: "読み込み中…",
       statusRunning: "生成中",
+      statusSaving: "結果を保存中…",
       statusDone: "完了",
       statusFailed: "失敗",
       statusRefunded: "返金済み",

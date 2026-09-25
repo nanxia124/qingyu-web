@@ -32,6 +32,7 @@ const override={
       historyEmpty: "Chưa có bản tạo nào",
       historyLoading: "Đang tải…",
       statusRunning: "Đang tạo",
+      statusSaving: "Đang lưu kết quả…",
       statusDone: "Hoàn tất",
       statusFailed: "Thất bại",
       statusRefunded: "Đã hoàn tiền",

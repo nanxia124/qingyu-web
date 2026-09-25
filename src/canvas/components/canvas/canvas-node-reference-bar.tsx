@@ -1,7 +1,6 @@
 import { FileText, Image as ImageIcon, Music2, Plus, Puzzle, Video, X } from "lucide-react";
 import { Popover } from "antd";
 import { useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@canvas/lib/canvas-theme";
@@ -10,14 +9,12 @@ import { getGroupResourceNodes } from "@canvas/lib/canvas/canvas-resource-refere
 import { getImagePreviewRevision, previewUrlFor, subscribeImagePreviews } from "@canvas/services/image-storage";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@canvas/types/canvas";
+import { ImageViewer } from "@/components/ImageViewer";
 
 export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, uploadedImages = [], onRemoveUploadedImage, onDisconnect, onStartSelection }: { nodeId: string; nodes: CanvasNodeData[]; connectedNodes: CanvasNodeData[]; uploadedImages?: string[]; onRemoveUploadedImage?: (index: number) => void; onDisconnect?: (fromNodeId: string, toNodeId: string) => void; onStartSelection?: (nodeId: string) => void }) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [previewZoom, setPreviewZoom] = useState(1);
-    const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const references = connectedNodes.flatMap((sourceNode) => (sourceNode.type === CanvasNodeType.Group ? getGroupResourceNodes(sourceNode.id, nodes) : [sourceNode]).map((node) => ({ node, sourceNodeId: sourceNode.id })));
     return (
         <div className="mb-2">
@@ -25,7 +22,7 @@ export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, uploaded
             <div className="thin-scrollbar flex min-h-12 gap-2 overflow-x-auto pb-1">
                 {references.map(({ node, sourceNodeId }) => <ReferenceItem key={`${sourceNodeId}:${node.id}`} node={node} onRemove={() => onDisconnect?.(sourceNodeId, nodeId)} />)}
                 {uploadedImages.map((url, index) => (
-                    <div key={`uploaded-${index}`} className="group relative grid size-12 shrink-0 place-items-center rounded-md border cursor-zoom-in" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }} onClick={() => setPreviewUrl(url)}>
+                    <div key={`uploaded-${index}`} className="group relative grid size-12 shrink-0 place-items-center rounded-md border cursor-zoom-in" style={{ background: theme.toolbar.activeBg, borderColor: theme.toolbar.border }} onClick={() => setPreviewIndex(index)}>
                         <img src={url} alt="" className="size-full rounded-[inherit] object-cover" />
                         <button type="button" className="absolute right-0 top-0 grid size-5 place-items-center rounded-full border opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }} aria-label={t("canvas.references.disconnect")} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRemoveUploadedImage?.(index); }}><X className="size-3" /></button>
                     </div>
@@ -34,46 +31,13 @@ export function CanvasNodeReferenceBar({ nodeId, nodes, connectedNodes, uploaded
                     <Plus className="size-4" />
                 </button>
             </div>
-            {previewUrl && createPortal(
-                <div 
-                    className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden bg-black/80" 
-                    onClick={() => { setPreviewUrl(null); setPreviewZoom(1); setPreviewPan({x:0,y:0}); }}
-                    onWheel={(e) => {
-                        e.stopPropagation();
-                        setPreviewZoom((z) => Math.min(8, Math.max(0.5, z + (e.deltaY < 0 ? 0.2 : -0.2))));
-                    }}
-                >
-                    <img 
-                        src={previewUrl} 
-                        alt="" 
-                        draggable={false}
-                        className="select-none rounded-lg object-contain"
-                        style={{
-                            transform: `translate(${previewPan.x}px, ${previewPan.y}px) scale(${previewZoom})`,
-                            cursor: previewZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                            transition: 'transform 0.05s',
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => {
-                            if (previewZoom <= 1) return;
-                            e.stopPropagation();
-                            setIsDragging(true);
-                            const startX = e.clientX - previewPan.x;
-                            const startY = e.clientY - previewPan.y;
-                            const onMove = (ev: MouseEvent) => {
-                                setPreviewPan({ x: ev.clientX - startX, y: ev.clientY - startY });
-                            };
-                            const onUp = () => {
-                                setIsDragging(false);
-                                window.removeEventListener('mousemove', onMove);
-                                window.removeEventListener('mouseup', onUp);
-                            };
-                            window.addEventListener('mousemove', onMove);
-                            window.addEventListener('mouseup', onUp);
-                        }}
-                    />
-                </div>,
-                document.body
+            {previewIndex !== null && uploadedImages.length > 0 && (
+                <ImageViewer
+                    images={uploadedImages}
+                    index={previewIndex}
+                    onIndexChange={setPreviewIndex}
+                    onClose={() => setPreviewIndex(null)}
+                />
             )}
         </div>
     );

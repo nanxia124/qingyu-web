@@ -1,6 +1,7 @@
 ﻿import { useRef, useState, useEffect } from 'react'
 import { Tooltip } from 'antd'
 import { SpeechInputButton } from '@/components/speech-input-button'
+import { ImageViewer } from '@/components/ImageViewer'
 import { ModelPicker } from '@canvas/components/model-picker'
 import { useConfigStore } from '@canvas/stores/use-config-store'
 import { createPortal } from 'react-dom'
@@ -26,6 +27,7 @@ import {
   Share2,
   Star,
   Download,
+  CloudUpload,
   FolderOpen,
   PanelRightClose,
   ClipboardPaste,
@@ -35,6 +37,7 @@ import {
   History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SearchInput } from '@/components/SearchInput'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { requestGeneration, requestEdit } from '@canvas/services/api/image'
@@ -56,6 +59,23 @@ type ServerImageAsset = {
   createdAt: string
   favorited: boolean
   metadata?: Record<string, unknown>
+}
+type ImageToolResult = {
+  id: number
+  assetId?: string
+  model: string
+  size: string
+  fileSize: string
+  quality: string
+  time: string
+  prompt: string
+  favorited: boolean
+  imageUrl?: string
+  sourceKind?: 'generated' | 'edited'
+  sourceGenerationTaskId?: string
+  editId?: string
+  sourceFileId?: string
+  writeIdempotencyKey?: string
 }
 
 const tabs: { id?: TabId; label: string; translation?: boolean; width: string }[] = [
@@ -97,7 +117,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
-  const [results, setResults] = useState<Array<{ id: number; assetId?: string; model: string; size: string; fileSize: string; quality: string; time: string; prompt: string; favorited: boolean; imageUrl?: string }>>([])
+  const [results, setResults] = useState<ImageToolResult[]>([])
+  const [savingResultIds, setSavingResultIds] = useState<Set<number>>(new Set())
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [thumbScale, setThumbScale] = useState(100)
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
@@ -106,10 +127,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [starFilter, setStarFilter] = useState('all')
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const [refImages, setRefImages] = useState<string[]>([])
+  const persistedReferenceImages = useRef(new Map<string, string>())
   const refInputRef = useRef<HTMLInputElement>(null)
-  const [previewZoom, setPreviewZoom] = useState(1)
-  const [previewPan, setPreviewPan] = useState({x: 0, y: 0})
-  const [isDragging, setIsDragging] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [previewImages, setPreviewImages] = useState<string[]>([])
   const [undoPrompt, setUndoPrompt] = useState('')
   const [commonPrompts, setCommonPrompts] = useState<{id:number; title:string; content:string}[]>([])
   const [showCommonPromptModal, setShowCommonPromptModal] = useState(false)
@@ -119,10 +140,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [newPromptTitle, setNewPromptTitle] = useState('')
   const [newPromptContent, setNewPromptContent] = useState('')
   const [replaceIndex, setReplaceIndex] = useState<number | null>(null)
-  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [storagePath, setStoragePath] = useState('')
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
   const loadedResultUrlsRef = useRef<string[]>([])
+  const [searchKeyword, setSearchKeyword] = useState('')
 
   const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
@@ -136,11 +158,21 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const disabledCounts = onlyOne ? ['2', '3', '4'] : []
   const disabledQualities = only1K ? ['2K', '4K'] : []
 
+  const filteredResults = searchKeyword.trim()
+    ? results.filter((r) => r.prompt.toLowerCase().includes(searchKeyword.trim().toLowerCase()))
+    : results
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success', action?: { label: string; onClick: () => void }, pos: 'top' | 'input' = 'top') => {
     setToast({ msg, type, action, pos })
     setTimeout(() => setToast(null), 3000)
   }
 
+  const openPreview = (url: string) => {
+    const resultUrls = results.filter((r) => r.imageUrl).map((r) => r.imageUrl!)
+    const idx = resultUrls.indexOf(url)
+    if (idx >= 0) { setPreviewImages(resultUrls); setPreviewIndex(idx) } else { setPreviewImages([url]); setPreviewIndex(0) }
+    setPreviewOpen(true)
+  }
   const addToQueue = (n: number) => {
     if (!isLoggedIn) { openAuthModal(); return }
     setQueueSize((q) => q + n)
@@ -149,6 +181,45 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
   const copyPrompt = (text: string) => {
     navigator.clipboard?.writeText(text).then(() => showToast(t('imageTools.toasts.copiedPrompt'))).catch(() => showToast(t('imageTools.toasts.copyFailed'), 'error'))
+  }
+
+  const uploadImageResult = async (result: ImageToolResult): Promise<{ id: string }> => {
+    if (!result.imageUrl) throw new Error(t('imageTools.toasts.resultUnavailable'))
+    const response = await fetch(result.imageUrl)
+    if (!response.ok) throw new Error(t('imageTools.toasts.resultUnavailable'))
+    const blob = await response.blob()
+    const extension = blob.type.split('/')[1]?.split(';')[0] || 'png'
+    const file = new File([blob], `${t('imageTools.resultFilePrefix')}-${result.id}.${extension}`, { type: blob.type || 'image/png' })
+    return api.uploadAsset<{ id: string }>(file, {
+      sourceKind: result.sourceKind || 'generated',
+      source: result.sourceKind === 'edited' ? 'image_edit' : 'image_generation',
+      ...(result.writeIdempotencyKey ? { writeIdempotencyKey: result.writeIdempotencyKey } : {}),
+      ...(result.editId && result.sourceFileId ? { editId: result.editId, sourceFileId: result.sourceFileId } : {}),
+      ...(result.sourceGenerationTaskId ? { sourceGenerationTaskId: result.sourceGenerationTaskId } : {}),
+      prompt: result.prompt,
+      model: result.model,
+      quality: result.quality,
+      size: result.size,
+    })
+  }
+
+  const retrySaveResult = async (id: number) => {
+    const result = results.find((item) => item.id === id)
+    if (!result || result.assetId || savingResultIds.has(id)) return
+    setSavingResultIds((current) => new Set(current).add(id))
+    try {
+      const asset = await uploadImageResult(result)
+      setResults((current) => current.map((item) => item.id === id ? { ...item, assetId: asset.id } : item))
+      showToast(t('imageTools.toasts.savedToCloud'))
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('imageTools.toasts.saveRetryFailed'), 'error')
+    } finally {
+      setSavingResultIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
   }
 
   const openHistory = async () => {
@@ -334,12 +405,31 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         quality: quality.toLowerCase(),
         size: ratio === '__ORIG__' ? 'auto' : ratio,
       }
+      const referenceUploadBatchId = crypto.randomUUID()
+      const referenceAssetIds = await Promise.all(refImages.map(async (dataUrl, index) => {
+        const existingAssetId = persistedReferenceImages.current.get(dataUrl)
+        if (existingAssetId) return existingAssetId
+        const response = await fetch(dataUrl)
+        if (!response.ok) throw new Error('读取参考图失败，无法保存到云端')
+        const blob = await response.blob()
+        const file = new File([blob], `reference-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
+        const asset = await api.uploadAsset<{ id: string }>(file, { sourceKind: 'reference_upload', uploadBatchId: referenceUploadBatchId })
+        if (!asset.id) throw new Error('云端没有返回参考素材编号，无法继续编辑')
+        persistedReferenceImages.current.set(dataUrl, asset.id)
+        return asset.id
+      }))
       const references: ReferenceImage[] = refImages.map((dataUrl, index) => ({
         id: `image-tools-ref-${index}`,
         name: `reference-${index + 1}`,
         type: 'image',
         dataUrl,
       }))
+      const contentEdit = referenceAssetIds.length
+        ? await api.post<{ editId: string; baseFileId: string }>('/content-edits', {
+            referenceAssetIds,
+            idempotencyKey: `image-edit:${crypto.randomUUID()}`,
+          })
+        : null
       let sourceGenerationTaskId: string | undefined
       const generated = references.length
         ? await requestEdit(requestConfig, prompt.trim(), references)
@@ -367,26 +457,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       const now = new Date()
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const modelLabel = selectedModel.split('::').pop() || selectedModel
-      const persisted = await Promise.all(generated.map(async (image, index) => {
-        try {
-          const response = await fetch(image.dataUrl)
-          const blob = await response.blob()
-          const file = new File([blob], `${t('imageTools.resultFilePrefix')}-${Date.now()}-${index + 1}.${blob.type.split('/')[1] || 'bin'}`, { type: blob.type || 'application/octet-stream' })
-          return await api.uploadAsset<{ id: string }>(file, {
-            source: 'image_generation',
-            ...(sourceGenerationTaskId ? { sourceGenerationTaskId } : {}),
-            prompt: prompt.trim(),
-            model: modelLabel,
-            quality,
-            size: ratio === '__ORIG__' ? 'auto' : ratio,
-          })
-        } catch {
-          return null
-        }
-      }))
       const newResults = generated.map((image, index) => ({
         id: Date.now() + index,
-        assetId: persisted[index]?.id,
         model: modelLabel,
         size: ratio === '__ORIG__' ? 'auto' : ratio,
         fileSize: '—',
@@ -395,10 +467,21 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         prompt: prompt.trim(),
         favorited: false,
         imageUrl: image.dataUrl,
+        writeIdempotencyKey: `image-tool:${crypto.randomUUID()}`,
+        sourceKind: contentEdit ? 'edited' as const : 'generated' as const,
+        ...(sourceGenerationTaskId ? { sourceGenerationTaskId } : {}),
+        ...(contentEdit ? { editId: contentEdit.editId, sourceFileId: contentEdit.baseFileId } : {}),
       }))
-      setResults((r) => [...newResults, ...r])
+      const persisted = await Promise.all(newResults.map(async (result) => {
+        try { return await uploadImageResult(result) }
+        catch { return null }
+      }))
+      const savedResults = newResults.map((result, index) => ({ ...result, assetId: persisted[index]?.id }))
+      setResults((r) => [...savedResults, ...r])
       setGenerating(false)
-      showToast(t('imageTools.toasts.done'))
+      const failedSaves = savedResults.filter((result) => !result.assetId).length
+      if (failedSaves) showToast(t('imageTools.toasts.saveFailed', { count: failedSaves }), 'error')
+      else showToast(t('imageTools.toasts.done'))
     } catch (error) {
       setGenerating(false)
       showToast(error instanceof Error ? error.message : t('workbench.generationFailed'), 'error')
@@ -540,7 +623,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                     <Tooltip title={t("imageTools.replace")}><button  onClick={() => { setReplaceIndex(i); refInputRef.current?.click() }} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <RefreshCw className="size-4" />
                     </button></Tooltip>
-                    <Tooltip title={t("imageTools.zoom")}><button  onClick={() => setPreviewImage(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
+                    <Tooltip title={t("imageTools.zoom")}><button  onClick={() => openPreview(img)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
                       <ZoomIn className="size-4" />
                     </button></Tooltip>
                     <Tooltip title={t("imageTools.pasteReplace")}><button  onClick={() => pasteImage(i)} className="flex items-center justify-center bg-black/40 text-white hover:text-white">
@@ -737,9 +820,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           <Tooltip title={t('imageTools.toasts.history')}><button onClick={openHistory}  className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
             <History className="size-[14px]" />
           </button></Tooltip>
-          <button onClick={() => showToast(t('imageTools.toasts.search'))} className="flex size-[30px] items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover">
-            <Search className="size-[14px]" />
-          </button>
+          <SearchInput value={searchKeyword} onChange={setSearchKeyword} placeholder={t('imageTools.toasts.search')} mode="collapsible" />
           <div className="ml-auto flex items-center gap-2">
             <input
               type="range"
@@ -786,10 +867,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {results.length > 0 && viewMode === 'list' && (
             <div className="space-y-4">
-              {results.map((r) => (
+              {filteredResults.map((r) => (
                 <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
                   <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
-                    {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
+                    {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-1 flex items-baseline gap-2">
@@ -799,6 +880,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       <span className="text-[12px] text-text-secondary">{t("imageTools.qualityLabel")} {r.quality}</span>
                       <span className="ml-auto text-[12px] text-text-secondary">{r.time}</span>
                     </div>
+                    {!r.assetId && <p className="mb-1 text-[12px] text-red-400">{t('imageTools.toasts.notSavedToCloud')}</p>}
                                         <div className="mb-2">
                       <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
                       {r.prompt.length > 40 && (
@@ -808,6 +890,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       )}
                     </div>
                     <div className="mt-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                      {!r.assetId && r.imageUrl && <Tooltip title={savingResultIds.has(r.id) ? t('imageTools.toasts.savingToCloud') : t('imageTools.toasts.retrySave')}><button aria-label={t('imageTools.toasts.retrySave')} disabled={savingResultIds.has(r.id)} onClick={() => void retrySaveResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-red-400 hover:bg-surface-hover disabled:opacity-50">{savingResultIds.has(r.id) ? <Loader2 className="size-[15px] animate-spin" strokeWidth={1.8} /> : <CloudUpload className="size-[15px]" strokeWidth={1.8} />}</button></Tooltip>}
                       <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipCopyImage")}><button  onClick={() => showToast(t('imageTools.toasts.copiedImage'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
@@ -825,12 +908,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {viewMode === 'grid' && (
             <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbScale}px, 1fr))` }}>
-              {results.map((r) => (
+              {filteredResults.map((r) => (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
-                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
+                  {!r.assetId && <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[11px] text-red-300">{t('imageTools.toasts.notSavedToCloud')}</span>}
                   <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
                     <p className="mb-2 truncate text-[12px] text-text">{r.prompt}</p>
                     <div className="flex gap-1">
+                      {!r.assetId && r.imageUrl && <button aria-label={t('imageTools.toasts.retrySave')} disabled={savingResultIds.has(r.id)} onClick={() => void retrySaveResult(r.id)} className="flex h-[22px] items-center gap-1 rounded bg-red-500/20 px-2 text-[11px] text-red-200 disabled:opacity-50">{savingResultIds.has(r.id) ? <Loader2 className="size-3 animate-spin" /> : <CloudUpload className="size-3" />}{t('imageTools.toasts.retrySave')}</button>}
                       <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{t('imageTools.copy')}</button>
                       <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
                       <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">{t('imageTools.deleteShort')}</button>
@@ -842,14 +927,15 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {viewMode === 'large' && (
             <div className="space-y-4">
-              {results.map((r) => (
+              {filteredResults.map((r) => (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
-                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="w-full cursor-zoom-in object-contain bg-surface-hover" style={{ height: thumbScale * 2.5 }} onClick={() => setPreviewImage(r.imageUrl!)} /> : <div className="flex items-center justify-center bg-surface-hover text-[14px] text-text-secondary" style={{ height: thumbScale * 2.5 }}>{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
+                  {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="w-full cursor-zoom-in object-contain bg-surface-hover" style={{ height: thumbScale * 2.5 }} onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex items-center justify-center bg-surface-hover text-[14px] text-text-secondary" style={{ height: thumbScale * 2.5 }}>{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
                   <div className="p-3">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[14px] text-text">{r.model}</span>
                       <span className="text-[12px] text-text-secondary">{t("imageTools.size")} {r.size}</span>
                       <span className="text-[12px] text-text-secondary">{r.time}</span>
+                      {!r.assetId && <span className="text-[12px] text-red-400">{t('imageTools.toasts.notSavedToCloud')}</span>}
                     </div>
                                         <div className="mb-2">
                       <p className={cn('text-[14px] text-text', !expandedIds.has(r.id) && 'line-clamp-2')}>{r.prompt}</p>
@@ -860,6 +946,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       )}
                     </div>
                     <div className="flex items-center gap-1">
+                      {!r.assetId && r.imageUrl && <Tooltip title={savingResultIds.has(r.id) ? t('imageTools.toasts.savingToCloud') : t('imageTools.toasts.retrySave')}><button aria-label={t('imageTools.toasts.retrySave')} disabled={savingResultIds.has(r.id)} onClick={() => void retrySaveResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-red-400 hover:bg-surface-hover disabled:opacity-50">{savingResultIds.has(r.id) ? <Loader2 className="size-[15px] animate-spin" strokeWidth={1.8} /> : <CloudUpload className="size-[15px]" strokeWidth={1.8} />}</button></Tooltip>}
                       <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')}><button  onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
@@ -989,66 +1076,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           </div>
         </div>, document.body)}
 
-      {previewImage && createPortal(
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden bg-black/80"
-          onClick={() => { setPreviewImage(null); setPreviewZoom(1); setPreviewPan({x:0,y:0}) }}
-          onWheel={(e) => {
-            e.stopPropagation()
-            setPreviewZoom((z) => Math.min(8, Math.max(0.5, z + (e.deltaY < 0 ? 0.2 : -0.2))))
-          }}
-        >
-          <img
-            src={previewImage}
-            alt=""
-            draggable={false}
-            className="max-h-[90vh] max-w-[90vw] select-none rounded-lg object-contain"
-            style={{
-              transform: `translate(${previewPan.x}px, ${previewPan.y}px) scale(${previewZoom})`,
-              cursor: previewZoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-              transition: 'transform 0.05s',
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => {
-              if (previewZoom <= 1) return
-              e.stopPropagation()
-              setIsDragging(true)
-              let lastX = e.clientX, lastY = e.clientY, vx = 0, vy = 0
-              const startX = e.clientX - previewPan.x
-              const startY = e.clientY - previewPan.y
-              const onMove = (ev: MouseEvent) => {
-                vx = ev.clientX - lastX
-                vy = ev.clientY - lastY
-                lastX = ev.clientX
-                lastY = ev.clientY
-                setPreviewPan({ x: ev.clientX - startX, y: ev.clientY - startY })
-              }
-              const onUp = () => {
-                setIsDragging(false)
-                window.removeEventListener('mousemove', onMove)
-                window.removeEventListener('mouseup', onUp)
-                // 惯性
-                const decay = 0.92
-                const step = () => {
-                  vx *= decay
-                  vy *= decay
-                  if (Math.abs(vx) < 0.5 && Math.abs(vy) < 0.5) return
-                  setPreviewPan((p) => ({ x: p.x + vx, y: p.y + vy }))
-                  requestAnimationFrame(step)
-                }
-                requestAnimationFrame(step)
-              }
-              window.addEventListener('mousemove', onMove)
-              window.addEventListener('mouseup', onUp)
-            }}
-          />
-          <button
-            className="absolute right-5 top-5 flex size-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-            onClick={() => { setPreviewImage(null); setPreviewZoom(1); setPreviewPan({x:0,y:0}) }}
-          >
-            <X className="size-5" />
-          </button>
-        </div>, document.body)}
+      {previewOpen && previewIndex !== null && (
+        <ImageViewer
+          images={previewImages}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
 
       {toast && createPortal(
         <div
@@ -1257,11 +1292,10 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
   const [model, setModel] = useState('')
   const [items, setItems] = useState<TranslatePair[]>([])
   const [translating, setTranslating] = useState(false)
-  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null)
-  const [zoom, setZoom] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const reuploadId = useRef<number | null>(null)
+  const reuploadRef = useRef<HTMLInputElement>(null)
 
 
   const onUpload = (files: FileList | null) => {
@@ -1270,22 +1304,23 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
     Array.from(files).forEach((f, i) => {
       if (!f.type.startsWith('image/')) return
       if (f.size > MAX_TRANSLATE_SIZE_MB * 1024 * 1024) return
-      const url = URL.createObjectURL(f)
+      const objectUrl = URL.createObjectURL(f)
+      const itemId = Date.now() + i
       const img = new Image()
       img.onload = () => {
         setItems((list) => list.map((p) =>
-          p.id === Date.now() + i ? { ...p, width: img.naturalWidth, height: img.naturalHeight } : p
+          p.id === itemId ? { ...p, width: img.naturalWidth, height: img.naturalHeight } : p
         ))
       }
-      img.src = url
+      img.src = objectUrl
       accepted.push({
-        id: Date.now() + i,
+        id: itemId,
         name: f.name,
         size: formatTranslateSize(f.size),
         width: 0,
         height: 0,
         type: f.type.split('/')[1]?.toUpperCase() || 'JPG',
-        originalUrl: url,
+        originalUrl: objectUrl,
         translatedUrl: null,
         sourceLang: '英语',
         prompt: '',
@@ -1315,6 +1350,14 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
     setItems((list) => list.filter((p) => p.id !== id))
   }
 
+  const onReupload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    const id = reuploadId.current
+    e.target.value = ''
+    if (!file || id === null) return
+    const url = URL.createObjectURL(file)
+    setItems((list) => list.map((p) => p.id === id ? { ...p, name: file.name, size: formatTranslateSize(file.size), type: file.type.split('/')[1]?.toUpperCase() || 'JPG', originalUrl: url, translatedUrl: null, status: 'pending' as const } : p))
+  }
   const updateItem = (id: number, field: 'prompt', value: string) => {
     setItems((list) => list.map((p) => p.id === id ? { ...p, [field]: value } : p))
   }
@@ -1335,18 +1378,18 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
 
         {items.length === 0 && (
           <div className="mb-6">
-          <div
-            className="flex h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
-            onClick={() => fileRef.current?.click()}>
-            <Upload className="mb-2 size-5 text-text-muted" />
-            <div className="text-[13px] font-medium text-text">{t('imageTools.uploadToTranslate')}</div>
-            <div className="mt-1 text-[11px] text-text-muted">{t('imageTools.translateFormats')}</div>
+            <div
+              className="flex h-[120px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border transition-colors hover:border-accent/50"
+              onClick={() => fileRef.current?.click()}>
+              <Upload className="mb-2 size-5 text-text-muted" />
+              <div className="text-[13px] font-medium text-text">{t('imageTools.uploadToTranslate')}</div>
+              <div className="mt-1 text-[11px] text-text-muted">{t('imageTools.translateFormats')}</div>
+            </div>
           </div>
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
-            onChange={(e) => onUpload(e.target.files)} />
-        </div>
         )}
-
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => onUpload(e.target.files)} />
+        <input ref={reuploadRef} type="file" accept="image/*" className="hidden" onChange={onReupload} />
         {/* 图片对比区 */}
         {items.length === 0 ? (
           <div className="flex h-[300px] flex-col items-center justify-center text-text-muted">
@@ -1359,11 +1402,19 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
               <div key={it.id} className="grid grid-cols-[260px_1fr_260px] gap-6 items-center">
                 {/* 原图 */}
                 <div className="text-center">
-                  <div className="mb-2 text-[13px] text-text-muted">{idx + 1}. {it.name}</div>
-                  <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary overflow-hidden">
-                    <img src={it.originalUrl} alt={it.name} className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.originalUrl, name: it.name }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
+                  <div className="mb-2 text-[13px] text-text-muted">{idx + 1}. {it.name.replace(/\.(\w+)$/, (_, ext) => '.' + ext.toUpperCase())}</div>
+                  <div className="group relative mx-auto h-[240px] w-[240px] overflow-hidden rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary">
+                    <img src={it.originalUrl} alt={it.name} className="h-full w-full object-contain cursor-zoom-in" onClick={() => setPreviewUrl(it.originalUrl)} />
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 bg-gradient-to-t from-black/60 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button onClick={() => { reuploadId.current = it.id; reuploadRef.current?.click() }} className="flex size-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30" title="重新上传">
+                        <Upload className="size-4" />
+                      </button>
+                      <button onClick={() => removeItem(it.id)} className="flex size-8 items-center justify-center rounded-full bg-white/20 text-white hover:bg-red-500/60" title="删除">
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-2 text-[12px] text-text-muted">{it.type} · {it.size}</div>
+                  <div className="mt-2 text-[12px] text-text-muted">{it.size}{it.width ? ` · ${it.width}x${it.height}` : ""}</div>
                 </div>
 
                 {/* 中间输入框 */}
@@ -1388,7 +1439,7 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                   </div>
                   <div className="mx-auto flex h-[240px] w-[240px] items-center justify-center rounded-xl border border-border bg-white dark:border-0 dark:bg-secondary overflow-hidden">
                     {it.translatedUrl ? (
-                      <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => { setPreview({ url: it.translatedUrl!, name: it.name + t('imageTools.translatedSuffix') }); setZoom(1); setPan({ x: 0, y: 0 }) }} />
+                      <img src={it.translatedUrl} alt="translated" className="max-h-full max-w-full object-contain cursor-zoom-in" onClick={() => setPreviewUrl(it.translatedUrl!)} />
                     ) : (
                       <span className="text-[13px] text-text-muted">
                         {it.status === 'translating' ? t('imageTools.translatingStatus') : t('imageTools.clickStartAfterUpload')}
@@ -1406,9 +1457,6 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
                         </button>
                       </>
                     )}
-                    <button onClick={() => removeItem(it.id)} className="rounded-lg p-1.5 text-red-400 hover:bg-surface-hover">
-                      <Trash2 className="size-4" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1432,6 +1480,18 @@ function TranslatePanel({ connectTopLeft = false }: { connectTopLeft?: boolean }
           {translating ? t('imageTools.translatingStatus') : t('imageTools.startTranslate')}
         </button>
       </div>
+      {previewUrl && (() => {
+        const allUrls = items.flatMap((it) => [it.originalUrl, it.translatedUrl].filter(Boolean) as string[])
+        const idx = allUrls.indexOf(previewUrl)
+        return (
+          <ImageViewer
+            images={allUrls.length > 0 ? allUrls : [previewUrl]}
+            index={idx >= 0 ? idx : 0}
+            onIndexChange={(i) => setPreviewUrl(allUrls[i])}
+            onClose={() => setPreviewUrl(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

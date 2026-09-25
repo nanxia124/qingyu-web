@@ -52,13 +52,13 @@ ALTER TABLE app.chat_messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS chat_conversations_workspace_isolation ON app.chat_conversations;
 CREATE POLICY chat_conversations_workspace_isolation ON app.chat_conversations
-    FOR ALL USING (workspace_id = app.current_workspace_id())
-    WITH CHECK (workspace_id = app.current_workspace_id());
+    FOR ALL USING (app.has_workspace_access(workspace_id))
+    WITH CHECK (app.has_workspace_access(workspace_id));
 
 DROP POLICY IF EXISTS chat_messages_workspace_isolation ON app.chat_messages;
 CREATE POLICY chat_messages_workspace_isolation ON app.chat_messages
-    FOR ALL USING (workspace_id = app.current_workspace_id())
-    WITH CHECK (workspace_id = app.current_workspace_id());
+    FOR ALL USING (app.has_workspace_access(workspace_id))
+    WITH CHECK (app.has_workspace_access(workspace_id));
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.chat_conversations TO qingyu_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.chat_messages TO qingyu_api;

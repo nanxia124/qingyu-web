@@ -303,7 +303,7 @@ try {
   assert.ok(!deployScript.includes('- "8081:80"'));
   // Git 路径以仓库根为基准核实，避免子目录 pathspec 漏查。
   const projectRoot = path.resolve(scriptDirectory, '../..');
-  const rootTrackedKey = spawnSync('git', ['-C', projectRoot, 'ls-files', '--', 'github_actions_deploy'], { cwd: projectRoot, encoding: 'utf8' });
+  const rootTrackedKey = spawnSync('git', ['-c', `safe.directory=${projectRoot}`, '-C', projectRoot, 'ls-files', '--', 'github_actions_deploy'], { cwd: projectRoot, encoding: 'utf8' });
   assert.equal(rootTrackedKey.status, 0, `无法从仓库根目录检查私钥跟踪状态：${rootTrackedKey.stderr}`);
   assert.equal(rootTrackedKey.stdout.trim(), '', '私钥不能留在 Git 跟踪记录中');
 

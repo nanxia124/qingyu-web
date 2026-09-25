@@ -97,7 +97,7 @@ BEGIN
     IF t.credit_quote_id IS DISTINCT FROM p_credit_quote_id THEN RAISE EXCEPTION '同一任务编号不能更换报价'; END IF;
     IF t.task_type IS DISTINCT FROM p_task_type OR t.model IS DISTINCT FROM p_model OR t.prompt IS DISTINCT FROM p_prompt
        OR (t.parameters-'model'-'__qingyuCatalogModelId'-'n') IS DISTINCT FROM (COALESCE(p_parameters,'{}'::jsonb)-'model'-'__qingyuCatalogModelId'-'n')
-       OR t.requested_output_count IS DISTINCT FROM CASE WHEN p_task_type='image' THEN v_quantity::integer ELSE 1 END THEN
+       OR t.requested_output_count IS DISTINCT FROM (CASE WHEN p_task_type='image' THEN v_quantity::integer ELSE 1 END) THEN
       RAISE EXCEPTION '同一任务编号不能更换模型、参数或生成数量';
     END IF;
     RETURN t;

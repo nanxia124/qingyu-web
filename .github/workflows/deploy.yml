@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Install API runtime dependencies
+        run: npm --prefix scripts/deploy install --omit=dev --no-package-lock --no-audit --no-fund
+
       # 发布前先验证安全边界，失败时不上传网页或服务器配置。
       - name: Verify security boundaries
         run: |

@@ -304,6 +304,10 @@ try {
   // Git 路径以仓库根为基准核实，避免子目录 pathspec 漏查。
   const projectRoot = path.resolve(scriptDirectory, '../..');
   const rootTrackedKey = spawnSync('git', ['-c', `safe.directory=${projectRoot}`, '-C', projectRoot, 'ls-files', '--', 'github_actions_deploy'], { cwd: projectRoot, encoding: 'utf8' });
+  if (rootTrackedKey.status !== 0) {
+    const diagnostic = rootTrackedKey.stderr.trim().replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    console.log(`::error title=Git tracked-file check diagnostic::status=${rootTrackedKey.status}; ${diagnostic}`);
+  }
   assert.equal(rootTrackedKey.status, 0, `无法从仓库根目录检查私钥跟踪状态：${rootTrackedKey.stderr}`);
   assert.equal(rootTrackedKey.stdout.trim(), '', '私钥不能留在 Git 跟踪记录中');
 

@@ -67,5 +67,6 @@
   "0066_admin_login_attempt_limits.sql": "183ce7b3bc98db4ad50d2790a51e4fe2f64944f3c661e6c866272d77c8ac4771",
   "0067_generation_media_failure_accounting.sql": "b9c07ed0e0471d99e068e4eda1ea8aadfb4e3907b3616b928462574b3ddd1998",
   "0068_model_credit_pricing.sql": "b8be4c86de31cb1fba8dfdce851c5634a4f1f4b999c4a23b673720275ac1b240",
-  "0069_chat_conversations.sql": "55af18f8ece5468f2731769cd6aecc2055b7e768ccbbef6559c27fbaca540e9e"
+  "0069_chat_conversations.sql": "55af18f8ece5468f2731769cd6aecc2055b7e768ccbbef6559c27fbaca540e9e",
+  "0070_remove_daily_free_quota.sql": "636d9f454fd33713ef7f0a28299f716dd67628a80ebfb4c03809c9629a9d9016"
 }

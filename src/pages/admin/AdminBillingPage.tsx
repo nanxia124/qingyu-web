@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import { App as AntdApp } from "antd";
 import { useTranslation } from 'react-i18next'
 import { adminBillingApi, type BillingUser, type Order, type Plan, type InvoiceRequest } from "@/lib/billing";
-import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, Plug, RefreshCw, FileText } from "lucide-react";
+import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, FileText } from "lucide-react";
 
 export default function AdminBillingPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "supplier" | "invoices">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "invoices">("stats");
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -19,15 +19,6 @@ export default function AdminBillingPage() {
   // 生成兑换码表单
   const [genForm, setGenForm] = useState({ count: 10, denomination: 100, kind: "quota", days: 0 });
   const [genResult, setGenResult] = useState<string[]>([]);
-  const [settings, setSettings] = useState<any>(null);
-  const [supBalance, setSupBalance] = useState<any>(null);
-  const [supKeyLimits, setSupKeyLimits] = useState<any>(null);
-  const [supLoading, setSupLoading] = useState(false);
-  const [supConfigDraft, setSupConfigDraft] = useState({ enabled: false, apiKey: "", balanceToken: "", baseUrl: "" });
-  const [models, setModels] = useState<any[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; message: string; onConfirm: (() => void) | null }>({ open: false, message: "", onConfirm: null });
 
   const load = async (t: string) => {
@@ -44,17 +35,6 @@ export default function AdminBillingPage() {
         const draft: Record<string, Plan> = {};
         list.forEach(p => { draft[p.id] = { ...p, features: [...p.features] }; });
         setPlansDraft(draft);
-      }
-      if (t === "supplier") {
-        const s = await adminBillingApi.getSettings();
-        setSettings(s);
-        const sup = s.supplier?.maizitech || {};
-        setSupConfigDraft({
-          enabled: sup.enabled || false,
-          apiKey: sup.apiKey || "",
-          balanceToken: sup.balanceToken || "",
-          baseUrl: sup.baseUrl || "https://www.maizitech.ai",
-        });
       }
     } catch (e: any) {
       setMsg(e.message);
@@ -155,109 +135,6 @@ export default function AdminBillingPage() {
     }));
   };
 
-  const saveSupplierConfig = () => {
-    showConfirm("确认保存API渠道配置？", async () => {
-      try {
-        await adminBillingApi.updateSettings({
-          ...settings,
-          supplier: {
-            ...settings.supplier,
-            maizitech: { ...supConfigDraft },
-          },
-        });
-        setMsg("API渠道配置已保存");
-        load("supplier");
-      } catch (e: any) { setMsg(e.message); }
-    });
-  };
-  const querySupplierBalance = async () => {
-    setSupLoading(true);
-    setSupBalance(null);
-    setSupKeyLimits(null);
-    try {
-      const [bal, limits] = await Promise.all([
-        adminBillingApi.supplierBalance().catch(e => ({ error: e.message })),
-        adminBillingApi.supplierKeyLimits().catch(e => ({ error: e.message })),
-      ]);
-      setSupBalance(bal);
-      setSupKeyLimits(limits);
-    } finally {
-      setSupLoading(false);
-    }
-  };
-
-  const queryModels = async () => {
-    setModelsLoading(true);
-    setModels([]);
-    try {
-      const res = await adminBillingApi.supplierModels();
-      setModels(res.data || []);
-    } catch (e: any) {
-      setMsg(e.message);
-    } finally {
-      setModelsLoading(false);
-    }
-  };
-
-  const queryAnnouncements = async () => {
-    setAnnouncementsLoading(true);
-    setAnnouncements([]);
-    try {
-      const res = await adminBillingApi.supplierAnnouncements();
-      setAnnouncements(Array.isArray(res) ? res : []);
-    } catch (e: any) {
-      setMsg(e.message);
-    } finally {
-      setAnnouncementsLoading(false);
-    }
-  };
-
-  const [syncing, setSyncing] = useState(false);
-  const syncToApiKeys = () => {
-    if (!supConfigDraft.baseUrl || !supConfigDraft.apiKey) {
-      setMsg("请先填写 Base URL 和 API Key");
-      return;
-    }
-    if (models.length === 0) {
-      setMsg("请先查询模型列表，再同步");
-      return;
-    }
-    showConfirm(
-      `确认将 MaiziAI 的 ${models.length} 个模型同步到 API 渠道？` + "\n" + `这会在「API 与模型」页面新建一条配置。`,
-      async () => {
-        setSyncing(true);
-        try {
-          const modelIds = models.map((m: any) => m.id).join(",");
-          const res = await fetch("/api/admin/api-keys", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("admin_token") || ""}`,
-            },
-            body: JSON.stringify({
-              name: "MaiziAI 中转站",
-              base_url: supConfigDraft.baseUrl,
-              api_key: supConfigDraft.apiKey,
-              provider: "openai",
-              model: modelIds,
-              max_concurrency: 5,
-            }),
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            setMsg(err.error || `同步失败：HTTP ${res.status}`);
-            return;
-          }
-          setMsg(`已同步 ${models.length} 个模型到 API 渠道`);
-        } catch (e: any) {
-          setMsg(e.message);
-        } finally {
-          setSyncing(false);
-        }
-      }
-    );
-  };
-
   const TABS: [typeof tab, string, any][] = [
     ["stats", t("pages.admin.billing.tabs.stats"), Wallet],
     ["users", t("pages.admin.billing.tabs.users"), UsersIcon],
@@ -265,7 +142,6 @@ export default function AdminBillingPage() {
     ["invoices", "发票审核", FileText],
     ["codes", t("pages.admin.billing.tabs.codes"), Ticket],
     ["plans", t("pages.admin.billing.tabs.plans"), Crown],
-    ["supplier", "API渠道", Plug],
   ];
 
   return (
@@ -556,152 +432,6 @@ export default function AdminBillingPage() {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* API渠道 */}
-      {tab === "supplier" && settings && (
-        <div className="space-y-4">
-          {/* 配置区 */}
-          <div className="rounded-xl bg-card p-5 space-y-4">
-            <div className="text-sm font-medium text-text">MaiziAI API渠道配置</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Base URL</label>
-                <input type="text" value={supConfigDraft.baseUrl} onChange={e => setSupConfigDraft({ ...supConfigDraft, baseUrl: e.target.value })} className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">API Key (sk-...)</label>
-                <input type="password" value={supConfigDraft.apiKey} onChange={e => setSupConfigDraft({ ...supConfigDraft, apiKey: e.target.value })} placeholder="sk-..." className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent" />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">余额 Token (bt-mz-...)</label>
-                <input type="password" value={supConfigDraft.balanceToken} onChange={e => setSupConfigDraft({ ...supConfigDraft, balanceToken: e.target.value })} placeholder="控制台「个人中心」生成" className="w-full rounded-lg bg-secondary px-3 py-2 text-text text-sm outline-none focus:ring-1 focus:ring-accent" />
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={saveSupplierConfig} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white text-sm hover:bg-accent-hover">
-                <Save size={14} /> 保存配置
-              </button>
-              <button onClick={querySupplierBalance} disabled={supLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-text text-sm hover:bg-secondary/80 disabled:opacity-50">
-                <RefreshCw size={14} className={supLoading ? "animate-spin" : ""} />
-                {supLoading ? "查询中..." : "查询余额"}
-              </button>
-              <button onClick={queryModels} disabled={modelsLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-text text-sm hover:bg-secondary/80 disabled:opacity-50">
-                <RefreshCw size={14} className={modelsLoading ? "animate-spin" : ""} />
-                {modelsLoading ? "加载中..." : "查询模型价格"}
-              </button>
-              <button onClick={queryAnnouncements} disabled={announcementsLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-text text-sm hover:bg-secondary/80 disabled:opacity-50">
-                <RefreshCw size={14} className={announcementsLoading ? "animate-spin" : ""} />
-                {announcementsLoading ? "加载中..." : "查看公告"}
-              <button onClick={syncToApiKeys} disabled={syncing} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500 disabled:opacity-50">
-                <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
-                {syncing ? "同步中..." : "一键同步到 API 渠道"}
-              </button>
-              </button>
-            </div>
-          </div>
-
-          {/* 余额结果 */}
-          {(supBalance || supKeyLimits) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-xl bg-card p-5">
-                <div className="text-sm font-medium text-text mb-4">账号余额</div>
-                {supBalance?.error ? (
-                  <div className="text-sm text-red-400">{supBalance.error}</div>
-                ) : supBalance ? (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">可用充值余额</span>
-                      <span className="text-xl font-bold text-text">${supBalance.balance?.toFixed(2) || "0.00"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">奖励余额</span>
-                      <span className="text-base text-green-400">${supBalance.bonus_balance?.toFixed(2) || "0.00"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">冻结余额</span>
-                      <span className="text-base text-amber-400">${supBalance.frozen_balance?.toFixed(2) || "0.00"}</span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="rounded-xl bg-card p-5">
-                <div className="text-sm font-medium text-text mb-4">API Key 限额</div>
-                {supKeyLimits?.error ? (
-                  <div className="text-sm text-red-400">{supKeyLimits.error}</div>
-                ) : supKeyLimits ? (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">消费限额</span>
-                      <span className="text-base text-text">{supKeyLimits.unlimited ? "无限制" : supKeyLimits.spend_limit ? "$" + supKeyLimits.spend_limit.toFixed(2) : "未设置"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">已消费</span>
-                      <span className="text-base text-text">${supKeyLimits.spent_amount?.toFixed(2) || "0.00"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">剩余额度</span>
-                      <span className="text-xl font-bold text-accent">
-                        {supKeyLimits.unlimited ? "∞" : supKeyLimits.remaining_amount != null ? "$" + supKeyLimits.remaining_amount.toFixed(2) : "-"}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
-
-          {/* 模型价格表 */}
-          {models.length > 0 && (
-            <div className="rounded-xl bg-card overflow-hidden">
-              <div className="px-5 py-3 text-sm font-medium text-text bg-secondary">模型价格表</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-secondary/50">
-                    <tr>
-                      <th className="text-left px-5 py-2.5 text-gray-500 font-normal">模型名称</th>
-                      <th className="text-left px-5 py-2.5 text-gray-500 font-normal">类型</th>
-                      <th className="text-right px-5 py-2.5 text-gray-500 font-normal">价格</th>
-                      <th className="text-left px-5 py-2.5 text-gray-500 font-normal">特性</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {models.map((m: any) => (
-                      <tr key={m.id} className="border-t border-border/50">
-                        <td className="px-5 py-3 text-text">{m.display_name || m.id}</td>
-                        <td className="px-5 py-3 text-gray-500">
-                          <span className="px-2 py-0.5 rounded text-xs bg-secondary">{m.type}</span>
-                        </td>
-                        <td className="px-5 py-3 text-right text-text font-mono">${typeof m.pricing === "number" ? m.pricing.toFixed(4) : (typeof m.pricing === "string" ? m.pricing : "-")}</td>
-                        <td className="px-5 py-3 text-gray-500 text-xs">
-                          {(m.features || []).slice(0, 3).join("、")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* 公告 */}
-          {announcements.length > 0 && (
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-text">API渠道公告</div>
-              {announcements.map((a: any) => (
-                <div key={a.id} className="rounded-xl bg-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    {a.pinned && <span className="px-1.5 py-0.5 rounded text-xs bg-red-500/10 text-red-400">置顶</span>}
-                    <span className="text-sm font-medium text-text">{a.title}</span>
-                    <span className="text-xs text-gray-500 ml-auto">{new Date(a.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <div className="text-sm text-gray-400 whitespace-pre-wrap">{a.content}</div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

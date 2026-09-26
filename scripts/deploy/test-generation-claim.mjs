@@ -24,7 +24,7 @@ try {
   await store.failTask(user, task.id, 'test', '模拟失败', true);
   assert.equal(await store.markTaskRunning(user, task.id, null), false, '终态不能重新领取');
   const row = (await pool.query(`select t.status,r.status reservation_status
-    from app.generation_tasks t join app.daily_usage_reservations r on r.id=t.daily_reservation_id
+    from app.generation_tasks t join app.quota_reservations r on r.id=t.quota_reservation_id
     where t.id=$1`, [task.id])).rows[0];
   assert.equal(row.status, 'refunded');
   assert.equal(row.reservation_status, 'released');
@@ -88,10 +88,10 @@ try {
   assert.equal(refundedPartial.status, 'refunded');
   assert.equal(refundedPartial.outputs.length, 1, '失败退款后已保存的那张图片仍要保留');
   assert.equal((await store.listGeneratedOutputs(user, partial.id)).length, 1);
-  const partialReservation = (await pool.query(`select r.status from app.daily_usage_reservations r
-    join app.generation_tasks t on t.daily_reservation_id=r.id where t.id=$1`, [partial.id])).rows[0];
+  const partialReservation = (await pool.query(`select r.status from app.quota_reservations r
+    join app.generation_tasks t on t.quota_reservation_id=r.id where t.id=$1`, [partial.id])).rows[0];
   assert.equal(partialReservation.status, 'released');
-  console.log('PASS：20 次并发提交、20 次并发领取、跨用户拒绝、终态拒绝、过期拒绝与额度释放');
+  console.log('PASS：20 次并发提交、20 次并发领取、跨用户拒绝、终态拒绝、过期拒绝与积分预留释放');
 } finally {
   await store.close();
   await pool.end();

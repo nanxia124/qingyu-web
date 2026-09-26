@@ -148,7 +148,10 @@ export function CanvasPromptChipInput({ value, references, onChange, onSubmit, o
         emit(serializeEditor(editor));
     };
 
-    const showPlaceholder = !value.trim();
+    // While an IME is composing (pinyin not confirmed yet), hide the floating placeholder so
+    // it doesn't overlap the in-progress composition text.
+    const [composing, setComposing] = useState(false);
+    const showPlaceholder = !value.trim() && !composing;
 
     return (
         <div className="relative w-full">
@@ -170,9 +173,11 @@ export function CanvasPromptChipInput({ value, references, onChange, onSubmit, o
                 }}
                 onCompositionStart={() => {
                     composingRef.current = true;
+                    setComposing(true);
                 }}
                 onCompositionEnd={() => {
                     composingRef.current = false;
+                    setComposing(false);
                     syncFromEditor();
                 }}
                 onPaste={handlePaste}

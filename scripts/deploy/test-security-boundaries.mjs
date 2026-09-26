@@ -157,9 +157,6 @@ try {
   await Promise.all([
     writeFile(path.join(directory, 'api-data/keys.json'), JSON.stringify(keys)),
     writeFile(path.join(directory, 'api-data/models_catalog.json'), JSON.stringify(models)),
-    writeFile(path.join(directory, 'api-data/admin.json'), JSON.stringify({
-      username: 'security-admin', password: crypto.createHash('sha256').update('test-passwordqingyu_salt_2026').digest('hex'),
-    })),
   ]);
 
   const listener = net.createServer();
@@ -241,23 +238,31 @@ try {
     assert.equal(result.status, expected, '管理入口必须明确要求管理员角色');
   }
 
+  const adminToken = signToken({ sub: 'security-admin', role: 'admin' });
+  const channelListResponse = await fetch(`${base}/api/admin/api-keys`, { headers: { Authorization: `Bearer ${adminToken}` } });
+  assert.equal(channelListResponse.status, 503, '数据库未启用时，不允许通过文件模式管理渠道密钥');
+  assert.doesNotMatch(await channelListResponse.text(), /private-test-key-/,
+    '文件模式渠道管理接口不得返回渠道密钥');
+  assert.equal((await fetch(`${base}/api/admin/api-keys/1/full`, { headers: { Authorization: `Bearer ${adminToken}` } })).status, 503,
+    '完整密钥读取接口必须移除');
+  assert.match(serverSource, /allowRateLimitedRequest\(/, '高成本写接口必须使用服务端限流');
+
   async function login(username, password, extraHeaders = {}) {
     return fetch(`${base}/api/admin/login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...extraHeaders },
       body: JSON.stringify({ username, password }),
     });
   }
-  assert.equal((await login('security-admin', 'wrong')).status, 401);
-  assert.equal((await login('security-admin', 'test-password')).status, 200, '正常登录仍可用');
+  assert.equal((await login('security-admin', 'wrong')).status, 503, '文件模式不得使用文件管理员账号登录');
   const attempts = await Promise.all(Array.from({ length: 12 }, (_, index) => login('security-admin', 'wrong', {
     'X-Forwarded-For': `192.0.2.${index}`, 'CF-Connecting-IP': `192.0.2.${index}`,
   })));
-  assert.equal(attempts.filter(result => result.status === 401).length, 10);
-  assert.equal(attempts.filter(result => result.status === 429).length, 2, '并发和伪造代理头不能绕过限速');
+  assert.equal(attempts.filter(result => result.status === 503).length, 9);
+  assert.equal(attempts.filter(result => result.status === 429).length, 3, '并发和伪造代理头不能绕过限速');
   assert.ok(Number(attempts.find(result => result.status === 429).headers.get('Retry-After')) > 0);
   assert.match(serverSource, /await postgresBilling\.reserveAdminLoginAttempt\(body\.username\)/, '生产 PostgreSQL 模式必须使用持久化限速');
   assert.match(serverSource, /await postgresBilling\.clearAdminLoginAttempts\(body\.username\)/, '成功登录必须清除持久化失败次数');
-  assert.equal((await login('other-admin', 'wrong')).status, 401, '不同账号不共用 Cloudflare 节点限额');
+  assert.equal((await login('other-admin', 'wrong')).status, 503, '不同账号不共用 Cloudflare 节点限额');
   assert.equal((await login({}, 'wrong')).status, 400);
   assert.equal((await login('a'.repeat(64) + '-suffix', 'wrong')).status, 400, '拒绝会被数据库截短的账号，防止附加不同后缀绕过限速');
 
@@ -321,6 +326,7 @@ try {
     await Promise.all([
       writeFile(path.join(directory, 'www/index.html'), '正常页面'),
       writeFile(path.join(directory, 'www/assets/app.js'), '正常资源'),
+      writeFile(path.join(directory, 'www/appwrite-zh.js'), 'window.appwriteTranslationLoaded = true;'),
       writeFile(path.join(directory, 'www/.well-known/acme-challenge/probe'), '证书验证'),
       writeFile(path.join(directory, 'appwrite/index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/index.css"><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><script src="/assets/index.js"></script></head><body><img src="/logo.svg"></body></html>'),
       writeFile(path.join(directory, 'appwrite/assets/index.css'), 'APPWRITE_CONSOLE_CSS'),
@@ -332,6 +338,7 @@ try {
         writeFile(path.join(directory, 'www', file), '不应被下载的测试内容')),
     ]);
     const nginxConfig = nginxSource.replaceAll('/var/www/qingyu-web', '/test/www')
+      .replaceAll('127.0.0.1:3002', '127.0.0.1:8081')
       .replaceAll('/etc/letsencrypt/live/litzone.art/fullchain.pem', '/test/cert.pem')
       .replaceAll('/etc/letsencrypt/live/litzone.art/privkey.pem', '/test/key.pem');
     await writeFile(path.join(directory, 'nginx.conf'), `events {}\nhttp { include /etc/nginx/mime.types; access_log off; ${nginxConfig}
@@ -370,6 +377,9 @@ for protocol in http https; do
   grep -q 'href="/console/favicon.ico"' /test/console.html
   grep -q 'href="/console/apple-touch-icon.png"' /test/console.html
   grep -q 'src="/console/logo.svg"' /test/console.html
+  grep -q 'src="/appwrite-zh.js"' /test/console.html
+  curl -ks -o /test/appwrite-zh.js "$protocol://127.0.0.1/appwrite-zh.js"
+  grep -q 'appwriteTranslationLoaded = true' /test/appwrite-zh.js
   status=$(curl -ks -o /test/console.css -w '%{http_code}|%{content_type}' "$protocol://127.0.0.1/console/assets/index.css")
   test "$status" = '200|text/css'
   grep -q 'APPWRITE_CONSOLE_CSS' /test/console.css

@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect } from 'react'
-import { Tooltip } from 'antd'
+﻿import { useRef, useState, useEffect } from 'react'
+import { App as AntdApp } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { SpeechInputButton } from '@/components/speech-input-button'
 import { ImageViewer } from '@/components/ImageViewer'
 import { ModelPicker } from '@canvas/components/model-picker'
@@ -69,6 +70,7 @@ type ImageToolResult = {
   fileSize: string
   quality: string
   time: string
+  createdAt: number
   prompt: string
   favorited: boolean
   imageUrl?: string
@@ -76,7 +78,50 @@ type ImageToolResult = {
   sourceGenerationTaskId?: string
   editId?: string
   sourceFileId?: string
-  writeIdempotencyKey?: string
+  writeIdempotencyKey?: string
+  /** 骨架占位：刚提交任务、图还没回来 */
+  pending?: boolean
+  /** 骨架占位对应的这次生成失败 */
+  failed?: boolean
+}
+/** 把 "16:9" 这类比例字符串解析成宽高比；原始/未知比例默认 1:1 */
+function parseRatioWH(ratio: string): { w: number; h: number } {
+  if (!ratio || ratio === '__ORIG__' || ratio === 'auto') return { w: 1, h: 1 }
+  const m = ratio.match(/^(\d+)\s*:\s*(\d+)$/)
+  if (!m) return { w: 1, h: 1 }
+  return { w: Number(m[1]), h: Number(m[2]) }
+}
+
+/** 生成中的渐变发光占位块：高度固定 160px，宽度按传入比例换算 */
+function GeneratingSkeleton({ ratio, failed }: { ratio: string; failed?: boolean }) {
+  const { w, h } = parseRatioWH(ratio)
+  const width = Math.round(160 * (w / h))
+  return (
+    <div
+      className="relative overflow-hidden rounded-lg bg-surface-hover"
+      style={{ width, height: 160 }}
+    >
+      {/* 渐变背景 */}
+      <div className="absolute inset-0 opacity-30" style={{
+        backgroundImage: failed
+          ? 'radial-gradient(circle at 25% 25%, #b91c1c 0%, transparent 40%), radial-gradient(circle at 75% 75%, #7f1d1d 0%, transparent 40%)'
+          : 'radial-gradient(circle at 25% 25%, #5051F8 0%, transparent 40%), radial-gradient(circle at 75% 75%, #7c3aed 0%, transparent 40%), radial-gradient(circle at 75% 25%, #06b6d4 0%, transparent 30%)',
+      }} />
+      <div className="relative flex h-full flex-col items-center justify-center gap-2">
+        {failed ? (
+          <span className="text-[12px] text-red-400">生成失败</span>
+        ) : (
+          <>
+            <div className="relative">
+              <div className="absolute -inset-2 rounded-full bg-accent/30 blur-md animate-ping" />
+              <div className="relative size-6 rounded-full bg-gradient-to-br from-accent to-purple-600 shadow-[0_0_12px_#5051F8]" />
+            </div>
+            <span className="text-[8px] text-accent/70 tracking-[0.2em]">AI GENERATING</span>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 const tabs: { id?: TabId; label: string; translation?: boolean; width: string }[] = [
@@ -114,6 +159,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; action?: { label: string; onClick: () => void }; pos?: 'top' | 'input' } | null>(null)
   const [queueSize, setQueueSize] = useState(0)
   const [showQueue, setShowQueue] = useState(false)
+  const queueRef = useRef<Array<{ prompt: string; ratio: string; quality: string; count: string; refImages: string[] }>>([])
+  const queueRunningRef = useRef(false)
   const [results, setResults] = useState<ImageToolResult[]>([])
   const [savingResultIds, setSavingResultIds] = useState<Set<number>>(new Set())
   const [viewMode, setViewMode] = useState<ViewMode>('list')
@@ -129,7 +176,9 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [undoPrompt, setUndoPrompt] = useState('')
-  const [commonPrompts, setCommonPrompts] = useState<{id:number; title:string; content:string}[]>([])
+  const [commonPrompts, setCommonPrompts] = useState<{id:number; title:string; content:string}[]>(() => {
+    try { const raw = localStorage.getItem('image-tools:common-prompts'); return raw ? JSON.parse(raw) : [] } catch { return [] }
+  })
   const [showCommonPromptModal, setShowCommonPromptModal] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [historyTasks, setHistoryTasks] = useState<GenTask[]>([])
@@ -145,14 +194,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
   const ratios = ['__ORIG__', '1:1', '2:3', '3:4', '4:5', '9:16', '21:9', '3:2', '4:3', '5:4', '16:9']
   const qualities = ['1K', '2K', '4K']
-  const counts = ['1', '2', '3', '4']
+  const counts = Array.from({ length: 15 }, (_, i) => String(i + 1))
   // 模型能力限制
   const currentModelName = model.split('::').pop() || model
   const isNanoBanana = currentModelName.includes('nano-banana')
   const isGptImage25 = currentModelName === 'gpt-image-2.5'
   const onlyOne = isNanoBanana || isGptImage25
   const only1K = isNanoBanana || isGptImage25
-  const disabledCounts = onlyOne ? ['2', '3', '4'] : []
+  const disabledCounts = onlyOne ? counts.slice(1) : []
   const disabledQualities = only1K ? ['2K', '4K'] : []
   const selectedModelForQuote = model || config.imageModel || config.model
   const isPlatformModel = /catalog:\d+/.test(selectedModelForQuote)
@@ -174,10 +223,19 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     return () => { active = false; window.clearTimeout(timer) }
   }, [isLoggedIn, prompt, isPlatformModel, selectedModelForQuote, ratio, quality, count])
 
-  const filteredResults = searchKeyword.trim()
-    ? results.filter((r) => r.prompt.toLowerCase().includes(searchKeyword.trim().toLowerCase()))
-    : results
+  const nowTs = Date.now()
+  const DAY = 24 * 3600 * 1000
+  const filteredResults = results.filter((r) => {
+    if (searchKeyword.trim() && !r.prompt.toLowerCase().includes(searchKeyword.trim().toLowerCase())) return false
+    if (starFilter === 'favorite' && !r.favorited) return false
+    if (starFilter === 'notFavorite' && r.favorited) return false
+    if (timeFilter === 'today' && r.createdAt < new Date().setHours(0,0,0,0)) return false
+    if (timeFilter === 'last7' && r.createdAt < nowTs - 7 * DAY) return false
+    if (timeFilter === 'last30' && r.createdAt < nowTs - 30 * DAY) return false
+    return true
+  })
 
+  const { modal } = AntdApp.useApp()
   const showToast = (msg: string, type: 'success' | 'error' = 'success', action?: { label: string; onClick: () => void }, pos: 'top' | 'input' = 'top') => {
     setToast({ msg, type, action, pos })
     setTimeout(() => setToast(null), 3000)
@@ -191,8 +249,22 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
   }
   const addToQueue = (n: number) => {
     if (!isLoggedIn) { openAuthModal(); return }
-    setQueueSize((q) => q + n)
-    showToast(t('imageTools.toasts.queuedInfo', { n, total: queueSize + n }))
+    if (!prompt.trim()) { showToast(t('imageTools.inputPromptFirst'), 'error'); return }
+    const task = { prompt: prompt.trim(), ratio, quality, count, refImages: [...refImages] }
+    for (let i = 0; i < n; i++) queueRef.current.push(task)
+    setQueueSize(queueRef.current.length)
+    showToast(t('imageTools.toasts.queuedInfo', { n, total: queueRef.current.length }))
+    void drainQueue()
+  }
+  const drainQueue = async () => {
+    if (queueRunningRef.current) return
+    queueRunningRef.current = true
+    while (queueRef.current.length) {
+      const task = queueRef.current.shift()!
+      setQueueSize(queueRef.current.length)
+      try { await runGeneration(task) } catch { /* 单条失败不阻断队列 */ }
+    }
+    queueRunningRef.current = false
   }
 
   const copyPrompt = (text: string) => {
@@ -250,9 +322,23 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     }
   }
 
-  const deleteResult = (id: number) => {
-    setResults((r) => r.filter((x) => x.id !== id))
-    showToast(t('imageTools.toasts.deleted'))
+  const deleteResult = async (id: number) => {
+    const item = results.find((x) => x.id === id)
+    if (!item) return
+    modal.confirm({
+      title: t('imageTools.confirmDeleteTitle'),
+      content: t('imageTools.confirmDelete'),
+      okText: t('imageTools.delete'),
+      cancelText: t('imageTools.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        if (item.assetId) {
+          try { await api.delete(`/assets/${item.assetId}`) } catch { /* 已删或无权限，仍从本地移除 */ }
+        }
+        setResults((r) => r.filter((x) => x.id !== id))
+        showToast(t('imageTools.toasts.deleted'))
+      },
+    })
   }
 
   const toggleFavorite = async (id: number) => {
@@ -328,6 +414,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
             fileSize: metadata.sizeBytes ? `${Math.round(Number(metadata.sizeBytes) / 1024)} KB` : '—',
             quality: String(metadata.quality || '—'),
             time: asset.createdAt.slice(0, 16).replace('T', ' '),
+            createdAt,
             prompt: String(metadata.prompt || asset.name || ''),
             favorited: Boolean(asset.favorited),
             imageUrl,
@@ -364,7 +451,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           if (blob) {
             const reader = new FileReader()
             reader.onload = () => {
-              setRefImages((xs) => [...xs, reader.result as string])
+              setRefImages((xs) => (xs.includes(reader.result as string) ? xs : [...xs, reader.result as string]))
               showToast(t('imageTools.toasts.pasted'))
             }
             reader.readAsDataURL(blob)
@@ -392,10 +479,15 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     showToast(t('imageTools.toasts.reused'))
   }
 
-  const generate = async () => {
+  const runGeneration = async (task?: { prompt: string; ratio: string; quality: string; count: string; refImages: string[] }) => {
     if (!isLoggedIn) { openAuthModal(); return }
-    if (!prompt.trim() || generating) return
-    const requestedCount = Math.max(1, Math.min(15, Number(count) || 1))
+    const _prompt = task?.prompt ?? prompt
+    const _ratio = task?.ratio ?? ratio
+    const _quality = task?.quality ?? quality
+    const _count = task?.count ?? count
+    const _refImages = task?.refImages ?? refImages
+    if (!_prompt.trim() || generating) return
+    const requestedCount = Math.max(1, Math.min(15, Number(_count) || 1))
     await refreshBillingUser()
     const latestBillingUser = useBillingStore.getState().user
     if (!latestBillingUser) {
@@ -404,11 +496,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
     }
     const selectedModel = model || config.imageModel || config.model
     const catalogPricingEnabled = /catalog:\d+/.test(selectedModel)
-    const imgParams = resolveOpenImageParams({ ratio, quality, model: selectedModel })
+    const imgParams = resolveOpenImageParams({ ratio: _ratio, quality: _quality, model: selectedModel })
     const billableParameters = { ...imgParams, n: requestedCount, response_format: 'b64_json' }
     let quote: ModelCreditQuote | null = null
     if (catalogPricingEnabled) {
-      try { quote = await billingApi.quote({ model: selectedModel, taskType: 'image', prompt: prompt.trim(), parameters: billableParameters, quantity: requestedCount }) }
+      try { quote = await billingApi.quote({ model: selectedModel, taskType: 'image', prompt: _prompt.trim(), parameters: billableParameters, quantity: requestedCount }) }
       catch (error) { showToast(error instanceof Error ? error.message : '无法确认本次积分价格', 'error'); return }
     }
     setCreditQuote(quote)
@@ -417,17 +509,37 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       return
     }
     setGenerating(true)
+    // 立刻插入 N 个骨架占位卡片，图回来后按 id 替换
+    const skeletonBase = Date.now()
+    const skeletonIds: number[] = Array.from({ length: requestedCount }, (_, i) => skeletonBase + i)
+    const skeletonModelLabel = selectedModel.split('::').pop() || selectedModel
+    const skeletonSize = _ratio === '__ORIG__' ? 'auto' : _ratio
+    setResults((prev) => [
+      ...skeletonIds.map((id) => ({
+        id,
+        model: skeletonModelLabel,
+        size: skeletonSize,
+        fileSize: '—',
+        quality: _quality,
+        time: '',
+        createdAt: Date.now(),
+        prompt: _prompt.trim(),
+        favorited: false,
+        pending: true,
+      })),
+      ...prev,
+    ])
     try {
       const requestConfig = {
         ...config,
         model: selectedModel,
         imageModel: selectedModel,
-        count,
-        quality: quality.toLowerCase(),
-        size: ratio === '__ORIG__' ? 'auto' : ratio,
+        count: _count,
+        quality: _quality.toLowerCase(),
+        size: _ratio === '__ORIG__' ? 'auto' : _ratio,
       }
       const referenceUploadBatchId = crypto.randomUUID()
-      const referenceAssetIds = await Promise.all(refImages.map(async (dataUrl, index) => {
+      const referenceAssetIds = await Promise.all(_refImages.map(async (dataUrl, index) => {
         const existingAssetId = persistedReferenceImages.current.get(dataUrl)
         if (existingAssetId) return existingAssetId
         const response = await fetch(dataUrl)
@@ -439,7 +551,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         persistedReferenceImages.current.set(dataUrl, asset.id)
         return asset.id
       }))
-      const references: ReferenceImage[] = refImages.map((dataUrl, index) => ({
+      const references: ReferenceImage[] = _refImages.map((dataUrl, index) => ({
         id: `image-tools-ref-${index}`,
         name: `reference-${index + 1}`,
         type: 'image',
@@ -453,12 +565,12 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         : null
       let sourceGenerationTaskId: string | undefined
       const generated = references.length && !catalogPricingEnabled
-        ? await requestEdit(requestConfig, prompt.trim(), references)
+        ? await requestEdit(requestConfig, _prompt.trim(), references)
         : await (async () => {
             // 0046 生图改异步任务：提交即返回 taskId，后台生成，前端轮询。
             const { taskId } = await submitImageTask({
               model: selectedModel,
-              prompt: prompt.trim(),
+              prompt: _prompt.trim(),
               n: requestedCount,
               ...imgParams,
               response_format: 'b64_json',
@@ -481,13 +593,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
       const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const modelLabel = selectedModel.split('::').pop() || selectedModel
       const newResults = generated.map((image, index) => ({
-        id: Date.now() + index,
+        id: skeletonIds[index] ?? (Date.now() + index),
         model: modelLabel,
-        size: ratio === '__ORIG__' ? 'auto' : ratio,
+        size: _ratio === '__ORIG__' ? 'auto' : _ratio,
         fileSize: '—',
-        quality,
+        quality: _quality,
         time: timeStr,
-        prompt: prompt.trim(),
+        createdAt: Date.now(),
+        prompt: _prompt.trim(),
         favorited: false,
         imageUrl: image.dataUrl,
         writeIdempotencyKey: `image-tool:${crypto.randomUUID()}`,
@@ -500,13 +613,33 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         catch { return null }
       }))
       const savedResults = newResults.map((result, index) => ({ ...result, assetId: persisted[index]?.id }))
-      setResults((r) => [...savedResults, ...r])
+      setResults((prev) => {
+        const rest = prev.filter((x) => !skeletonIds.includes(x.id))
+        return [...savedResults, ...rest]
+      })
       setGenerating(false)
-      const failedSaves = savedResults.filter((result) => !result.assetId).length
-      if (failedSaves) showToast(t('imageTools.toasts.saveFailed', { count: failedSaves }), 'error')
-      else showToast(t('imageTools.toasts.done'))
+      const failedInitial = savedResults.filter((result) => !result.assetId)
+      if (failedInitial.length) {
+        showToast(t('imageTools.toasts.saveFailed', { count: failedInitial.length }), 'error')
+        ;(async () => {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)))
+            const stillFailed = savedResults.filter((x) => !x.assetId)
+            if (!stillFailed.length) break
+            for (const fr of stillFailed) {
+              try {
+                const a = await uploadImageResult(fr)
+                setResults((cur) => cur.map((x) => x.id === fr.id ? { ...x, assetId: a.id } : x))
+              } catch { /* 下一轮再试 */ }
+            }
+          }
+        })()
+      } else {
+        showToast(t('imageTools.toasts.done'))
+      }
     } catch (error) {
       setGenerating(false)
+      setResults((prev) => prev.map((x) => skeletonIds.includes(x.id) ? { ...x, pending: false, failed: true } : x))
       showToast(error instanceof Error ? error.message : t('workbench.generationFailed'), 'error')
     }
   }
@@ -574,8 +707,10 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                 <Tooltip title={t("imageTools.tipFormat")}><button  className="flex size-6 items-center justify-center rounded text-text-secondary hover:bg-surface-hover"><AlignLeft className="size-[13px]" /></button></Tooltip>
               </div>
             </div>
-            <div className="mt-2 flex items-center gap-2">
-              <button onClick={() => setPrompt('123')} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-3 text-[12px] text-text-secondary hover:bg-surface-hover">123</button>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {commonPrompts.slice(0, 6).map((p) => (
+                <button key={p.id} onClick={() => { setPrompt(p.content); showToast(t('imageTools.toasts.filled')) }} className="h-[28px] rounded-md border border-border bg-transparent dark:border-0 dark:bg-secondary px-2.5 text-[12px] text-text-secondary hover:bg-surface-hover hover:text-text">{p.title}</button>
+              ))}
               <Tooltip title={t("imageTools.tipAddCommon")}><button  onClick={() => setShowCommonPromptModal(true)} className="ml-auto flex size-[26px] items-center justify-center rounded-full border border-border bg-transparent dark:border-0 dark:bg-secondary text-text-muted hover:bg-surface-hover"><Plus className="size-[14px]" /></button></Tooltip>
             </div>
           </div>
@@ -704,6 +839,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                         next[replaceIndex] = data
                         return next
                       }
+                      if (xs.includes(data)) return xs
                       if (xs.length >= 4) {
                         showToast(t('imageTools.toasts.maxRefs'), 'error')
                         return xs
@@ -758,7 +894,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
 
         {/* 生成按钮 */}
         <div className="shrink-0 px-5 pb-4 pt-1">
-          <button onClick={generate} disabled={!prompt.trim() || generating || quotaExhausted || quoteUnavailable}
+          <button onClick={() => addToQueue(1)} disabled={!prompt.trim() || generating || quotaExhausted || quoteUnavailable}
             title={quotaExhausted ? `本次需要 ${estimatedCost} 积分，当前余额 ${billingUser?.balance ?? 0}` : quoteUnavailable ? '正在获取平台报价，或该模型尚未配置积分价格' : undefined}
             className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45">
             {generating ? <><Loader2 className="mr-2 size-5 animate-spin" />{t('imageTools.generating')}</> : quotaExhausted ? `积分不足：需要 ${estimatedCost}，余额 ${billingUser?.balance ?? 0}` : (prompt.trim() ? `${t('imageTools.startGen')} · ${isPlatformModel ? (quoteLoading ? '正在估价…' : estimatedCost == null ? '积分价格未配置' : `预计扣 ${estimatedCost} 积分 · 余额 ${billingUser?.balance ?? 0}`) : '未接入平台积分价'}` : t('imageTools.inputPromptFirst'))}
@@ -766,8 +902,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
         </div>
       </div>
 
-      {/* ── 右栏：结果区（可折叠） ── */}
-      {!resultsCollapsed && (
+      {/* ── 右栏：结果区（固定展开） ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
         {/* 顶部工具栏 */}
         <div className="flex h-[44px] shrink-0 items-center gap-2 px-4 pt-3">
@@ -886,7 +1021,16 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {results.length > 0 && viewMode === 'list' && (
             <div className="space-y-4">
-              {filteredResults.map((r) => (
+              {filteredResults.map((r) => r.pending ? (
+                <div key={r.id} className="flex items-center gap-4 rounded-lg bg-card p-3">
+                  <GeneratingSkeleton ratio={r.size} failed={r.failed} />
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[14px] text-text">{r.model}</span>
+                    <span className="text-[12px] text-text-secondary">{r.size} · {r.quality}</span>
+                    <span className="text-[12px] text-text-secondary">{r.failed ? t('workbench.generationFailed') : t('imageTools.generating') + '...'}</span>
+                  </div>
+                </div>
+              ) : (
                 <div key={r.id} className="group flex gap-4 rounded-lg bg-card p-3">
                   <div className="shrink-0 overflow-hidden rounded-lg bg-surface-hover" style={{ width: thumbScale * 1.6, height: thumbScale * 1.6 }}>
                     {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
@@ -912,13 +1056,13 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       {!r.assetId && r.imageUrl && <Tooltip title={savingResultIds.has(r.id) ? t('imageTools.toasts.savingToCloud') : t('imageTools.toasts.retrySave')}><button aria-label={t('imageTools.toasts.retrySave')} disabled={savingResultIds.has(r.id)} onClick={() => void retrySaveResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-red-400 hover:bg-surface-hover disabled:opacity-50">{savingResultIds.has(r.id) ? <Loader2 className="size-[15px] animate-spin" strokeWidth={1.8} /> : <CloudUpload className="size-[15px]" strokeWidth={1.8} />}</button></Tooltip>}
                       <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.tipCopyImage")}><button  onClick={() => showToast(t('imageTools.toasts.copiedImage'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.tipQuote")}><button  onClick={() => showToast(t('imageTools.toasts.quoted'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.tipTeamShare")}><button  onClick={() => showToast(t('imageTools.toasts.shared'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipCopyImage")}><button  onClick={async () => { if (!r.imageUrl) return; try { const blob = await (await fetch(r.imageUrl)).blob(); await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]); showToast(t('imageTools.toasts.copiedImage')) } catch { showToast(t('imageTools.toasts.copyFailed'), 'error') } }} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Copy className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipQuote")}><button  onClick={() => { if (!r.imageUrl) return; setRefImages((xs) => (xs.includes(r.imageUrl!) || xs.length >= 4) ? xs : [...xs, r.imageUrl!]); showToast(t('imageTools.toasts.quoted')) }} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Quote className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipTeamShare")}><button  onClick={async () => { if (!r.assetId) { showToast(t('imageTools.toasts.saveFirstShare'), 'error'); return } try { const teams = await api.get<Array<{id:string;name:string;workspaceId:string|null}>>('/teams'); if (!teams.length) { showToast(t('imageTools.toasts.noTeam'), 'error'); return } const target = teams[0]; if (!target.workspaceId) { showToast(t('imageTools.toasts.noTeamWorkspace'), 'error'); return } await api.post(`/assets/${r.assetId}/share-to-team`, { workspaceId: target.workspaceId }); showToast(t('imageTools.toasts.sharedToTeam', { name: target.name })) } catch { showToast(t('imageTools.toasts.shareFailed'), 'error') } }} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Share2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')}><button  onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => { if (!r.imageUrl) return; const a = document.createElement('a'); a.href = r.imageUrl; a.download = `image-${r.id}.png`; a.click(); showToast(t('imageTools.toasts.downloaded')) }} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipFolder")}><button  onClick={() => showToast(t('imageTools.toasts.openedInFolder'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FolderOpen className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => void deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                     </div>
                   </div>
                 </div>
@@ -927,7 +1071,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {viewMode === 'grid' && (
             <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbScale}px, 1fr))` }}>
-              {filteredResults.map((r) => (
+              {filteredResults.map((r) => r.pending ? (
+                <div key={r.id} className="flex aspect-square items-center justify-center rounded-lg bg-surface-hover">
+                  <GeneratingSkeleton ratio={r.size} failed={r.failed} />
+                </div>
+              ) : (
                 <div key={r.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface-hover">
                   {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="h-full w-full cursor-zoom-in object-contain" onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex h-full items-center justify-center text-[12px] text-text-secondary">{t("imageTools.img")} {r.id}</div>}
                   {!r.assetId && <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[11px] text-red-300">{t('imageTools.toasts.notSavedToCloud')}</span>}
@@ -937,7 +1085,7 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       {!r.assetId && r.imageUrl && <button aria-label={t('imageTools.toasts.retrySave')} disabled={savingResultIds.has(r.id)} onClick={() => void retrySaveResult(r.id)} className="flex h-[22px] items-center gap-1 rounded bg-red-500/20 px-2 text-[11px] text-red-200 disabled:opacity-50">{savingResultIds.has(r.id) ? <Loader2 className="size-3 animate-spin" /> : <CloudUpload className="size-3" />}{t('imageTools.toasts.retrySave')}</button>}
                       <button onClick={() => copyPrompt(r.prompt)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{t('imageTools.copy')}</button>
                       <button onClick={() => toggleFavorite(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-text hover:bg-surface-hover">{r.favorited ? '★' : '☆'}</button>
-                      <button onClick={() => deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">{t('imageTools.deleteShort')}</button>
+                      <button onClick={() => void deleteResult(r.id)} className="h-[22px] rounded border border-border bg-transparent dark:border-0 dark:bg-secondary px-2 text-[11px] text-red-400 hover:bg-surface-hover">{t('imageTools.deleteShort')}</button>
                     </div>
                   </div>
                 </div>
@@ -946,7 +1094,11 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
           {viewMode === 'large' && (
             <div className="space-y-4">
-              {filteredResults.map((r) => (
+              {filteredResults.map((r) => r.pending ? (
+                <div key={r.id} className="flex justify-center rounded-lg bg-card p-3">
+                  <GeneratingSkeleton ratio={r.size} failed={r.failed} />
+                </div>
+              ) : (
                 <div key={r.id} className="group overflow-hidden rounded-lg bg-card">
                   {r.imageUrl ? <img src={r.imageUrl} alt={r.prompt} className="w-full cursor-zoom-in object-contain bg-surface-hover" style={{ height: thumbScale * 2.5 }} onClick={() => openPreview(r.imageUrl!)} /> : <div className="flex items-center justify-center bg-surface-hover text-[14px] text-text-secondary" style={{ height: thumbScale * 2.5 }}>{t("imageTools.img")} {r.id}（{t("imageTools.bigPreview")}）</div>}
                   <div className="p-3">
@@ -969,8 +1121,8 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
                       <Tooltip title={t("imageTools.tipReuse")}><button  onClick={() => reuseParams(r)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Repeat className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={t("imageTools.tipCopyPrompt")}><button  onClick={() => copyPrompt(r.prompt)} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><FileText className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                       <Tooltip title={r.favorited ? t('imageTools.tipUnfavorite') : t('imageTools.tipFavorite')}><button  onClick={() => toggleFavorite(r.id)} className={cn('flex size-[30px] items-center justify-center rounded-md', r.favorited ? 'text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-secondary')}><Star className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => showToast(t('imageTools.toasts.downloaded'))} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
-                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.tipDownload")}><button  onClick={() => { if (!r.imageUrl) return; const a = document.createElement('a'); a.href = r.imageUrl; a.download = `image-${r.id}.png`; a.click(); showToast(t('imageTools.toasts.downloaded')) }} className="flex size-[30px] items-center justify-center rounded-md text-text-muted hover:bg-surface-hover hover:text-text-secondary"><Download className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
+                      <Tooltip title={t("imageTools.delete")}><button  onClick={() => void deleteResult(r.id)} className="flex size-[30px] items-center justify-center rounded-md text-[#b91c1c] hover:text-red-400 hover:bg-surface-hover"><Trash2 className="size-[15px]" strokeWidth={1.8} /></button></Tooltip>
                     </div>
                   </div>
                 </div>
@@ -979,15 +1131,6 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
           )}
         </div>
       </div>
-      )}
-
-      {/* 右栏折叠/展开按钮 */}
-      <Tooltip title={resultsCollapsed ? t('imageTools.expandResult') : t('imageTools.collapseResult')}><button 
-        onClick={() => setResultsCollapsed((v) => !v)}
-        className="fixed right-3 top-1/2 z-30 flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-secondary text-text-muted shadow-lg ring-1 ring-border hover:bg-surface-hover hover:text-text"
-      >
-        {resultsCollapsed ? <PanelRightOpen className="size-[14px]" strokeWidth={1.8} /> : <PanelRightClose className="size-[14px]" strokeWidth={1.8} />}
-      </button></Tooltip>
 
       {/* Toast — 顶部居中，成功绿色/失败红色 */}
       {/* 常用提示词弹窗 */}
@@ -1061,15 +1204,18 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               className="mb-4 w-full resize-none rounded-lg bg-card px-3 py-2 text-[14px] text-text outline-none focus:ring-1 focus:ring-accent placeholder:text-text-muted"
             />
             {commonPrompts.length > 0 && (
-              <div className="mb-4 max-h-[120px] overflow-y-auto">
+              <div className="mb-4 max-h-[160px] overflow-y-auto">
                 {commonPrompts.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => { setPrompt(p.content); setShowCommonPromptModal(false); showToast(t('imageTools.toasts.filled')) }}
-                    className="mb-1 block w-full rounded-lg bg-secondary px-3 py-2 text-left text-[13px] text-text hover:bg-surface-hover"
-                  >
-                    {p.title}
-                  </button>
+                  <div key={p.id} className="mb-1 flex items-center gap-1 rounded-lg bg-secondary px-3 py-2">
+                    <button
+                      onClick={() => { setPrompt(p.content); setShowCommonPromptModal(false); showToast(t('imageTools.toasts.filled')) }}
+                      className="flex-1 text-left text-[13px] text-text hover:text-accent"
+                    >
+                      {p.title}
+                    </button>
+                    <button onClick={() => { setNewPromptTitle(p.title); setNewPromptContent(p.content); setReplaceIndex(p.id) }} className="px-2 text-[11px] text-text-secondary hover:text-accent">{t('imageTools.replace')}</button>
+                    <button onClick={() => { const next = commonPrompts.filter((x) => x.id !== p.id); setCommonPrompts(next); localStorage.setItem('image-tools:common-prompts', JSON.stringify(next)) }} className="px-2 text-[11px] text-text-secondary hover:text-red-400">✕</button>
+                  </div>
                 ))}
               </div>
             )}
@@ -1083,9 +1229,14 @@ function GeneratePanel({ connectTopLeft = true }: { connectTopLeft?: boolean }) 
               <button
                 onClick={() => {
                   if (!newPromptTitle.trim() || !newPromptContent.trim()) return
-                  setCommonPrompts((xs) => [...xs, { id: Date.now(), title: newPromptTitle, content: newPromptContent }])
+                  const next = replaceIndex !== null
+                    ? commonPrompts.map((p) => p.id === replaceIndex ? { ...p, title: newPromptTitle.trim(), content: newPromptContent.trim() } : p)
+                    : [...commonPrompts, { id: Date.now(), title: newPromptTitle.trim(), content: newPromptContent.trim() }]
+                  setCommonPrompts(next)
+                  localStorage.setItem('image-tools:common-prompts', JSON.stringify(next))
                   setNewPromptTitle('')
                   setNewPromptContent('')
+                  setReplaceIndex(null)
                   showToast(t('imageTools.toasts.saved'))
                 }}
                 className="h-[32px] rounded-md bg-accent px-4 text-[13px] text-accent-foreground hover:bg-accent-hover"
@@ -1525,7 +1676,7 @@ export default function ImageToolsPage() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col bg-bg p-3 pl-2">
+    <div className="flex h-full flex-col bg-bg p-3 pl-0">
       <div className="flex shrink-0 items-end gap-0.5 pt-1 pb-0">
         {tabs.map((tab) => (
           <button

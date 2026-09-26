@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { FolderOpen, Search, Upload, MoreVertical, Heart, MessageCircle, Download } from 'lucide-react'
-import { App, Modal, Tooltip } from 'antd'
+import { App, Modal } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { saveAs } from 'file-saver'
 import { cn } from '@/lib/utils'
 import { SearchInput } from '@/components/SearchInput'

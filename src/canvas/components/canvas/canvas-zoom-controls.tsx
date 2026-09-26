@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Compass, Focus, HelpCircle } from "lucide-react";
 import { useState } from "react";
-import { Button, Modal, Tooltip } from "antd";
+import { Button, Modal } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@canvas/lib/canvas-theme";

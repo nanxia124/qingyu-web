@@ -91,7 +91,7 @@ export function CanvasToolbar({
 
     return (
         <div ref={rootRef} className="pointer-events-none absolute bottom-5 z-50 flex justify-center" style={{ left: toolbarLeft, right: 16 }}>
-            {tip ? <DockTip label={tip} x={tipX} theme={theme} /> : null}
+            {tip ? <DockTip label={tip} x={tipX} /> : null}
             <div ref={wrapRef} className="thin-scrollbar pointer-events-auto flex h-14 max-w-full items-center gap-1 overflow-x-auto rounded-xl px-2 backdrop-blur canvas-float [&>*]:shrink-0" style={dockStyle}>
                 <ToolbarButton id={`tool-${canvasTool}`} label={t(`canvas.toolbar.${canvasTool}`)} active hovered={hovered} activeStyle={activeStyle} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={() => onCanvasToolChange(canvasTool === "select" ? "pan" : "select")}>
                     {canvasTool === "select" ? <MousePointer2 className="size-4.5" /> : <Hand className="size-4.5" />}
@@ -313,9 +313,9 @@ function Divider({ theme }: { theme: CanvasTheme }) {
 }
 
 
-function DockTip({ label, x, theme }: { label: string; x: number; theme: CanvasTheme }) {
+function DockTip({ label, x }: { label: string; x: number }) {
     return (
-        <span className="absolute bottom-[calc(100%+8px)] -translate-x-1/2 rounded-md px-2 py-1 text-xs" style={{ left: x, background: theme.node.text, color: theme.node.panel }}>
+        <span className="absolute bottom-[calc(100%+8px)] -translate-x-1/2 rounded-md px-2 py-1 text-xs" style={{ left: x, background: '#ffffff', color: '#1d1d1f', fontSize: 12, lineHeight: 1.4, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.25)' }}>
             {label}
         </span>
     );

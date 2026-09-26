@@ -24,8 +24,3 @@ cat server.log
 echo "=== test health ==="
 curl -s http://127.0.0.1:3001/api/config/public
 echo ""
-echo "=== test admin login ==="
-curl -s -X POST http://127.0.0.1:3001/api/admin/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"QingyuAdmin2026!"}'
-echo ""

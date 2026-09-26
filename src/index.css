@@ -386,3 +386,18 @@ html:not(.dark) .image-subtab:not(:disabled):hover { background-color: var(--col
   cursor: pointer;
   border: none;
 }
+
+/* 全站统一气泡提示：灰色底深色字，悬浮显示时不播放动效 */
+.app-tooltip .ant-tooltip-inner {
+  background: #d1d1d6 !important;
+  color: #1d1d1f !important;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.app-tooltip .ant-tooltip-arrow::before {
+  background: #d1d1d6 !important;
+}

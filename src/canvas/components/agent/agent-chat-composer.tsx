@@ -1,6 +1,7 @@
 ﻿import { useRef, useState, type ReactNode } from "react";
-import { Button, Dropdown, Tooltip } from "antd";
-import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, Lightbulb, Link2, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
+import { App, Button, Dropdown, Modal } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
+import { ArrowUp, Check, ChevronUp, Cpu, Eraser, Gauge, Hand, ImagePlus, Lightbulb, Link2, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useShortcuts } from "@/hooks/use-shortcuts";
@@ -32,6 +33,7 @@ export function AgentChatComposer({
     reasoningEffort,
     onModelChange,
     onReasoningEffortChange,
+    onClearContext,
     left,
 }: {
     prompt: string;
@@ -54,9 +56,11 @@ export function AgentChatComposer({
     reasoningEffort?: AgentReasoningEffort | "";
     onModelChange?: (model: string) => void;
     onReasoningEffortChange?: (effort: AgentReasoningEffort) => void;
+    onClearContext?: () => void;
     left?: ReactNode;
 }) {
     const { t } = useTranslation();
+    const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [dragActive, setDragActive] = useState(false);
     const { shortcuts } = useShortcuts();
@@ -153,6 +157,23 @@ export function AgentChatComposer({
                         >
                             <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<Lightbulb className="size-4" />} aria-label="快捷指令" />
                         </Dropdown>
+                        {onClearContext ? (
+                            <Tooltip title="清空对话记忆" placement="top">
+                                <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<Eraser className="size-4" />} onClick={() => {
+                                    Modal.confirm({
+                                        title: "清空对话记忆",
+                                        content: "确定要清空当前对话的所有消息吗？AI 将不记得之前聊过什么。",
+                                        okText: "清空",
+                                        okButtonProps: { danger: true },
+                                        cancelText: "取消",
+                                        onOk: () => {
+                                            onClearContext();
+                                            message.success("已清空对话记忆");
+                                        },
+                                    });
+                                }} aria-label="清空对话记忆" />
+                            </Tooltip>
+                        ) : null}
                         {onConfirmToolsChange ? <ToolConfirmationMenu confirmTools={Boolean(confirmTools)} theme={theme} onChange={onConfirmToolsChange} /> : null}
                         {permissionMode && onPermissionModeChange ? <PermissionModeMenu permissionMode={permissionMode} theme={theme} onChange={onPermissionModeChange} /> : null}
                         {models?.length && model && reasoningEffort && onModelChange && onReasoningEffortChange ? <AgentModelControls models={models} model={model} reasoningEffort={reasoningEffort} onModelChange={onModelChange} onReasoningEffortChange={onReasoningEffortChange} /> : null}

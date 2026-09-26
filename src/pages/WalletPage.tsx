@@ -65,7 +65,7 @@ export default function WalletPage() {
     : "";
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="h-full overflow-y-auto p-8 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-text mb-6">{t("pages.wallet.title")}</h1>
 
       {/* 余额卡片 */}

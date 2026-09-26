@@ -1,6 +1,6 @@
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Tooltip } from "antd";
+import Tooltip from '@/components/ui/Tooltip'
 
 import { LocalAgentPanel } from "./local-agent-panel";
 import { canvasThemes } from "@canvas/lib/canvas-theme";

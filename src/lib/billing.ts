@@ -55,8 +55,6 @@ export interface BillingUser {
   totalSpent: number;
   workspaceId?: string;
   createdAt: number;
-  dailyUsed?: number;
-  dailyLimit?: number;
 }
 export interface ModelCreditQuote {
   id: string;

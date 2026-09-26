@@ -9,17 +9,26 @@ INSERT INTO app.workspaces(type, owner_user_id, name)
 VALUES ('personal', :'uid', '生成幂等测试空间')
 RETURNING id AS wid \gset
 SELECT set_config('app.user_id', :'uid', true);
+INSERT INTO app.quota_accounts(workspace_id, quota_code, granted)
+VALUES (:'wid', 'monthly', 100);
+INSERT INTO app.model_catalog(model_id, display_name, provider, capability, credit_price, credit_price_unit)
+VALUES ('generation-idempotency-test-model', '幂等测试模型', 'test', 'image', 1, 'output')
+RETURNING id AS model_id \gset
+INSERT INTO app.model_credit_quotes(workspace_id,user_id,model_catalog_id,task_type,price_version,price_unit,unit_count,credit_price,total_credits,request_hash,request_snapshot,expires_at)
+VALUES (:'wid',:'uid',:'model_id','image',1,'output',1,1,1,repeat('a',64),
+  jsonb_build_object('taskType','image','prompt','idempotency test','parameters','{}'::jsonb,'quantity',1),now()+interval '5 minutes')
+RETURNING id AS quote_id \gset
 
 CREATE TEMP TABLE generation_task_idempotency_result AS
 SELECT * FROM app.create_generation_task(
   :'wid'::uuid, :'uid'::uuid, 'image', 'test', 'test-model', 'test-v1',
-  'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60
+  'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60, :'model_id'::bigint, :'quote_id'::uuid
 );
 
 INSERT INTO generation_task_idempotency_result
 SELECT * FROM app.create_generation_task(
   :'wid'::uuid, :'uid'::uuid, 'image', 'test', 'test-model', 'test-v1',
-  'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60
+  'idempotency test', '{}'::jsonb, 1, 'test-generation-repeat-key', 60, :'model_id'::bigint, :'quote_id'::uuid
 );
 
 DO $$
@@ -37,19 +46,16 @@ BEGIN
   SELECT count(*) INTO task_count FROM app.usage_records
     WHERE idempotency_key='test-generation-repeat-key';
   IF task_count <> 1 THEN RAISE EXCEPTION '重复提交产生了 % 条使用记录', task_count; END IF;
-  SELECT count(*) INTO task_count FROM app.daily_usage_reservations
-    WHERE idempotency_key='test-generation-repeat-key:task';
-  IF task_count <> 1 THEN RAISE EXCEPTION '重复提交产生了 % 笔免费额度预占', task_count; END IF;
   IF NOT EXISTS (
     SELECT 1 FROM app.generation_tasks t
     JOIN app.usage_records u ON u.id=t.usage_record_id AND u.workspace_id=t.workspace_id
-    JOIN app.daily_usage_reservations d ON d.id=t.daily_reservation_id
-      AND d.id=u.daily_reservation_id AND d.workspace_id=t.workspace_id
-    WHERE t.id=first_id AND d.amount=1 AND u.quantity=1
+    JOIN app.quota_reservations r ON r.id=t.quota_reservation_id
+      AND r.workspace_id=t.workspace_id AND r.account_id IS NOT NULL
+    WHERE t.id=first_id AND u.quota_reservation_id=t.quota_reservation_id AND u.quantity=1
   ) THEN
-    RAISE EXCEPTION '任务、使用记录与额度预占关联或数量不一致';
+    RAISE EXCEPTION '任务、使用记录与积分预留关联或数量不一致';
   END IF;
-  RAISE NOTICE 'PASS: 重复幂等键复用同一任务且只保留一条任务';
+  RAISE NOTICE 'PASS: 重复幂等键复用同一任务、使用记录和积分预留';
 END $$;
 
 ROLLBACK;

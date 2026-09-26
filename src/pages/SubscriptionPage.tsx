@@ -74,7 +74,7 @@ export default function SubscriptionPage() {
     : "";
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="h-full overflow-y-auto p-8 max-w-5xl mx-auto">
       <div className="flex items-end justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-text">{t("pages.subscription.title")}</h1>

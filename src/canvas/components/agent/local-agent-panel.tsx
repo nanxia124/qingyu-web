@@ -1,6 +1,7 @@
-﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { App, Button, Tooltip } from "antd";
+import { App, Button } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import dayjs from "dayjs";
 import { Bot, ChevronDown, History, MessageSquare, Plus, Sparkles, Terminal, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -790,9 +791,9 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             const stale = response?.code === "CONVERSATION_STALE";
             const busy = response?.code === "CONVERSATION_BUSY" || text.includes("Codex 正在运行");
             const state = useAgentStore.getState();
-            const removeFailedPending = (messages: AgentChatItem[]) => messages.filter((item) => item.clientMessageId !== messageId || Boolean(item.turnId));
+            const markFailedPending = (messages: AgentChatItem[]) => messages.map((item) => item.clientMessageId === messageId && !item.turnId ? { ...item, failed: true } : item);
             threadMessagesRef.current.forEach((messages, cachedThreadId) => {
-                const next = removeFailedPending(messages);
+                const next = markFailedPending(messages);
                 if (next.length !== messages.length) threadMessagesRef.current.set(cachedThreadId, next);
             });
             const ownsCurrentThread = state.activeThreadId === (threadId || requestThreadId);
@@ -801,12 +802,12 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                 setAgentState({
                     activity: rt(stale ? "conversationSynced" : busy ? "codexRunning" : "sendFailed"),
                     sending: false,
-                    messages: removeFailedPending(state.messages),
+                    messages: markFailedPending(state.messages),
                     ...restoreDraft,
                 });
                 addMessage({ threadId: state.activeThreadId, turnId: "", role: "error", title: rt(stale ? "conversationSynced" : busy ? "taskStillRunning" : "sendFailed"), text });
             } else {
-                setAgentState({ sending: false, messages: removeFailedPending(state.messages), ...restoreDraft });
+                setAgentState({ sending: false, messages: markFailedPending(state.messages), ...restoreDraft });
             }
             addEventLog(rt("sendFailed"), error);
         }
@@ -1491,6 +1492,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                             localStorage.setItem("canvas-agent-reasoning-effort", reasoningEffort);
                             setAgentState({ reasoningEffort });
                         }}
+                        onClearContext={() => void startNewThread()}
                         left={
                             attachments.length ? (
                                 <span className="hidden text-[11px] @min-[660px]:inline" style={{ color: theme.node.muted }}>

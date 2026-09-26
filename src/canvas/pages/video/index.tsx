@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
+﻿import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography , Tooltip} from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -11,7 +12,7 @@ import { ModelPicker } from "@canvas/components/model-picker";
 import { PromptSelectDialog } from "@canvas/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoSizeLabel } from "@canvas/components/video-settings-panel";
 import { canvasThemes } from "@canvas/lib/canvas-theme";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, videoRatioOptions, VIDEO_SECONDS_MIN, VIDEO_SECONDS_MAX } from "@canvas/lib/media-size";
+import { clampVideoSeconds, computeVideoSize, inferVideoRatio, normalizeVideoResolutionToModel, parseVideoResolution, readVideoDimensions, videoRatioOptions, VIDEO_SECONDS_MIN, VIDEO_SECONDS_MAX } from "@canvas/lib/media-size";
 import { formatBytes, formatDuration } from "@canvas/lib/image-utils";
 import { SpeechInputButton } from "@/components/speech-input-button";
 import { deleteStoredMedia, resolveMediaUrl } from "@canvas/services/file-storage";
@@ -24,6 +25,8 @@ import { useThemeStore } from "@canvas/stores/use-theme-store";
 import type { ReferenceImage } from "@canvas/types/image";
 import i18n from "@canvas/i18n";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { billingApi, type ModelCreditQuote } from "@/lib/billing";
+import { useBillingStore } from "@/stores/useBillingStore";
 
 type GeneratedVideo = {
     id: string;
@@ -73,6 +76,7 @@ export default function VideoPage() {
     const { message } = App.useApp();
     const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
     const openAuthModal = useAuthStore((s) => s.openAuthModal);
+    const balance = useBillingStore((s) => s.user?.balance ?? null);
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +89,8 @@ export default function VideoPage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
+    const [creditQuote, setCreditQuote] = useState<ModelCreditQuote | null>(null);
+    const [quoteLoading, setQuoteLoading] = useState(false);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -114,6 +120,36 @@ export default function VideoPage() {
     const seconds = Number(clampVideoSeconds(effectiveConfig.videoSeconds || "6"));
     const selectedRatio = inferVideoRatio(effectiveConfig.size || "auto");
     const dimensions = readVideoDimensions(effectiveConfig.size || "auto", resolution, selectedRatio);
+
+    useEffect(() => {
+        if (!/^catalog:\d+$/.test(model) || !prompt.trim()) {
+            setCreditQuote(null);
+            setQuoteLoading(false);
+            return;
+        }
+        let active = true;
+        setQuoteLoading(true);
+        const timer = window.setTimeout(() => {
+            const duration = Number(clampVideoSeconds(effectiveConfig.videoSeconds || "6"));
+            void billingApi.quote({
+                model,
+                taskType: "video",
+                prompt: prompt.trim(),
+                quantity: 1,
+                parameters: {
+                    duration,
+                    ratio: inferVideoRatio(effectiveConfig.size || "auto"),
+                    resolution: normalizeVideoResolutionToModel(effectiveConfig.vquality, model, duration),
+                    generateAudio: boolConfig(effectiveConfig.videoGenerateAudio, true),
+                    watermark: boolConfig(effectiveConfig.videoWatermark, false),
+                    mode: effectiveConfig.videoMode === "reference" ? "reference" : "frames",
+                },
+            }).then((quote) => { if (active) setCreditQuote(quote); })
+                .catch(() => { if (active) setCreditQuote(null); })
+                .finally(() => { if (active) setQuoteLoading(false); });
+        }, 350);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [model, prompt, effectiveConfig.videoSeconds, effectiveConfig.size, effectiveConfig.vquality, effectiveConfig.videoGenerateAudio, effectiveConfig.videoWatermark, effectiveConfig.videoMode]);
 
     const applySize = (nextResolution: string, ratio: string) => {
         updateConfig("vquality", nextResolution);
@@ -214,6 +250,36 @@ export default function VideoPage() {
         if (!snapshot) {
             if (agentTaskId) updateAgentTask(agentTaskId, { status: "failed", error: t("videoWorkbench.invalidParams") });
             return;
+        }
+        if (/^catalog:\d+$/.test(model)) {
+            const videoDuration = Number(clampVideoSeconds(snapshot.config.videoSeconds || "6"));
+            let currentQuote: ModelCreditQuote;
+            try {
+                currentQuote = await billingApi.quote({
+                    model,
+                    taskType: "video",
+                    prompt: snapshot.text,
+                    quantity: 1,
+                    parameters: {
+                        duration: videoDuration,
+                        ratio: inferVideoRatio(snapshot.config.size || "auto"),
+                        resolution: normalizeVideoResolutionToModel(snapshot.config.vquality, model, videoDuration),
+                        generateAudio: boolConfig(snapshot.config.videoGenerateAudio, true),
+                        watermark: boolConfig(snapshot.config.videoWatermark, false),
+                        mode: snapshot.config.videoMode === "reference" ? "reference" : "frames",
+                    },
+                });
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "无法确认本次积分价格");
+                return;
+            }
+            setCreditQuote(currentQuote);
+            await useBillingStore.getState().refreshMe();
+            const currentBalance = useBillingStore.getState().user?.balance;
+            if (currentBalance == null || currentBalance < currentQuote.totalCredits) {
+                message.error(`本次需要 ${currentQuote.totalCredits} 积分，当前余额 ${currentBalance ?? 0}，请先订阅或充值`);
+                return;
+            }
         }
         setElapsedMs(0);
         setRunning(true);
@@ -432,7 +498,7 @@ export default function VideoPage() {
 
     return (
         <div
-            className="flex h-full flex-col bg-bg p-3"
+            className="flex h-full flex-col bg-bg p-3 pl-0"
             style={{ "--accent": "#5051F8", "--accent-foreground": "#ffffff" } as CSSProperties}
         >
             <div className="flex min-h-0 flex-1 gap-2">
@@ -683,9 +749,14 @@ export default function VideoPage() {
 
                 {/* 底部生成按钮 */}
                 <div className="shrink-0 px-5 pb-4 pt-1">
+                    {/^catalog:\d+$/.test(model) && prompt.trim() && (
+                        <div className="mb-2 text-center text-xs text-muted-foreground" aria-live="polite">
+                            {quoteLoading ? "正在估价…" : creditQuote ? `预计扣 ${creditQuote.totalCredits} 积分 · 当前余额 ${balance ?? creditQuote.balance}` : "积分报价暂不可用，请检查模型价格配置"}
+                        </div>
+                    )}
                     <button
                         onClick={() => void generate()}
-                        disabled={!canGenerate || running}
+                        disabled={!canGenerate || running || (/^catalog:\d+$/.test(model) && (quoteLoading || !creditQuote || balance == null || balance < creditQuote.totalCredits))}
                         className="flex h-[58px] w-full items-center justify-center rounded-lg bg-accent text-[16px] text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-45"
                     >
                         {running ? (
@@ -696,7 +767,7 @@ export default function VideoPage() {
                         ) : (
                             <>
                                 <Sparkles className="mr-2 size-5" />
-                                {prompt.trim() ? t("videoWorkbench.startGen") : t("videoWorkbench.inputPrompt")}
+                                {prompt.trim() ? (/^catalog:\d+$/.test(model) && creditQuote ? `开始生成 · 预计扣 ${creditQuote.totalCredits} 积分` : t("videoWorkbench.startGen")) : t("videoWorkbench.inputPrompt")}
                             </>
                         )}
                     </button>

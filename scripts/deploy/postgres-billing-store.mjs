@@ -449,20 +449,6 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
   }
 
 
-  // 免费用户今日已用次数（每日 20 次上限）
-  async function getFreeDailyUsage(appwriteUserId) {
-    const me = await getUser(appwriteUserId);
-    if (!me) return { used: 0, limit: 20 };
-    const r = await pool.query(
-      `select coalesce(sum(amount),0)::int as used
-       from app.daily_usage_reservations
-       where user_id=$1 and workspace_id=$2 and feature_code='image_gen'
-         and usage_date=current_date and status in ('reserved','committed')`,
-      [me.internal_user_id, me.workspace_id]
-    );
-    return { used: r.rows[0]?.used || 0, limit: 20 };
-  }
-
   async function createFeedback(input = {}) {
     const content = String(input.content || '').trim();
     const feedbackType = String(input.feedbackType || 'other').trim();
@@ -497,14 +483,13 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
       const result = ['reserved', 'committed', 'released', 'failed', 'unknown'].includes(input.result) ? input.result : 'reserved';
       const quantity = Number.isFinite(Number(input.quantity)) && Number(input.quantity) >= 0 ? Number(input.quantity) : 1;
       const metadata = input.metadata && typeof input.metadata === 'object' ? input.metadata : {};
-      const existing = await client.query(`select id,quota_reservation_id,daily_reservation_id,result,metadata from app.usage_records where idempotency_key=$1`, [idempotencyKey]);
+      const existing = await client.query(`select id,quota_reservation_id,result,metadata from app.usage_records where idempotency_key=$1`, [idempotencyKey]);
       if (existing.rowCount) {
         if (!input.requestHash || existing.rows[0].metadata?.requestHash !== input.requestHash) throw new Error('同一代理请求编号不能更换模型或生成内容');
         await client.query('commit'); committed = true; return existing.rows[0];
       }
 
       let reservationId = null;
-      let dailyReservationId = null;
       const catalogModelId = Number(input.catalogModelId || 0);
       if (!Number.isSafeInteger(catalogModelId) || catalogModelId <= 0) throw new Error('该模型不属于平台积分计费目录');
       const modelPrice = await client.query(`select credit_price,credit_price_unit,credit_price_version from app.model_catalog where id=$1 and visible=true`, [catalogModelId]);
@@ -518,10 +503,10 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
       metadata.creditPriceUnit = price.credit_price_unit;
       metadata.creditPriceVersion = Number(price.credit_price_version);
       metadata.credits = credits;
-      const row = await client.query(`insert into app.usage_records(workspace_id,user_id,feature_code,provider,model,quantity,unit,result,idempotency_key,request_id,metadata,quota_reservation_id,daily_reservation_id)
-        values($1,$2,$3,$4,$5,$6,'request',$7,$8,$9,$10::jsonb,$11,$12)
+      const row = await client.query(`insert into app.usage_records(workspace_id,user_id,feature_code,provider,model,quantity,unit,result,idempotency_key,request_id,metadata,quota_reservation_id)
+        values($1,$2,$3,$4,$5,$6,'request',$7,$8,$9,$10::jsonb,$11)
         on conflict(idempotency_key) do update set metadata=app.usage_records.metadata
-        returning id,idempotency_key,result,quota_reservation_id,daily_reservation_id`, [me.workspace_id, me.internal_user_id, String(input.featureCode || 'ai_proxy').slice(0, 120), String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null, quantity, result, idempotencyKey, requestId, JSON.stringify(metadata), reservationId, dailyReservationId]);
+        returning id,idempotency_key,result,quota_reservation_id`, [me.workspace_id, me.internal_user_id, String(input.featureCode || 'ai_proxy').slice(0, 120), String(input.provider || '').slice(0, 80) || null, String(input.model || '').slice(0, 160) || null, quantity, result, idempotencyKey, requestId, JSON.stringify(metadata), reservationId]);
       await client.query('commit');
       committed = true;
       return row.rows[0];
@@ -539,7 +524,7 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     try {
       await client.query('begin');
       await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
-      const current = await client.query(`select id,quota_reservation_id,daily_reservation_id,result from app.usage_records where workspace_id=$1 and idempotency_key=$2 for update`, [me.workspace_id, String(idempotencyKey).slice(0, 160)]);
+      const current = await client.query(`select id,quota_reservation_id,result from app.usage_records where workspace_id=$1 and idempotency_key=$2 for update`, [me.workspace_id, String(idempotencyKey).slice(0, 160)]);
       if (!current.rowCount) { await client.query('rollback'); return false; }
       const row = current.rows[0];
       if (row.result === 'committed' || row.result === 'failed') { await client.query('commit'); return true; }
@@ -547,10 +532,6 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
         await client.query(`select app.settle_quota($1,$2)`, [row.quota_reservation_id, `${idempotencyKey}:commit`]);
       } else if (row.quota_reservation_id && result === 'failed') {
         await client.query(`select app.release_quota($1,$2)`, [row.quota_reservation_id, `${idempotencyKey}:release`]);
-      } else if (row.daily_reservation_id && result === 'committed') {
-        await client.query(`select app.settle_free_daily_usage($1,$2)`, [row.daily_reservation_id, `${idempotencyKey}:commit`]);
-      } else if (row.daily_reservation_id && result === 'failed') {
-        await client.query(`select app.release_free_daily_usage($1,$2)`, [row.daily_reservation_id, `${idempotencyKey}:release`]);
       }
       const updated = await client.query(`update app.usage_records
         set result=$1,
@@ -1250,19 +1231,25 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
   }
 
   function platformApiKeyView(row) {
-    const plaintext = row.api_key_ciphertext ? decryptApiKey(row.api_key_ciphertext).apiKey : String(row.api_key || '');
+    const masked = row.api_key_ciphertext ? maskApiKey(decryptApiKey(row.api_key_ciphertext).apiKey) : maskApiKey(String(row.api_key || ''));
     return {
       id: row.id,
       name: row.name,
       provider: row.provider,
       base_url: row.base_url,
-      api_key: plaintext,
-      api_key_masked: maskApiKey(plaintext),
+      api_key_masked: masked,
       model: row.model || '',
       max_concurrency: row.max_concurrency === null ? null : Number(row.max_concurrency),
       is_active: row.is_active === true ? 1 : 0,
       created_at: new Date(row.created_at).getTime(),
       updated_at: new Date(row.updated_at).getTime(),
+    };
+  }
+
+  function platformApiKeyRuntimeView(row) {
+    return {
+      ...platformApiKeyView(row),
+      api_key: row.api_key_ciphertext ? decryptApiKey(row.api_key_ciphertext).apiKey : String(row.api_key || ''),
     };
   }
 
@@ -1291,6 +1278,22 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
       }
       if (row.api_key_ciphertext) await reencryptPlatformApiKeyIfNeeded(row);
       result.push(platformApiKeyView(row));
+    }
+    return result;
+  }
+
+  async function listPlatformApiKeysForRuntime() {
+    const r = await pool.query(`select id,name,provider,base_url,api_key,api_key_ciphertext,model,max_concurrency,is_active,created_at,updated_at from app.platform_api_keys order by updated_at desc`);
+    const result = [];
+    for (const row of r.rows) {
+      if (!row.api_key_ciphertext && row.api_key) {
+        const ciphertext = encryptApiKey(row.api_key);
+        await pool.query(`update app.platform_api_keys set api_key=null,api_key_ciphertext=$2,updated_at=now() where id=$1`, [row.id, ciphertext]);
+        row.api_key_ciphertext = ciphertext;
+        row.api_key = null;
+      }
+      if (row.api_key_ciphertext) await reencryptPlatformApiKeyIfNeeded(row);
+      result.push(platformApiKeyRuntimeView(row));
     }
     return result;
   }
@@ -1338,11 +1341,12 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     return { success: true };
   }
 
-  async function getPlatformApiKeySecret(id) {
-    const r = await pool.query(`select api_key,api_key_ciphertext from app.platform_api_keys where id=$1`, [id]);
-    if (!r.rowCount) throw new Error('密钥不存在');
+  async function fetchPlatformApiKeyModels(id) {
+    const r = await pool.query(`select id,base_url,api_key,api_key_ciphertext from app.platform_api_keys where id=$1 and is_active=true`, [id]);
+    if (!r.rowCount) throw new Error('渠道不存在或未启用');
     const row = r.rows[0];
-    return { api_key: row.api_key_ciphertext ? await reencryptPlatformApiKeyIfNeeded({ id, ...row }) : String(row.api_key || '') };
+    const apiKey = row.api_key_ciphertext ? await reencryptPlatformApiKeyIfNeeded({ id, ...row }) : String(row.api_key || '');
+    return { base_url: row.base_url, api_key: apiKey };
   }
 
   async function listPlatformApiKeyStats() {
@@ -1445,12 +1449,8 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     await executor.query(`delete from app.model_catalog_channel_models
       where platform_api_key_id=$1 and not (upstream_model_id=any($2::text[]))`, [channel.id, models]);
     for (const upstreamModelId of models) {
-      let catalog = await executor.query('select id from app.model_catalog where model_id=$1 limit 1', [upstreamModelId]);
-      if (!catalog.rowCount) {
-        catalog = await executor.query(`insert into app.model_catalog(model_id,display_name,provider,capability,visible,sort_order)
-          values($1,$1,$2,$3,true,coalesce((select max(sort_order)+1 from app.model_catalog),0)) returning id`,
-        [upstreamModelId, String(channel.provider || 'unknown'), capabilityForModelName(upstreamModelId)]);
-      }
+      const catalog = await executor.query('select id from app.model_catalog where model_id=$1 limit 1', [upstreamModelId]);
+      if (!catalog.rowCount) continue; // 目录里没有就跳过，不自动创建；模型目录完全由管理员手动维护
       const existingFormats = await executor.query(`select distinct case when lower(p.provider)='gemini' then 'gemini' else 'openai' end api_format
         from app.model_catalog_channel_models link join app.platform_api_keys p on p.id=link.platform_api_key_id
         where link.model_catalog_id=$1 and link.is_active=true`, [catalog.rows[0].id]);
@@ -1568,7 +1568,7 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     const routes = [];
     for (const row of result.rows) {
       await reencryptPlatformApiKeyIfNeeded(row);
-      routes.push({ channel: platformApiKeyView(row), model: row.upstream_model_id });
+      routes.push({ channel: platformApiKeyRuntimeView(row), model: row.upstream_model_id });
     }
     return routes;
   }
@@ -2771,7 +2771,7 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
               where o.task_id=$1 and o.workspace_id=$2 and o.output_type=$3 and o.availability='available'`,
             [output.rows[0].task_id, me.workspace_id, task.rows[0]?.task_type || 'image']);
             await client.query(`update app.generation_tasks set outputs=$2::jsonb where id=$1`, [output.rows[0].task_id, JSON.stringify(saved.rows[0].value || [])]);
-            if (['video','audio'].includes(task.rows[0]?.task_type)) {
+    if (['video','audio'].includes(task.rows[0]?.task_type)) {
               await client.query(`select app.fail_generation_task_keep_charge($1,'output_unrecoverable','媒体已生成但保存不可恢复；本次扣点保留')`, [output.rows[0].task_id]);
             } else {
               await client.query(`select app.fail_generation_task($1,'output_unrecoverable','图片保存失败，已退还本次预扣额度',true)`, [output.rows[0].task_id]);
@@ -2814,7 +2814,7 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
           from app.generation_outputs o join app.file_objects f on f.id=o.file_id and f.workspace_id=o.workspace_id and f.status='ready'
           where o.task_id=$1 and o.workspace_id=$2 and o.output_type=$3 and o.availability='available'`, [taskId, me.workspace_id, task.rows[0].task_type]);
         await client.query(`update app.generation_tasks set outputs=$2::jsonb where id=$1`, [taskId, JSON.stringify(saved.rows[0].value || [])]);
-        const failed = ['video','audio'].includes(task.rows[0].task_type)
+      const failed = ['video','audio','text'].includes(task.rows[0].task_type)
           ? await client.query(`select * from app.fail_generation_task_keep_charge($1,'output_unrecoverable','媒体已生成但未能完整保存；本次扣点保留')`, [taskId])
           : await client.query(`select * from app.fail_generation_task($1,'output_unrecoverable','图片未能完整保存，本次预扣额度已退回',true)`, [taskId]);
         await client.query('commit');
@@ -3025,6 +3025,55 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
+  async function shareAssetToTeamWorkspace(appwriteUserId, assetId, targetWorkspaceId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetWorkspaceId)) throw new Error('团队工作空间编号无效');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await setWorkspaceUserContext(client, appwriteUserId);
+      // 查原 asset：当前用户有读权限 + active
+      const srcR = await client.query(`select a.id,a.title,a.asset_type,a.workspace_id,
+          f.storage_provider,f.bucket,f.object_key,f.mime_type,f.size_bytes,f.checksum,f.media_type,f.original_filename,f.source_kind,
+          v.metadata
+        from app.assets a
+        join app.asset_versions v on v.asset_id=a.id and v.workspace_id=a.workspace_id and v.version_no=1
+        join app.asset_files af on af.asset_version_id=v.id and af.workspace_id=a.workspace_id and af.role='source'
+        join app.file_objects f on f.id=af.file_id and f.workspace_id=a.workspace_id
+        where a.id=$1 and a.status='active' and f.status='ready'
+          and exists(select 1 from app.workspaces w where w.id=a.workspace_id and (w.owner_user_id=(select id from app.user_accounts where appwrite_user_id=$2) or exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active'))) limit 1`, [assetId, appwriteUserId]);
+      if (!srcR.rowCount) throw new Error('原素材不存在或无权访问');
+      const s = srcR.rows[0];
+      // 验证目标 workspace：type=team 且当前用户是 active 成员
+      const tw = await client.query(`select w.id from app.workspaces w where w.id=$1 and w.type='team' and w.status='active'
+        and exists(select 1 from app.team_memberships tm where tm.team_id=w.team_id and tm.user_id=(select id from app.user_accounts where appwrite_user_id=$2) and tm.status='active')`, [targetWorkspaceId, appwriteUserId]);
+      if (!tw.rowCount) throw new Error('团队工作空间不存在或你不是该团队成员');
+      const internalUserId = (await client.query('select id from app.user_accounts where appwrite_user_id=$1', [appwriteUserId])).rows[0].id;
+      // 幂等：同 asset 已经分享到这个团队 workspace 过
+      const dup = await client.query(`select a.id from app.assets a
+        join app.asset_versions v on v.asset_id=a.id and v.workspace_id=a.workspace_id and v.version_no=1
+        where a.workspace_id=$1 and v.metadata->>'sharedFromAssetId'=$2 and a.status='active' limit 1`, [targetWorkspaceId, String(assetId)]);
+      if (dup.rowCount) { await client.query('commit'); return { id: dup.rows[0].id, reused: true }; }
+      // 新建 file_objects（同 bucket/object_key，新 id）
+      const newFileId = crypto.randomUUID();
+      await client.query(`insert into app.file_objects(id,workspace_id,uploaded_by,storage_provider,bucket,object_key,mime_type,size_bytes,checksum,status,media_type,original_filename,source_kind,inspection_status)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12,'approved')`,
+        [newFileId, targetWorkspaceId, internalUserId, s.storage_provider, s.bucket, s.object_key, s.mime_type, s.size_bytes, s.checksum, s.media_type, s.original_filename || s.title, s.source_kind || 'manual_upload']);
+      // 新建 asset
+      const newAsset = await client.query(`insert into app.assets(workspace_id,created_by,asset_type,title,visibility,moderation_status,status)
+        values($1,$2,$3,$4,'private','approved','active') returning id,title,asset_type`, [targetWorkspaceId, internalUserId, s.asset_type, s.title]);
+      // 新建 asset_version
+      const versionMeta = { ...(s.metadata || {}), sharedFromAssetId: String(assetId), sharedFromWorkspaceId: String(s.workspace_id) };
+      const newVersion = await client.query(`insert into app.asset_versions(asset_id,workspace_id,version_no,created_by,metadata) values($1,$2,1,$3,$4::jsonb) returning id`,
+        [newAsset.rows[0].id, targetWorkspaceId, internalUserId, JSON.stringify(versionMeta)]);
+      await client.query(`insert into app.asset_files(asset_version_id,file_id,role,workspace_id) values($1,$2,'source',$3)`,
+        [newVersion.rows[0].id, newFileId, targetWorkspaceId]);
+      await client.query(`insert into app.outbox_events(event_type,aggregate_type,aggregate_id,workspace_id,payload) values('asset.shared','asset',$1,$2,$3::jsonb)`,
+        [newAsset.rows[0].id, targetWorkspaceId, JSON.stringify({ title: s.title, fromAssetId: String(assetId) })]);
+      await client.query('commit');
+      return { id: newAsset.rows[0].id, name: newAsset.rows[0].title, type: newAsset.rows[0].asset_type, reused: false };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
   // ── 异步生图任务（0046）：创建即预占额度并返回 task，由后端 worker 异步调用上游 ──
   function apiTask(row) {
     if (!row) return null;
@@ -3147,6 +3196,25 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     );
     if (!r.rowCount) throw new Error('任务不存在或无权访问');
     return apiTask(r.rows[0]);
+  }
+
+  async function settleTextTask(appwriteUserId, taskId, answer) {
+    const me = await getUser(appwriteUserId);
+    if (!me) throw new Error('用户不存在，请重新登录');
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.user_id',$1,true)`, [me.internal_user_id]);
+      const found = await client.query(`select * from app.generation_tasks where id=$1 and workspace_id=$2 and created_by=$3 and task_type='text' for update`, [taskId, me.workspace_id, me.internal_user_id]);
+      if (!found.rowCount) throw new Error('问答任务不存在或无权访问');
+      if (['succeeded','failed','refunded'].includes(found.rows[0].status)) { await client.query('commit'); return apiTask(found.rows[0]); }
+      if (found.rows[0].status !== 'running') throw new Error('问答任务状态已变化，无法结算');
+      const task = found.rows[0];
+      const result = await client.query(`select * from app.settle_generation_task_success($1,$2::jsonb,$3)`,
+        [taskId, JSON.stringify([{ type: 'text', index: 0, text: String(answer).slice(0, 100000) }]), null]);
+      await client.query('commit');
+      return apiTask(result.rows[0]);
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function listMyGenerationTasks(appwriteUserId, limit = 50) {
@@ -3373,5 +3441,5 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), getFreeDailyUsage, createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, getPlatformApiKeySecret, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, createGenerationTask, getGenerationTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, listPlatformApiKeysForRuntime, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, fetchPlatformApiKeyModels, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, shareAssetToTeamWorkspace, createGenerationTask, getGenerationTask, settleTextTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

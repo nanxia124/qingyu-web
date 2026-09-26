@@ -1,10 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
-import { Button, Modal, Tooltip } from "antd";
+import { App, Button, Modal } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { useTranslation } from "react-i18next";
 
 import { ModelPicker } from "@canvas/components/model-picker";
-import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@canvas/stores/use-config-store";
+import { boolConfig, defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@canvas/stores/use-config-store";
+import { clampVideoSecondsToModel, inferVideoRatio, normalizeVideoResolutionToModel } from "@canvas/lib/media-size";
+import { normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@canvas/lib/audio-generation";
+import { billingApi, type ModelCreditQuote } from "@/lib/billing";
+import { useBillingStore } from "@/stores/useBillingStore";
 import { canvasThemes } from "@canvas/lib/canvas-theme";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -39,6 +44,7 @@ type CanvasNodePromptPanelProps = {
 };
 
 export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, onConfigChange, onGenerate, onStop, mentionReferences = [], connectedNodes = [], onDisconnectReference, onStartReferenceSelection, onImageSettingsOpenChange, onPasteImage, onRemoveUploadedImage, modeOverride }: CanvasNodePromptPanelProps) {
+    const { message } = App.useApp();
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -50,6 +56,42 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
     const [expanded, setExpanded] = useState(false);
+    const balance = useBillingStore((state) => state.user?.balance ?? null);
+    const [creditQuote, setCreditQuote] = useState<ModelCreditQuote | null>(null);
+    const [quoteLoading, setQuoteLoading] = useState(false);
+
+    useEffect(() => {
+        if (!/^catalog:\d+$/.test(config.model) || !prompt.trim() || !["video", "audio"].includes(mode)) {
+            setCreditQuote(null);
+            setQuoteLoading(false);
+            return;
+        }
+        let active = true;
+        setQuoteLoading(true);
+        const parameters = mode === "video" ? (() => {
+            const duration = Number(clampVideoSecondsToModel(config.videoSeconds, config.model));
+            return {
+                duration,
+                ratio: inferVideoRatio(config.size),
+                resolution: normalizeVideoResolutionToModel(config.vquality, config.model, duration),
+                generateAudio: boolConfig(config.videoGenerateAudio, true),
+                watermark: boolConfig(config.videoWatermark, false),
+                mode: config.videoMode === "reference" ? "reference" : "frames",
+            };
+        })() : {
+            voice: normalizeAudioVoiceValue(config.audioVoice),
+            format: normalizeAudioFormatValue(config.audioFormat),
+            speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+            instructions: config.audioInstructions.trim(),
+        };
+        const timer = window.setTimeout(() => {
+            void billingApi.quote({ model: config.model, taskType: mode, prompt: prompt.trim(), parameters, quantity: 1 })
+                .then((quote) => { if (active) setCreditQuote(quote); })
+                .catch(() => { if (active) setCreditQuote(null); })
+                .finally(() => { if (active) setQuoteLoading(false); });
+        }, 350);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [config.model, config.videoSeconds, config.size, config.vquality, config.videoGenerateAudio, config.videoWatermark, config.videoMode, config.audioVoice, config.audioFormat, config.audioSpeed, config.audioInstructions, mode, prompt]);
 
     // Restore prompts only when switching nodes; preserve the current input after generation on the same node.
     useEffect(() => {
@@ -66,11 +108,26 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const submit = () => {
         const text = prompt.trim();
         if (!text || isRunning) return;
+        if (["video", "audio"].includes(mode) && /^catalog:\d+$/.test(config.model)) {
+            if (!creditQuote || quoteLoading) { message.warning("正在确认积分价格，请稍后再试"); return; }
+            if (balance == null || balance < creditQuote.totalCredits) { message.error(`本次需要 ${creditQuote.totalCredits} 积分，当前余额 ${balance ?? 0}，请先订阅或充值`); return; }
+        }
         onGenerate(node.id, mode, text);
     };
 
     const openExpandedEditor = () => {
         setExpanded(true);
+    };
+
+    // Middle button pans the canvas. Left button on panel whitespace either pans the canvas
+    // (space held) or drags the node card (plain left). Left presses inside inputs/buttons stay
+    // for typing/clicking.
+    const shouldPassthrough = (event: ReactMouseEvent | ReactPointerEvent) => {
+        if (event.button === 1) return true;
+        if (event.button !== 0) return false;
+        const el = event.target;
+        if (el instanceof Element && el.closest("input,textarea,select,button,[contenteditable='true']")) return false;
+        return true;
     };
 
     return (
@@ -79,8 +136,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             data-canvas-panel-zoom
             className="rounded-md border p-3 backdrop-blur canvas-float"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => { if (!shouldPassthrough(event)) event.stopPropagation(); }}
+            onPointerDown={(event) => { if (!shouldPassthrough(event)) event.stopPropagation(); }}
         >
             <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} uploadedImages={node.metadata?.uploadedImages || []} onRemoveUploadedImage={(index) => onRemoveUploadedImage?.(node.id, index)} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
             <CanvasPromptChipInput
@@ -151,6 +208,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                 </Button>
             </div>
+            {["video", "audio"].includes(mode) && /^catalog:\d+$/.test(config.model) && prompt.trim() && (
+                <div className="mt-2 text-right text-xs" style={{ color: theme.node.muted }} aria-live="polite">
+                    {quoteLoading ? "正在估价…" : creditQuote ? `预计扣 ${creditQuote.totalCredits} 积分 · 当前余额 ${balance ?? creditQuote.balance}` : "积分报价暂不可用，请检查模型价格配置"}
+                </div>
+            )}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => setExpanded(false)} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
                     <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} />

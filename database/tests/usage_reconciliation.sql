@@ -2,7 +2,7 @@
 BEGIN;
 DO $$
 DECLARE u uuid; w uuid; other_user uuid; other_w uuid; account_id uuid; reservation_id uuid; usage_id uuid;
-    audit_id uuid; repeated uuid; decision text; kind text; balance record;
+    audit_id uuid; repeated uuid; decision text; balance record;
 BEGIN
     INSERT INTO app.user_accounts(appwrite_user_id) VALUES ('reconciliation-test-'||gen_random_uuid()) RETURNING id INTO u;
     INSERT INTO app.workspaces(type,owner_user_id,name) VALUES ('personal',u,'核对测试') RETURNING id INTO w;
@@ -13,18 +13,12 @@ BEGIN
         RAISE EXCEPTION '普通角色拥有核对权限';
     END IF;
     PERFORM set_config('app.user_id',u::text,true);
-    FOREACH kind IN ARRAY ARRAY['paid','free'] LOOP
-      FOREACH decision IN ARRAY ARRAY['committed','released'] LOOP
-        IF kind='paid' THEN
-          SELECT app.reserve_quota(w,'monthly',1,gen_random_uuid()::text,now()+interval '1 minute') INTO reservation_id;
-          UPDATE app.quota_reservations SET expires_at=now()-interval '1 minute' WHERE id=reservation_id;
-        ELSE
-          SELECT app.reserve_free_daily_usage(w,u,'ai_proxy',1,gen_random_uuid()::text,20,now()+interval '1 minute') INTO reservation_id;
-          UPDATE app.daily_usage_reservations SET expires_at=now()-interval '1 minute' WHERE id=reservation_id;
-        END IF;
-        INSERT INTO app.usage_records(workspace_id,user_id,feature_code,quantity,unit,result,idempotency_key,quota_reservation_id,daily_reservation_id)
+    FOREACH decision IN ARRAY ARRAY['committed','released'] LOOP
+        SELECT app.reserve_quota(w,'monthly',1,gen_random_uuid()::text,now()+interval '1 minute') INTO reservation_id;
+        UPDATE app.quota_reservations SET expires_at=now()-interval '1 minute' WHERE id=reservation_id;
+        INSERT INTO app.usage_records(workspace_id,user_id,feature_code,quantity,unit,result,idempotency_key,quota_reservation_id)
           VALUES(w,u,'ai_proxy',1,'request','unknown',gen_random_uuid()::text,
-            CASE WHEN kind='paid' THEN reservation_id ELSE NULL END,CASE WHEN kind='free' THEN reservation_id ELSE NULL END) RETURNING id INTO usage_id;
+            reservation_id) RETURNING id INTO usage_id;
         EXECUTE 'SET LOCAL ROLE qingyu_api';
         SELECT app.reconcile_provider_usage(usage_id,'test-admin',decision,'供应商测试凭据已核对','test-reference') INTO audit_id;
         SELECT app.reconcile_provider_usage(usage_id,'test-admin',decision,'重复请求','test-reference') INTO repeated;
@@ -45,7 +39,6 @@ BEGIN
         IF NOT EXISTS(SELECT 1 FROM app.usage_records WHERE id=usage_id AND result=CASE WHEN decision='committed' THEN 'committed' ELSE 'failed' END) THEN
           RAISE EXCEPTION '调用结果未更新';
         END IF;
-      END LOOP;
     END LOOP;
     SELECT granted,reserved,consumed INTO balance FROM app.quota_accounts WHERE id=account_id;
     IF balance.granted<>10 OR balance.reserved<>0 OR balance.consumed<>1 THEN RAISE EXCEPTION '核对后额度不守恒'; END IF;
@@ -62,6 +55,6 @@ BEGIN
       IF SQLERRM NOT LIKE '%usage_records_quota_reservation_scope_fk%' THEN RAISE; END IF;
       RAISE NOTICE 'PASS: 跨空间额度预占在写入 usage_records 时被拒绝';
     END;
-    RAISE NOTICE 'PASS: 过期预占核对、两类额度结算释放、幂等、相反结论拒绝、审计不可变、跨空间拒绝及额度守恒';
+    RAISE NOTICE 'PASS: 过期积分预占核对、幂等、相反结论拒绝、审计不可变、跨空间拒绝及额度守恒';
 END $$;
 ROLLBACK;

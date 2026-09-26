@@ -1,4 +1,5 @@
-import { Button, Tooltip } from 'antd';
+import { Button } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { AudioOutlined, AudioFilled, LoadingOutlined } from '@ant-design/icons';
 import { useSpeechInput } from '@/lib/use-speech-input';
 

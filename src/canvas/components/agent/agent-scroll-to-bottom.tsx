@@ -1,4 +1,5 @@
-import { Button, Tooltip } from "antd";
+import { Button } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { ChevronDown } from "lucide-react";
 
 import { canvasThemes } from "@canvas/lib/canvas-theme";

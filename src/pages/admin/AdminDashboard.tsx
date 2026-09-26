@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next'
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Save, RefreshCw } from "lucide-react";
 import ModelCatalog from "./ModelCatalog";
 import { App } from 'antd';
+import { adminBillingApi } from "@/lib/billing";
 
 const API = import.meta.env.VITE_API_URL || "";
 // 与后端 KEY_MAX_CONCURRENCY 默认值保持一致
@@ -251,7 +252,7 @@ function PromptConfig() {
 export default function AdminDashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const { t } = useTranslation()
   const { message } = App.useApp()
-  const [activeTab, setActiveTab] = useState<"channels" | "catalog" | "prompts">("channels");
+  const [activeTab, setActiveTab] = useState<"channels" | "supplier" | "catalog" | "prompts">("channels");
     const [keys, setKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAdd, setShowAdd] = useState(false);
@@ -283,6 +284,110 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     const [cardCollapsed, setCardCollapsed] = useState<Record<number, boolean>>({});
     // 单个模型行展开：key 为 `${cardId}:${model}`，展开后显示该模型近7天/近30天数据
     const [expandedModelRows, setExpandedModelRows] = useState<Record<string, boolean>>({});
+
+    // MaiziAI 上游中转站配置
+    const [maiziSettings, setMaiziSettings] = useState<any>(null);
+    const [maiziConfigDraft, setMaiziConfigDraft] = useState({ enabled: false, apiKey: "", balanceToken: "", baseUrl: "" });
+    const [maiziBalance, setMaiziBalance] = useState<any>(null);
+    const [maiziKeyLimits, setMaiziKeyLimits] = useState<any>(null);
+    const [maiziLoading, setMaiziLoading] = useState(false);
+    const [maiziModels, setMaiziModels] = useState<any[]>([]);
+    const [maiziModelsLoading, setMaiziModelsLoading] = useState(false);
+    const [maiziAnnouncements, setMaiziAnnouncements] = useState<any[]>([]);
+    const [maiziAnnouncementsLoading, setMaiziAnnouncementsLoading] = useState(false);
+    const [maiziConfirm, setMaiziConfirm] = useState<{ open: boolean; message: string; onConfirm: (() => void) | null }>({ open: false, message: "", onConfirm: null });
+    // 添加 Key 的方式：manual = 手动填，builtin = 选内置供应商
+    const [addMode, setAddMode] = useState<"manual" | "builtin">("manual");
+    const [builtinSelectedModels, setBuiltinSelectedModels] = useState<string[]>([]);
+    const [builtinName, setBuiltinName] = useState("MaiziAI 中转站");
+
+    const loadMaiziSettings = async () => {
+        try {
+            const s = await adminBillingApi.getSettings();
+            setMaiziSettings(s);
+            const sup = s.supplier?.maizitech || {};
+            setMaiziConfigDraft({
+                enabled: sup.enabled || false,
+                apiKey: sup.apiKey || "",
+                balanceToken: sup.balanceToken || "",
+                baseUrl: sup.baseUrl || "https://www.maizitech.ai",
+            });
+        } catch (e: any) {
+            message.error(e.message || "加载中转站配置失败");
+        }
+    };
+
+    useEffect(() => { loadMaiziSettings(); }, []);
+
+    const showMaiziConfirm = (msg: string, onConfirm: () => void) => {
+        setMaiziConfirm({ open: true, message: msg, onConfirm });
+    };
+
+    const handleMaiziConfirmOk = () => {
+        if (maiziConfirm.onConfirm) maiziConfirm.onConfirm();
+        setMaiziConfirm({ open: false, message: "", onConfirm: null });
+    };
+
+    const saveMaiziConfig = () => {
+        showMaiziConfirm("确认保存 MaiziAI 中转站配置？", async () => {
+            try {
+                await adminBillingApi.updateSettings({
+                    ...maiziSettings,
+                    supplier: {
+                        ...maiziSettings.supplier,
+                        maizitech: { ...maiziConfigDraft },
+                    },
+                });
+                message.success("中转站配置已保存");
+                loadMaiziSettings();
+            } catch (e: any) {
+                message.error(e.message || "保存失败");
+            }
+        });
+    };
+
+    const queryMaiziBalance = async () => {
+        setMaiziLoading(true);
+        setMaiziBalance(null);
+        setMaiziKeyLimits(null);
+        try {
+            const [bal, limits] = await Promise.all([
+                adminBillingApi.supplierBalance().catch(e => ({ error: e.message })),
+                adminBillingApi.supplierKeyLimits().catch(e => ({ error: e.message })),
+            ]);
+            setMaiziBalance(bal);
+            setMaiziKeyLimits(limits);
+        } finally {
+            setMaiziLoading(false);
+        }
+    };
+
+    const queryMaiziModels = async () => {
+        setMaiziModelsLoading(true);
+        setMaiziModels([]);
+        try {
+            const res = await adminBillingApi.supplierModels();
+            setMaiziModels(res.data || []);
+        } catch (e: any) {
+            message.error(e.message || "查询模型价格失败");
+        } finally {
+            setMaiziModelsLoading(false);
+        }
+    };
+
+    const queryMaiziAnnouncements = async () => {
+        setMaiziAnnouncementsLoading(true);
+        setMaiziAnnouncements([]);
+        try {
+            const res = await adminBillingApi.supplierAnnouncements();
+            setMaiziAnnouncements(Array.isArray(res) ? res : []);
+        } catch (e: any) {
+            message.error(e.message || "查询公告失败");
+        } finally {
+            setMaiziAnnouncementsLoading(false);
+        }
+    };
+
 
     const fetchKeyStats = async () => {
         try {
@@ -401,6 +506,51 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // 内置供应商模式：自动带地址和 Key，模型用勾选的
+        if (!editId && addMode === "builtin") {
+            if (!builtinName.trim()) {
+                message.error("请填写名称");
+                return;
+            }
+            if (builtinSelectedModels.length === 0) {
+                message.error("请至少勾选一个模型");
+                return;
+            }
+            if (!maiziConfigDraft.baseUrl || !maiziConfigDraft.apiKey) {
+                message.error("请先到「内置供应商」页配置 MaiziAI 的地址和 Key");
+                return;
+            }
+            const payload = {
+                name: builtinName.trim(),
+                provider: "openai",
+                base_url: maiziConfigDraft.baseUrl,
+                api_key: maiziConfigDraft.apiKey,
+                model: builtinSelectedModels.join(","),
+                max_concurrency: keyMaxConcurrency,
+            };
+            try {
+                const res = await fetch(`${API}/api/admin/api-keys`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    message.error(t("pages.admin.dashboard.saveFailed") + (data.error || `HTTP ${res.status}`));
+                    return;
+                }
+                message.success(`已创建内置供应商渠道，包含 ${builtinSelectedModels.length} 个模型`);
+                setShowAdd(false);
+                setBuiltinSelectedModels([]);
+                setBuiltinName("MaiziAI 中转站");
+                fetchKeys();
+            } catch (err: any) {
+                message.error(t("pages.admin.dashboard.saveFailed") + (err.message || err));
+            }
+            return;
+        }
+
         const modelStr = selectedModels.length > 0 ? selectedModels.join(",") : form.model;
         const payload = { ...form, model: modelStr };
 
@@ -467,24 +617,19 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         }
         setLoadingModels(true);
         try {
-            // 编辑模式下 Key 留空，从后端获取完整 Key
-            let apiKey = form.api_key;
-            if (!apiKey && editId) {
-                const res = await fetch(`${API}/api/admin/api-keys/${editId}/full`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                const data = await res.json();
-                apiKey = data.api_key;
-            }
-            if (!apiKey) {
+            if (!form.api_key && !editId) {
                 message.error(t("pages.admin.dashboard.apiKeyFirst"));
                 return;
             }
-            // 通过后端代理拉取供应商 /models（服务端请求，规避浏览器跨域）
-            const res = await fetch(`${API}/api/admin/fetch-models`, {
+            // 已保存渠道由服务端使用密钥拉取；新渠道需先保存后再拉取模型。
+        if (!editId) {
+            message.error(t("pages.admin.dashboard.saveFirstToPull"));
+            return;
+        }
+        const res = await fetch(`${API}/api/admin/fetch-models`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ base_url: form.base_url, api_key: apiKey }),
+            body: JSON.stringify({ id: editId }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -572,18 +717,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         setTestingId(id);
         const startTime = Date.now();
         try {
-            // 先拿完整 Key
-            const keyRes = await fetch(`${API}/api/admin/api-keys/${id}/full`, {
+            const res = await fetch(`${API}/api/admin/api-keys/${id}/test`, {
+                method: "POST",
                 headers: { Authorization: `Bearer ${token}` },
-            });
-            const keyData = await keyRes.json();
-            const key = keys.find(k => k.id === id);
-            if (!key) throw new Error(t("pages.admin.dashboard.configNotExist"));
-
-            // 测试 /models 接口
-            const url = key.base_url.replace(/\/$/, "") + "/models";
-            const res = await fetch(url, {
-                headers: { Authorization: `Bearer ${keyData.api_key}` },
             });
             if (res.ok) {
                 const ms = Date.now() - startTime;
@@ -648,6 +784,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                         className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "channels" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
                         API 渠道
                     </button>
+                    <button onClick={() => setActiveTab("supplier")}
+                        className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "supplier" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                        内置供应商
+                    </button>
                     <button onClick={() => setActiveTab("catalog")}
                         className={`rounded-md px-4 py-1.5 text-sm transition-colors ${activeTab === "catalog" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
                         模型目录
@@ -662,6 +802,156 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     <PromptConfig />
                 ) : activeTab === "catalog" ? (
                     <ModelCatalog />
+                ) : activeTab === "supplier" ? (<>
+                {/* MaiziAI 上游中转站配置 */}
+                <div className="mb-6 space-y-4">
+                    <div className="rounded-xl bg-card p-5 space-y-4">
+                        <div className="text-sm font-medium text-white">MaiziAI 上游中转站配置</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Base URL</label>
+                                <input type="text" value={maiziConfigDraft.baseUrl} onChange={e => setMaiziConfigDraft({ ...maiziConfigDraft, baseUrl: e.target.value })} className="w-full rounded-lg bg-secondary px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-accent" />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">API Key (sk-...)</label>
+                                <input type="password" value={maiziConfigDraft.apiKey} onChange={e => setMaiziConfigDraft({ ...maiziConfigDraft, apiKey: e.target.value })} placeholder="sk-..." className="w-full rounded-lg bg-secondary px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-accent" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-xs text-gray-500 mb-1">余额 Token (bt-mz-...)</label>
+                                <input type="password" value={maiziConfigDraft.balanceToken} onChange={e => setMaiziConfigDraft({ ...maiziConfigDraft, balanceToken: e.target.value })} placeholder="控制台「个人中心」生成" className="w-full rounded-lg bg-secondary px-3 py-2 text-white text-sm outline-none focus:ring-1 focus:ring-accent" />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                            <button onClick={saveMaiziConfig} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#5051F8] text-white text-sm hover:bg-accent-hover">
+                                <Save size={14} /> 保存配置
+                            </button>
+                            <button onClick={queryMaiziBalance} disabled={maiziLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white text-sm hover:bg-secondary/80 disabled:opacity-50">
+                                <RefreshCw size={14} className={maiziLoading ? "animate-spin" : ""} />
+                                {maiziLoading ? "查询中..." : "查询余额"}
+                            </button>
+                            <button onClick={queryMaiziModels} disabled={maiziModelsLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white text-sm hover:bg-secondary/80 disabled:opacity-50">
+                                <RefreshCw size={14} className={maiziModelsLoading ? "animate-spin" : ""} />
+                                {maiziModelsLoading ? "加载中..." : "查询模型价格"}
+                            </button>
+                            <button onClick={queryMaiziAnnouncements} disabled={maiziAnnouncementsLoading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white text-sm hover:bg-secondary/80 disabled:opacity-50">
+                                <RefreshCw size={14} className={maiziAnnouncementsLoading ? "animate-spin" : ""} />
+                                {maiziAnnouncementsLoading ? "加载中..." : "查看公告"}
+                            </button>
+
+                        </div>
+                    </div>
+
+                    {(maiziBalance || maiziKeyLimits) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="rounded-xl bg-card p-5">
+                                <div className="text-sm font-medium text-white mb-4">账号余额</div>
+                                {maiziBalance?.error ? (
+                                    <div className="text-sm text-red-400">{maiziBalance.error}</div>
+                                ) : maiziBalance ? (
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">可用充值余额</span>
+                                            <span className="text-xl font-bold text-white">${maiziBalance.balance?.toFixed(2) || "0.00"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">奖励余额</span>
+                                            <span className="text-base text-green-400">${maiziBalance.bonus_balance?.toFixed(2) || "0.00"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">冻结余额</span>
+                                            <span className="text-base text-amber-400">${maiziBalance.frozen_balance?.toFixed(2) || "0.00"}</span>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                            <div className="rounded-xl bg-card p-5">
+                                <div className="text-sm font-medium text-white mb-4">API Key 限额</div>
+                                {maiziKeyLimits?.error ? (
+                                    <div className="text-sm text-red-400">{maiziKeyLimits.error}</div>
+                                ) : maiziKeyLimits ? (
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">消费限额</span>
+                                            <span className="text-base text-white">{maiziKeyLimits.unlimited ? "无限制" : maiziKeyLimits.spend_limit ? "$" + maiziKeyLimits.spend_limit.toFixed(2) : "未设置"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">已消费</span>
+                                            <span className="text-base text-white">${maiziKeyLimits.spent_amount?.toFixed(2) || "0.00"}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-sm text-gray-500">剩余额度</span>
+                                            <span className="text-xl font-bold text-accent">
+                                                {maiziKeyLimits.unlimited ? "∞" : maiziKeyLimits.remaining_amount != null ? "$" + maiziKeyLimits.remaining_amount.toFixed(2) : "-"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        </div>
+                    )}
+
+                    {maiziModels.length > 0 && (
+                        <div className="rounded-xl bg-card overflow-hidden">
+                            <div className="px-5 py-3 text-sm font-medium text-white bg-secondary">中转站模型价格表</div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-secondary/50">
+                                        <tr>
+                                            <th className="text-left px-5 py-2.5 text-gray-500 font-normal">模型名称</th>
+                                            <th className="text-left px-5 py-2.5 text-gray-500 font-normal">类型</th>
+                                            <th className="text-right px-5 py-2.5 text-gray-500 font-normal">价格</th>
+                                            <th className="text-left px-5 py-2.5 text-gray-500 font-normal">特性</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(() => {
+                                            const grouped: Record<string, any[]> = {};
+                                            maiziModels.forEach(m => {
+                                                const b = brandOf(m.id);
+                                                (grouped[b] = grouped[b] || []).push(m);
+                                            });
+                                            const keys = Object.keys(grouped).sort((a, b) => brandOrder.indexOf(a) - brandOrder.indexOf(b));
+                                            return keys.flatMap(b => [
+                                                <tr key={b} className="bg-secondary/40">
+                                                    <td colSpan={4} className="px-5 py-2 text-xs font-semibold text-gray-400">{b} · {grouped[b].length}</td>
+                                                </tr>,
+                                                ...grouped[b].map((m: any) => (
+                                                    <tr key={m.id} className="border-t border-border/50">
+                                                        <td className="px-5 py-3 text-white">{m.display_name || m.id}</td>
+                                                        <td className="px-5 py-3 text-gray-500">
+                                                            <span className="px-2 py-0.5 rounded text-xs bg-secondary">{m.type}</span>
+                                                        </td>
+                                                        <td className="px-5 py-3 text-right text-white font-mono">${typeof m.pricing === "number" ? m.pricing.toFixed(4) : (typeof m.pricing === "string" ? m.pricing : "-")}</td>
+                                                        <td className="px-5 py-3 text-gray-500 text-xs">
+                                                            {(m.features || []).slice(0, 3).join("、")}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            ]);
+                                        })()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {maiziAnnouncements.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="text-sm font-medium text-white">中转站公告</div>
+                            {maiziAnnouncements.map((a: any) => (
+                                <div key={a.id} className="rounded-xl bg-card p-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        {a.pinned && <span className="px-1.5 py-0.5 rounded text-xs bg-red-500/10 text-red-400">置顶</span>}
+                                        <span className="text-sm font-medium text-white">{a.title}</span>
+                                        <span className="text-xs text-gray-500 ml-auto">{new Date(a.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                    <div className="text-sm text-gray-400 whitespace-pre-wrap">{a.content}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                </>
                 ) : (<>
                 {showChangePw && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -695,8 +985,10 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     </div>
                 )}
 
+
+
                 <div className="mb-6 flex justify-end">
-                    <button onClick={() => setShowAdd(!showAdd)} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">
+                    <button onClick={() => { setAddMode("manual"); setBuiltinSelectedModels([]); setShowAdd(!showAdd); }} className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">
                         {t("pages.admin.dashboard.addBtn")}
                     </button>
                 </div>
@@ -706,6 +998,19 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                         <form onSubmit={handleAdd} className="relative w-full max-w-2xl rounded-2xl bg-card p-6 max-h-[85vh] overflow-y-auto thin-scrollbar">
                         <h2 className="mb-4 text-lg font-semibold text-white">{editId ? t("pages.admin.dashboard.editTitle") : t("pages.admin.dashboard.newTitle")}</h2>
                         <button type="button" onClick={() => setShowAdd(false)} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-lg text-gray-500 hover:bg-border hover:text-white">×</button>
+                        {!editId && (
+                            <div className="mb-4 flex gap-1 rounded-lg bg-secondary p-1 w-fit">
+                                <button type="button" onClick={() => setAddMode("manual")}
+                                    className={`rounded-md px-3 py-1 text-xs transition-colors ${addMode === "manual" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                                    手动添加
+                                </button>
+                                <button type="button" onClick={() => { setAddMode("builtin"); if (maiziModels.length === 0) queryMaiziModels(); }}
+                                    className={`rounded-md px-3 py-1 text-xs transition-colors ${addMode === "builtin" ? "bg-[#5051F8] text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                                    内置供应商
+                                </button>
+                            </div>
+                        )}
+                        {editId || addMode === "manual" ? (
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.name")}</label>
@@ -730,7 +1035,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.apiKey")}{editId && t("pages.admin.dashboard.apiKeyEdit")}</label>
                                 <input type="password" value={form.api_key} onChange={e => setForm({...form, api_key: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="sk-..." />
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder={editId ? t("pages.admin.dashboard.apiKeyEdit") : "sk-..."} />
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.concurrency")} {keyMaxConcurrency}）</label>
@@ -867,7 +1172,50 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                 })()}
                             </div>
                         </div>
+                        ) : (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="mb-1 block text-sm text-gray-500">渠道名称</label>
+                                <input value={builtinName} onChange={e => setBuiltinName(e.target.value)}
+                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="MaiziAI 中转站" />
+                            </div>
+                            <div className="rounded-lg bg-secondary p-3 text-sm text-gray-500 space-y-1">
+                                <div>供应商：MaiziAI（地址和 Key 自动从「内置供应商」页带入）</div>
+                                <div>地址：{maiziConfigDraft.baseUrl || "未配置"}</div>
+                            </div>
+                            <div>
+                                <div className="mb-2 flex items-center justify-between">
+                                    <label className="text-sm text-gray-500">选择模型（已选 {builtinSelectedModels.length} 个）</label>
+                                    <button type="button" onClick={() => {
+                                        if (builtinSelectedModels.length === maiziModels.length && maiziModels.length > 0) setBuiltinSelectedModels([]);
+                                        else setBuiltinSelectedModels(maiziModels.map((m: any) => m.id));
+                                    }} className="text-xs text-accent">
+                                        {builtinSelectedModels.length === maiziModels.length && maiziModels.length > 0 ? "全不选" : "全选"}
+                                    </button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto thin-scrollbar space-y-1 rounded-lg bg-secondary p-2">
+                                    {maiziModelsLoading && <div className="p-3 text-sm text-gray-500">正在加载模型列表...</div>}
+                                    {!maiziModelsLoading && maiziModels.length === 0 && (
+                                        <div className="p-3 text-sm text-gray-500">未加载到模型，请先到「内置供应商」页点"查询模型价格"</div>
+                                    )}
+                                    {maiziModels.map((m: any) => {
+                                        const sel = builtinSelectedModels.includes(m.id);
+                                        return (
+                                            <label key={m.id} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-border cursor-pointer">
+                                                <input type="checkbox" checked={sel} onChange={() => {
+                                                    setBuiltinSelectedModels(prev => sel ? prev.filter(x => x !== m.id) : [...prev, m.id]);
+                                                }} className="accent-[#5051F8]" />
+                                                <span className="text-sm text-white flex-1">{m.display_name || m.id}</span>
+                                                <span className="text-xs text-gray-500">${typeof m.pricing === "number" ? m.pricing.toFixed(4) : (typeof m.pricing === "string" ? m.pricing : "-")}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                        )}
                         <div className="mt-4 flex items-center gap-2">
+                            {(editId || addMode === "manual") && (
                             <button type="button" onClick={async () => {
                                 await fetchModels();
                                 setCapTab("全部");
@@ -876,6 +1224,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                 className="rounded-lg bg-secondary px-4 py-2 text-sm text-gray-600 hover:bg-border disabled:opacity-50">
                                 {loadingModels ? t("pages.admin.dashboard.pulling") : t("pages.admin.dashboard.pullModels")}
                             </button>
+                            )}
                             <div className="ml-auto flex gap-2">
                                 <button type="submit" className="rounded-lg bg-[#5051F8] px-4 py-2 text-white hover:bg-accent-hover">{t("pages.admin.dashboard.save")}</button>
                                 <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg bg-secondary px-4 py-2 text-gray-600">取消</button>
@@ -1163,6 +1512,22 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     </div>
                 )}
                 </>)}
+
+                {maiziConfirm.open && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setMaiziConfirm({ open: false, message: "", onConfirm: null })}>
+                        <div className="w-full max-w-sm rounded-2xl bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+                            <div className="text-sm text-white mb-6 whitespace-pre-line">{maiziConfirm.message}</div>
+                            <div className="flex justify-end gap-2">
+                                <button onClick={() => setMaiziConfirm({ open: false, message: "", onConfirm: null })} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm hover:bg-secondary/80">
+                                    取消
+                                </button>
+                                <button onClick={handleMaiziConfirmOk} className="px-4 py-2 rounded-lg bg-[#5051F8] text-white text-sm hover:bg-accent-hover">
+                                    确认
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

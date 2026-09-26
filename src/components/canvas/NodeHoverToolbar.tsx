@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { Copy, Lock, LockOpen, Trash2, X } from 'lucide-react'
 import type { CanvasNode } from './types'
 

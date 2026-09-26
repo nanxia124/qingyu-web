@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { ZoomIn, ZoomOut, Frame, Maximize2, Download } from 'lucide-react'
 import type { Viewport } from './types'
 

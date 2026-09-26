@@ -1,4 +1,4 @@
-﻿import { Tooltip } from 'antd'
+﻿import Tooltip from '@/components/ui/Tooltip'
 import {
   MousePointer2,
   Hand,

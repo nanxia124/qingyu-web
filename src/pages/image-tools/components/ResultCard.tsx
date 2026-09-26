@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { RefreshCw, Repeat, Download, Trash2, Star } from 'lucide-react'
 import type { GenerationResult } from '@/stores/useImageToolsStore'
 import { cn } from '@/lib/utils'

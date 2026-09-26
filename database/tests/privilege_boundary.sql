@@ -11,7 +11,7 @@ BEGIN
     'role_permissions','role_bindings','user_devices','user_sessions',
     'security_events','audit_logs','outbox_events','subscriptions',
     'orders','payments','usage_records','quota_grants','quota_allocations',
-    'provider_credentials','daily_usage_reservations','usage_reconciliations','invoice_requests','invoice_request_orders','refunds','payment_events','backup_runs','backup_copies','restore_drills','schema_migrations'
+    'provider_credentials','usage_reconciliations','invoice_requests','invoice_request_orders','refunds','payment_events','backup_runs','backup_copies','restore_drills','schema_migrations'
   ] LOOP
     IF has_table_privilege(current_user, 'app.' || t, 'INSERT')
        OR has_table_privilege(current_user, 'app.' || t, 'UPDATE')

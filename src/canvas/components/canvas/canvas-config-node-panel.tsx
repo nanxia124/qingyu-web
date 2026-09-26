@@ -1,10 +1,15 @@
 import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings2, Square, Video } from "lucide-react";
-import { Button, Segmented } from "antd";
+import { App, Button, Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ModelPicker } from "@canvas/components/model-picker";
-import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@canvas/stores/use-config-store";
+import { boolConfig, defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@canvas/stores/use-config-store";
+import { clampVideoSecondsToModel, inferVideoRatio, normalizeVideoResolutionToModel } from "@canvas/lib/media-size";
+import { normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@canvas/lib/audio-generation";
+import { billingApi, type ModelCreditQuote } from "@/lib/billing";
+import { useBillingStore } from "@/stores/useBillingStore";
 import { canvasThemes } from "@canvas/lib/canvas-theme";
 import { useThemeStore } from "@canvas/stores/use-theme-store";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
@@ -24,6 +29,7 @@ type CanvasConfigNodePanelProps = {
 };
 
 export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigChange, onGenerate, onStop, onComposerToggle }: CanvasConfigNodePanelProps) {
+    const { message } = App.useApp();
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -34,6 +40,50 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
     const canGenerate = hasComposerContent || (mode === "audio" ? inputSummary.textCount > 0 : hasAnyInput);
+    const balance = useBillingStore((state) => state.user?.balance ?? null);
+    const [creditQuote, setCreditQuote] = useState<ModelCreditQuote | null>(null);
+    const [quoteLoading, setQuoteLoading] = useState(false);
+    const quotePrompt = (node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim();
+
+    useEffect(() => {
+        if (!/^catalog:\d+$/.test(config.model) || !quotePrompt || !["video", "audio"].includes(mode)) {
+            setCreditQuote(null);
+            setQuoteLoading(false);
+            return;
+        }
+        let active = true;
+        setQuoteLoading(true);
+        const parameters = mode === "video" ? (() => {
+            const duration = Number(clampVideoSecondsToModel(config.videoSeconds, config.model));
+            return {
+                duration,
+                ratio: inferVideoRatio(config.size),
+                resolution: normalizeVideoResolutionToModel(config.vquality, config.model, duration),
+                generateAudio: boolConfig(config.videoGenerateAudio, true),
+                watermark: boolConfig(config.videoWatermark, false),
+                mode: config.videoMode === "reference" ? "reference" : "frames",
+            };
+        })() : {
+            voice: normalizeAudioVoiceValue(config.audioVoice),
+            format: normalizeAudioFormatValue(config.audioFormat),
+            speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+            instructions: config.audioInstructions.trim(),
+        };
+        const timer = window.setTimeout(() => {
+            void billingApi.quote({ model: config.model, taskType: mode, prompt: quotePrompt, parameters, quantity: 1 })
+                .then((quote) => { if (active) setCreditQuote(quote); })
+                .catch(() => { if (active) setCreditQuote(null); })
+                .finally(() => { if (active) setQuoteLoading(false); });
+        }, 350);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [config.model, config.videoSeconds, config.size, config.vquality, config.videoGenerateAudio, config.videoWatermark, config.videoMode, config.audioVoice, config.audioFormat, config.audioSpeed, config.audioInstructions, mode, quotePrompt]);
+
+    const submitGeneration = () => {
+        if (/^catalog:\d+$/.test(config.model) && ["video", "audio"].includes(mode)) {
+            if (creditQuote && balance != null && balance < creditQuote.totalCredits) { message.error(`本次需要 ${creditQuote.totalCredits} 积分，当前余额 ${balance}，请先订阅或充值`); return; }
+        }
+        onGenerate(node.id);
+    };
 
     return (
         <div className="flex h-full w-full cursor-move flex-col px-3 pb-3 pt-7 text-sm" style={{ color: theme.node.text }} onWheel={(event) => event.stopPropagation()}>
@@ -115,9 +165,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 type="primary"
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
                 danger={isRunning}
-                disabled={!isRunning && !canGenerate}
+                disabled={!isRunning && (!canGenerate || (/^catalog:\d+$/.test(config.model) && ["video", "audio"].includes(mode) && Boolean(creditQuote && balance != null && balance < creditQuote.totalCredits)))}
                 onMouseDown={(event) => event.stopPropagation()}
-                onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}
+                onClick={() => (isRunning ? onStop(node.id) : submitGeneration())}
             >
                 <span className="inline-flex items-center gap-1.5">
                     {isRunning ? (
@@ -134,6 +184,11 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     )}
                 </span>
             </Button>
+            {["video", "audio"].includes(mode) && /^catalog:\d+$/.test(config.model) && (
+                <div className="mt-1 text-center text-[11px]" style={{ color: theme.node.muted }} aria-live="polite">
+                    {!quotePrompt ? "根据画布文本生成，提交时会再次确认价格" : quoteLoading ? "正在估价…" : creditQuote ? `预计扣 ${creditQuote.totalCredits} 积分 · 当前余额 ${balance ?? creditQuote.balance}` : "积分报价暂不可用，请检查模型价格配置"}
+                </div>
+            )}
         </div>
     );
 }

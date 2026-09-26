@@ -129,12 +129,17 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom]")) return;
+        // Let pan gestures (middle button, or space+left) start on a node input panel too;
+        // other overlays (modals, popovers, dropdowns) keep swallowing the gesture.
+        const onPanelZoom = Boolean(target?.closest("[data-canvas-panel-zoom]"));
+        const spaceHeld = event.nativeEvent.getModifierState("Space");
+        const panGesture = event.button === 1 || (event.button === 0 && spaceHeld);
+        if (!(panGesture && onPanelZoom) && target?.closest("[data-canvas-no-zoom]")) return;
         if (target?.closest("[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
-        const temporaryTool = event.ctrlKey || isSpacePressed;
+        const temporaryTool = event.ctrlKey || spaceHeld;
         const activeTool = temporaryTool ? (tool === "select" ? "pan" : "select") : tool;
-        const shouldPan = event.button === 1 || (event.button === 0 && activeTool === "pan" && isBackgroundClick);
+        const shouldPan = event.button === 1 || (event.button === 0 && activeTool === "pan" && (isBackgroundClick || onPanelZoom));
 
         if (shouldPan) {
             event.preventDefault();

@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback, Fragment } from 'react'
+﻿import { useState, useRef, useEffect, useCallback, Fragment } from 'react'
 import { Send, Plus, Copy, Square, Trash2, MessageSquare, ChevronLeft, ChevronRight, RefreshCw, Volume2, VolumeX, ArrowDown, Download, RotateCcw, Globe, User, Thermometer, Settings } from 'lucide-react'
-import { App, Tooltip, Modal, Switch, Dropdown } from 'antd'
+import { App, Tooltip, Switch, Dropdown } from 'antd'
+import { ConfirmPopover } from '@/components/ConfirmPopover'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
@@ -124,6 +125,10 @@ export default function ChatPage() {
   // 切换对话时加载消息
   const selectConversation = useCallback(async (convId: string) => {
     if (convId === activeConvId) return
+    // 切走时，如果当前还是没发过消息的临时对话，直接删掉
+    if (activeConvId && activeConvId.startsWith('temp-')) {
+      setConversations((list) => list.filter((c) => c.id !== activeConvId))
+    }
     setActiveConvId(convId)
     setLoadingHistory(true)
     try {
@@ -140,28 +145,35 @@ export default function ChatPage() {
 
   // 新建对话
   const newConversation = () => {
-    setActiveConvId(null)
+    // 如果当前还有没发过消息的临时对话，先清掉
+    if (activeConvId && activeConvId.startsWith('temp-')) {
+      setConversations((list) => list.filter((c) => c.id !== activeConvId))
+    }
+    const tempId = `temp-${Date.now()}`
+    setConversations((list) => [{ id: tempId, title: '', updatedAt: new Date().toISOString() }, ...list])
+    setActiveConvId(tempId)
     setMessages([])
     setInput('')
   }
 
   // 删除对话
-  const deleteConversation = (convId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    Modal.confirm({
-      title: '删除对话',
-      content: '确定删除这个对话吗？此操作不可恢复。',
-      okText: '删除', okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await fetch(`/api/chat/conversations/${convId}`, { method: 'DELETE', credentials: 'include' })
-          message.success('已删除')
-          setConversations((list) => list.filter((c) => c.id !== convId))
-          if (activeConvId === convId) newConversation()
-        } catch { message.error('删除失败') }
-      },
-    })
+  // 临时对话：直接前端删，不弹确认
+  const deleteTempConversation = (convId: string) => {
+    setConversations((list) => list.filter((c) => c.id !== convId))
+    if (activeConvId === convId) {
+      setActiveConvId(null)
+      setMessages([])
+    }
+  }
+
+  // 正式对话：调后端删
+  const deleteRealConversation = async (convId: string) => {
+    try {
+      await fetch(`/api/chat/conversations/${convId}`, { method: 'DELETE', credentials: 'include' })
+      message.success('已删除')
+      setConversations((list) => list.filter((c) => c.id !== convId))
+      if (activeConvId === convId) newConversation()
+    } catch { message.error('删除失败') }
   }
 
   // 滚动监听
@@ -182,20 +194,24 @@ export default function ChatPage() {
     const text = input.trim()
     if (!text || sending) return
 
-    // 1. 如果还没有对话 id，先建一个
+    // 1. 如果是临时对话 id，先建一个真正的后端对话
     let convId = activeConvId
-    if (!convId) {
+    if (convId && convId.startsWith('temp-')) {
       try {
         const res = await fetch('/api/chat/conversations', {
           method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model }),
         })
-        if (!res.ok) throw new Error('建对话失败')
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || '建对话失败')
+        }
         const conv = await res.json()
         convId = conv.id
         setActiveConvId(convId)
-        setConversations((list) => [{ id: conv.id, title: conv.title, updatedAt: conv.updatedAt }, ...list])
+        const tempId = activeConvId
+        setConversations((list) => list.map((c) => c.id === tempId ? { id: conv.id, title: conv.title, updatedAt: conv.updatedAt } : c))
       } catch (e: any) {
         message.error(e.message || '建对话失败')
         return
@@ -425,38 +441,55 @@ export default function ChatPage() {
       )}>
         <div className="h-full flex flex-col bg-card/40">
           <div className="p-3">
-            <button
-              onClick={newConversation}
-              className="flex w-full items-center gap-2 rounded-xl bg-card px-3 py-2.5 text-[14px] text-text hover:bg-surface-hover transition-colors"
-            >
-              <Plus className="size-4" />
-              新建对话
-            </button>
+            <Tooltip title="新建对话">
+              <button
+                onClick={newConversation}
+                className="flex size-9 items-center justify-center rounded-lg bg-card text-text hover:bg-surface-hover transition-colors"
+              >
+                <Plus className="size-4" />
+              </button>
+            </Tooltip>
           </div>
           <div className="flex-1 overflow-y-auto px-2 pb-3">
             {conversations.length === 0 ? (
               <p className="px-3 py-4 text-[12px] text-text-muted">还没有历史对话</p>
-            ) : conversations.map((c) => (
+            ) : conversations.map((c) => {
+              const isTemp = c.id.startsWith('temp-')
+              return (
               <div
                 key={c.id}
                 onClick={() => selectConversation(c.id)}
                 className={cn(
                   'group mb-1 flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 text-[13px] transition-colors',
-                  c.id === activeConvId ? 'bg-surface-hover text-text-active' : 'text-text-secondary hover:bg-surface-hover'
+                  c.id === activeConvId ? 'bg-surface-hover text-text-active' : isTemp ? 'bg-card text-text-muted hover:bg-surface-hover' : 'bg-card text-text-secondary hover:bg-surface-hover'
                 )}
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <MessageSquare className="size-3.5 shrink-0 opacity-60" />
                   <span className="truncate">{c.title || '新对话'}</span>
                 </div>
-                <button
-                  onClick={(e) => deleteConversation(c.id, e)}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-opacity"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                {isTemp ? (
+                  <button
+                    onClick={() => deleteTempConversation(c.id)}
+                    className="shrink-0 opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-opacity"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                ) : (
+                  <ConfirmPopover
+                    title="删除这个对话？"
+                    confirmText="删除"
+                    onConfirm={() => deleteRealConversation(c.id)}
+                    className="shrink-0 opacity-0 group-hover:opacity-100"
+                  >
+                    <button className="flex text-text-muted hover:text-danger transition-opacity">
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </ConfirmPopover>
+                )}
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
@@ -540,7 +573,7 @@ export default function ChatPage() {
                           思考中...
                         </div>
                       ) : (
-                        <div className="prose prose-sm prose-invert max-w-none">
+                        <div className="max-w-none text-text text-[14px] leading-[24px] [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:text-[18px] [&_h1]:font-bold [&_h1]:my-3 [&_h2]:text-[16px] [&_h2]:font-bold [&_h2]:my-2 [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:my-2 [&_code]:bg-surface-hover [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px] [&_pre]:bg-surface-hover [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_a]:text-accent [&_a]:underline [&_strong]:text-text-active [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-text-secondary">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                         </div>
                       )}
@@ -648,7 +681,7 @@ export default function ChatPage() {
                 }}
                 rows={1}
                 placeholder="输入你的问题..."
-                className="max-h-40 min-h-[22px] flex-1 resize-none border-0 bg-transparent py-0 pl-1 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
+                className="chat-input max-h-40 min-h-[22px] flex-1 resize-none border-0 bg-transparent py-0 pl-1 text-[14px] leading-[22px] text-text outline-none placeholder:text-text-muted"
               />
               <div className="flex size-[34px] shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-active [&_.ant-btn]:!h-auto [&_.ant-btn]:!w-auto [&_.ant-btn]:!p-0 [&_.ant-btn]:!text-current [&_.ant-btn]:!shadow-none">
                 <SpeechInputButton onResult={(text) => setInput((prev) => prev ? prev + ' ' + text : text)} />

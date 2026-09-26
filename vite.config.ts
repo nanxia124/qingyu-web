@@ -73,6 +73,7 @@ export default defineConfig(({ command, mode }) => {
   },
   server: {
     port: 5173,
+    strictPort: true,
     proxy: {
       // 网页端后端网关代理（qingyu_server，默认 3001）
       '/api': {

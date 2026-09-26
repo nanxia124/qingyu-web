@@ -23,6 +23,9 @@ if (process.env.NODE_ENV === "production" && (!configuredJwtSecret || configured
   console.error("[security] 生产环境必须配置非默认的 JWT_SECRET，API 服务拒绝启动。");
   process.exit(1);
 }
+if (process.env.NODE_ENV === "production" && process.env.BILLING_STORE !== "postgres") {
+  throw new Error("生产环境必须使用 PostgreSQL 计费存储，文件模式不安全");
+}
 const JWT_SECRET = configuredJwtSecret || DEFAULT_JWT_SECRET;
 
 const APPWRITE_INTERNAL_URL = process.env.APPWRITE_INTERNAL_URL || "http://127.0.0.1:8081/v1";
@@ -40,7 +43,6 @@ const DATA_DIR = path.join(__dirname, "api-data");
 const LEGACY_OBJECT_DATA_DIR = process.env.OBJECT_DATA_DIR || path.join(DATA_DIR, "objects");
 const objectStore = createObjectStore();
 const KEYS_FILE = path.join(DATA_DIR, "keys.json");
-const ADMIN_FILE = path.join(DATA_DIR, "admin.json");
 // ===== 计费系统数据文件 =====
 const USERS_FILE = path.join(DATA_DIR, "billing_users.json");       // 客户计费账本（按 Appwrite 用户 ID）
 const ORDERS_FILE = path.join(DATA_DIR, "billing_orders.json");     // 订单
@@ -64,6 +66,22 @@ if (process.env.NODE_ENV !== "production") {
 }
 let postgresBilling = null;
 const catalogModelRouteOffsets = new Map();
+const channelInflight = new Map(); // channelId -> 当前在跑的请求数
+const requestRateLimits = new Map();
+function allowRateLimitedRequest(key, limit, windowMs, now = Date.now()) {
+  let state = requestRateLimits.get(key);
+  if (!state || state.resetAt <= now) {
+    if (requestRateLimits.size >= 20000) {
+      for (const [savedKey, saved] of requestRateLimits) if (saved.resetAt <= now) requestRateLimits.delete(savedKey);
+      if (requestRateLimits.size >= 20000) return false;
+    }
+    state = { count: 0, resetAt: now + windowMs };
+    requestRateLimits.set(key, state);
+  }
+  if (state.count >= limit) return false;
+  state.count += 1;
+  return true;
+}
 
 // ---------- 数据存储 ----------
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -80,13 +98,8 @@ function saveJSON(file, data) {
   fs.renameSync(tempFile, file);
 }
 
-// 管理员账号（首次启动初始化）
-let admin = loadJSON(ADMIN_FILE, null);
-if (!admin) {
-  admin = { username: "admin", password: await hashPassword("QingyuAdmin2026!") };
-  saveJSON(ADMIN_FILE, admin);
-  console.log("[init] 管理员已初始化，用户名: admin，密码: QingyuAdmin2026!（请尽快修改）");
-}
+// 管理员身份只允许来自 PostgreSQL 管理员表；文件模式不提供管理员登录。
+let admin = null;
 
 // API 密钥列表
 let keys = loadJSON(KEYS_FILE, []);
@@ -132,14 +145,18 @@ let modelsCatalog = loadJSON(MODELS_CATALOG_FILE, []);       // 模型目录数�
 if (process.env.BILLING_STORE === "postgres") {
   const { createPostgresBillingStore } = await import("./postgres-billing-store.mjs");
   postgresBilling = await createPostgresBillingStore();
-  // 管理员凭据进入 PostgreSQL；首次迁移时只复制哈希，不再把密码当作业务数据写入前端。
-  await postgresBilling.ensureAdminAccount(admin.username, admin.password);
   // PostgreSQL 是正式来源；首次切换时把旧 keys.json 迁入数据库，避免已有渠道丢失。
   const storedApiKeys = await postgresBilling.listPlatformApiKeys();
   if (storedApiKeys.length === 0 && keys.length > 0) {
     for (const legacyKey of keys) await postgresBilling.createPlatformApiKey(legacyKey);
   }
-  keys = await postgresBilling.listPlatformApiKeys();
+  // 确认数据库是正式来源后，清空旧文件里的明文密钥。
+  if (keys.length > 0) saveJSON(KEYS_FILE, []);
+  keys = await postgresBilling.listPlatformApiKeysForRuntime();
+  const configuredAdmin = await postgresBilling.getAdminAccount(process.env.ADMIN_USERNAME || 'admin');
+  if (!configuredAdmin) {
+    throw new Error("PostgreSQL 中尚未初始化管理员账号；请使用受保护的初始化流程后再启动服务");
+  }
   const storedBillingSettings = await postgresBilling.getSystemSetting("billing", null);
   if (storedBillingSettings && typeof storedBillingSettings === "object") billingSettings = storedBillingSettings;
   else await postgresBilling.setSystemSetting("billing", billingSettings);
@@ -162,7 +179,7 @@ if (!billingSettings) {
     payEnabled: { mock: PAYMENT_MODE === 'mock', epay: false, wechat: false, alipay: false },
     inviteRewardCents: 0,          // 邀请人奖励（分），0 关闭
     inviteRewardQuota: 500,        // 邀请人奖励积分
-    registeredBonusQuota: 100,     // 新注册赠送积分
+    registeredBonusQuota: 50,      // 新注册赠送积分
     supplier: {
       maizitech: {
         enabled: false,
@@ -291,6 +308,12 @@ function isAllowedBrowserOrigin(origin, req) {
   const allowedProtocol = process.env.NODE_ENV === "production" ? "https:" : null;
   try {
     const parsed = new URL(origin);
+    // 开发环境放行本机任意端口（Vite 端口可能因占用自动跳号），生产环境仍要求同源或白名单。
+    if (process.env.NODE_ENV !== "production"
+      && parsed.protocol === "http:"
+      && (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]")) {
+      return true;
+    }
     return parsed.host === host && (!allowedProtocol || parsed.protocol === allowedProtocol);
   } catch {
     return false;
@@ -491,9 +514,17 @@ async function findChannelForModel(modelName) {
       .filter(route => route.channel)
       .sort((a, b) => a.priority - b.priority);
   if (!routes.length) return null;
-  const offset = catalogModelRouteOffsets.get(catalogModelId) || 0;
-  catalogModelRouteOffsets.set(catalogModelId, (offset + 1) % routes.length);
-  return { ...routes[offset % routes.length], catalogModelId };
+  // 选最闲的渠道：priority 小的优先；同 priority 下选当前在跑请求最少的
+  let best = routes[0];
+  let bestInflight = channelInflight.get(best.channel.id) || 0;
+  for (const r of routes) {
+    const inf = channelInflight.get(r.channel.id) || 0;
+    if (r.priority < best.priority || (r.priority === best.priority && inf < bestInflight)) {
+      best = r;
+      bestInflight = inf;
+    }
+  }
+  return { ...best, catalogModelId };
 }
 
 // ---------- AI 请求代理 ----------
@@ -552,105 +583,120 @@ function proxyRequest(req, res, targetPath) {
       } catch (error) {
         console.error("[proxy usage] unable to persist request", error.message);
         if (/同一代理请求编号/.test(String(error.message || ""))) return sendJSON(res, 409, { error: error.message });
-        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(error.message || ""))) {
+        if (/积分|额度|余额|quota|insufficient/i.test(String(error.message || ""))) {
           return sendJSON(res, 402, { error: error.message || "积分不足，请订阅后继续使用" });
         }
         return sendJSON(res, 503, { error: "当前服务无法记录本次请求，请稍后重试" });
       }
     }
 
-    // 构建目标 URL
-    let base = channel.base_url.replace(/\/+$/, "");
-    // 如果 base_url 已经以 /v1 结尾，targetPath 可能是 /chat/completions，直接拼接
-    // targetPath 来自 /api/proxy/openai/*，即 * 部分
-    const targetUrl = base + targetPath;
-
-    const url = new URL(targetUrl);
-    const isHttps = url.protocol === "https:";
-    const lib = isHttps ? https : http;
-
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${channel.api_key}`,
-      "Content-Length": Buffer.byteLength(forwardBody),
-      "Accept": "text/event-stream, application/json",
-    };
-    // 透传必要的请求头
-    if (req.headers["accept"]) headers["Accept"] = req.headers["accept"];
-
-    const options = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      method: req.method,
-      headers,
-      timeout: 120000,
-    };
-
-    const proxyReq = lib.request(options, proxyRes => {
-      // 透传响应头
-      const respHeaders = { ...proxyRes.headers };
-      res.writeHead(proxyRes.statusCode || 502, respHeaders);
-      // 图片接口：先缓冲响应体，检查上游真的返回了图片再记成功，
-      // 避免上游返回 200 但 body 是空 data/错误 JSON 时被误记为成功扣费。
-      const isImagePath = /\/images\//i.test(targetPath);
-      if (isImagePath) {
-        const chunks = [];
-        proxyRes.on("data", chunk => chunks.push(chunk));
-        proxyRes.on("end", () => {
-          const buf = Buffer.concat(chunks);
-          res.end(buf);
-          if (!postgresBilling) return;
-          const httpStatus = proxyRes.statusCode || 502;
-          let billingResult = "committed";
-          let extraMeta = { targetPath, statusCode: httpStatus, phase: "finished" };
-          if (httpStatus >= 200 && httpStatus < 300) {
-            try {
-              const parsed = JSON.parse(buf.toString("utf-8"));
-              const arr = Array.isArray(parsed.data) ? parsed.data : [];
-              const hasImage = arr.some(item => item && (item.b64_json || item.url || item.task_id));
-              if (!hasImage) {
-                billingResult = "failed";
-                extraMeta = { ...extraMeta, phase: "empty_image", error: "上游 200 但未返回图片数据" };
+    // 发请求到指定渠道，失败自动换渠道重试（最多 2 次）
+    async function dispatchRequest(ch, mdl, retryLeft) {
+      const base = ch.base_url.replace(/\/+$/, "");
+      // 渠道地址可能已经包含 /v1；统一只保留一段，避免请求 /v1/v1/...
+      const normalizedTargetPath = /\/v1$/i.test(base) && targetPath.startsWith("/v1/")
+        ? targetPath.replace(/^\/v1/, "")
+        : targetPath;
+      const targetUrl = base + normalizedTargetPath;
+      const url = new URL(targetUrl);
+      const isHttps = url.protocol === "https:";
+      const lib = isHttps ? https : http;
+      const reqBodyObj = { ...bodyObj, model: mdl };
+      const reqForwardBody = JSON.stringify(reqBodyObj);
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ch.api_key}`,
+        "Content-Length": Buffer.byteLength(reqForwardBody),
+        "Accept": "text/event-stream, application/json",
+      };
+      if (req.headers["accept"]) headers["Accept"] = req.headers["accept"];
+      const options = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname + url.search,
+        method: req.method,
+        headers,
+        timeout: 120000,
+      };
+      channelInflight.set(ch.id, (channelInflight.get(ch.id) || 0) + 1);
+      const proxyReq = lib.request(options, proxyRes => {
+        const respHeaders = { ...proxyRes.headers };
+        res.writeHead(proxyRes.statusCode || 502, respHeaders);
+        const isImagePath = /\/images\//i.test(targetPath);
+        if (isImagePath) {
+          const chunks = [];
+          proxyRes.on("data", chunk => chunks.push(chunk));
+          proxyRes.on("end", () => {
+            const buf = Buffer.concat(chunks);
+            res.end(buf);
+            channelInflight.set(ch.id, Math.max(0, (channelInflight.get(ch.id) || 1) - 1));
+            if (!postgresBilling) return;
+            const httpStatus = proxyRes.statusCode || 502;
+            let billingResult = "committed";
+            let extraMeta = { targetPath, statusCode: httpStatus, phase: "finished", channelId: ch.id };
+            if (httpStatus >= 200 && httpStatus < 300) {
+              try {
+                const parsed = JSON.parse(buf.toString("utf-8"));
+                const arr = Array.isArray(parsed.data) ? parsed.data : [];
+                const hasImage = arr.some(item => item && (item.b64_json || item.url || item.task_id));
+                if (!hasImage) { billingResult = "failed"; extraMeta = { ...extraMeta, phase: "empty_image" }; }
+              } catch {
+                billingResult = "failed"; extraMeta = { ...extraMeta, phase: "bad_json" };
               }
-            } catch (parseErr) {
-              billingResult = "failed";
-              extraMeta = { ...extraMeta, phase: "bad_json", error: String(parseErr.message || parseErr).slice(0, 200) };
-            }
-          } else {
-            billingResult = "failed";
-          }
-          void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, billingResult, extraMeta)
-            .catch(error => console.error("[proxy usage] finalize failed", error.message));
-        });
-        return;
-      }
-
-      proxyRes.pipe(res);
-      proxyRes.on("end", () => {
-        if (postgresBilling) {
-          const result = proxyRes.statusCode >= 200 && proxyRes.statusCode < 300 ? "committed" : "failed";
-          void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, result, { targetPath, statusCode: proxyRes.statusCode || 502, phase: "finished" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
+            } else { billingResult = "failed"; }
+            void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, billingResult, extraMeta).catch(e => console.error("[proxy usage] finalize failed", e.message));
+          });
+          return;
         }
+        proxyRes.pipe(res);
+        proxyRes.on("end", () => {
+          channelInflight.set(ch.id, Math.max(0, (channelInflight.get(ch.id) || 1) - 1));
+          if (postgresBilling) {
+            const result = proxyRes.statusCode >= 200 && proxyRes.statusCode < 300 ? "committed" : "failed";
+            void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, result, { targetPath, statusCode: proxyRes.statusCode || 502, phase: "finished", channelId: ch.id }).catch(e => console.error("[proxy usage] finalize failed", e.message));
+          }
+        });
       });
-
-    });
-    proxyReq.on("error", err => {
-      console.error("[proxy error]", err.message);
-      if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, error: err.message, phase: "error" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
-      if (!res.headersSent) {
-        sendJSON(res, 502, { error: "代理请求失败: " + err.message });
-      }
-    });
-
-    proxyReq.on("timeout", () => {
-      proxyReq.destroy();
-      if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, phase: "timeout" }).catch(error => console.error("[proxy usage] finalize failed", error.message));
-      if (!res.headersSent) sendJSON(res, 504, { error: "生成超时，请重试" });
-    });
-
-    proxyReq.write(forwardBody);
-    proxyReq.end();
+      proxyReq.on("error", async err => {
+        console.error("[proxy error]", err.message);
+        channelInflight.set(ch.id, Math.max(0, (channelInflight.get(ch.id) || 1) - 1));
+        // 连接失败：还没写响应给客户端就自动换渠道重试
+        if (!res.headersSent && retryLeft > 0) {
+          const nextMatch = await findChannelForModel(modelField).catch(() => null);
+          if (nextMatch && nextMatch.channel && nextMatch.channel.id !== ch.id) {
+            console.error("[proxy retry] switching to channel", nextMatch.channel.name);
+            channelInflight.set(nextMatch.channel.id, (channelInflight.get(nextMatch.channel.id) || 0) + 1);
+            dispatchRequest(nextMatch.channel, nextMatch.model, retryLeft - 1);
+            return;
+          }
+        }
+        if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, error: err.message, phase: "error", channelId: ch.id }).catch(e => console.error("[proxy usage] finalize failed", e.message));
+        if (!res.headersSent) sendJSON(res, 502, { error: "代理请求失败: " + err.message });
+      });
+      proxyReq.on("timeout", () => {
+        proxyReq.destroy();
+        channelInflight.set(ch.id, Math.max(0, (channelInflight.get(ch.id) || 1) - 1));
+        if (!res.headersSent && retryLeft > 0) {
+          findChannelForModel(modelField).then(nextMatch => {
+            if (nextMatch && nextMatch.channel && nextMatch.channel.id !== ch.id) {
+              console.error("[proxy retry] timeout, switching to", nextMatch.channel.name);
+              dispatchRequest(nextMatch.channel, nextMatch.model, retryLeft - 1);
+              return;
+            }
+            if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, phase: "timeout", channelId: ch.id }).catch(e => console.error("[proxy usage] finalize failed", e.message));
+            if (!res.headersSent) sendJSON(res, 504, { error: "生成超时，请重试" });
+          }).catch(() => {
+            if (!res.headersSent) sendJSON(res, 504, { error: "生成超时，请重试" });
+          });
+          return;
+        }
+        if (postgresBilling) void postgresBilling.completeProviderUsage(proxyIdentity.sub, usageKey, "unknown", { targetPath, phase: "timeout", channelId: ch.id }).catch(e => console.error("[proxy usage] finalize failed", e.message));
+        if (!res.headersSent) sendJSON(res, 504, { error: "生成超时，请重试" });
+      });
+      proxyReq.write(reqForwardBody);
+      proxyReq.end();
+    }
+    await dispatchRequest(channel, model, 2);
   });
 }
 
@@ -1060,6 +1106,7 @@ async function fetchUrlAsStream(imageUrl) {
 
 function sniffGeneratedMediaMime(type, prefix, reportedType = '') {
   if (type === 'image') return sniffImageMime(prefix);
+  if (type === 'text') return 'text/plain; charset=utf-8';
   const reported = String(reportedType || '').split(';')[0].trim().toLowerCase();
   if (reported.startsWith(`${type}/`) && !reported.includes('json')) return reported;
   if (type === 'video') {
@@ -1380,6 +1427,34 @@ async function readStoredImageDataUrl(file) {
   return `data:${file.mimeType};base64,${Buffer.concat(chunks, length).toString('base64')}`;
 }
 
+async function callUpstreamText(channel, task) {
+  const params = task.parameters || {};
+  const request = params.body && typeof params.body === 'object' ? params.body : {};
+  if (String(channel.provider || '').toLowerCase() === 'gemini') {
+    const model = encodeURIComponent(String(request.model || task.model || '').replace(/^models\//, ''));
+    const base = String(channel.base_url || '').replace(/\/+$/, '');
+    const prefix = /\/v1beta$/i.test(base) ? base : `${base}/v1beta`;
+    const url = new URL(`${prefix}/models/${model}:generateContent`);
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': channel.api_key }, body: JSON.stringify(request) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.error?.message) throw new Error(payload.error?.message || `上游返回状态 ${response.status}`);
+    return (payload.candidates || []).flatMap(item => item.content?.parts || []).map(part => part.text || '').join('');
+  }
+  const base = String(channel.base_url || '').replace(/\/+$/, '');
+  if (!base) throw new Error('渠道未配置 base_url');
+  const prefix = /\/v1$/i.test(base) ? base : `${base}/v1`;
+  const url = new URL(`${prefix}/responses`);
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${channel.api_key}` }, body: JSON.stringify(request) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.error?.message) throw new Error(payload.error?.message || `上游返回状态 ${response.status}`);
+  return String(payload.output_text || (payload.output || []).flatMap(item => item.type === 'message' ? item.content || [] : []).map(item => item.text || '').join(''));
+}
+
+async function callUpstreamImageForTask(channel, bodyObj, onBase64Output, referenceFiles = []) {
+  if (String(channel.provider || '').toLowerCase() === 'gemini') throw new Error('当前 Gemini 图片模型尚未接入可恢复的服务端任务处理');
+  return callUpstreamImage(channel, bodyObj, onBase64Output, referenceFiles);
+}
+
 async function persistGeneratedMedia(identity, task, attemptId, index, source, outputType, slot = null) {
   slot ||= await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, index,
     { bucket: objectStore.getBucket(), outputType });
@@ -1453,6 +1528,13 @@ async function runGenerationTaskMediaWorker(identity, task, channel, params, rec
       const source = await fetchUrlAsStream(videoUrl);
       source.durationMs = duration * 1000;
       await persistGeneratedMedia(identity, task, attemptId, 0, source, 'video', outputSlot);
+    } else if (task.taskType === 'text') {
+      const answer = await callUpstreamText(channel, task);
+      if (!answer.trim()) throw new Error('上游没有返回文本内容');
+      await postgresBilling.completeGenerationAttempt(identity.sub, task.id, attemptId, 1);
+      responseComplete = true;
+      await postgresBilling.settleTextTask(identity.sub, task.id, answer);
+      return;
     } else if (task.taskType === 'audio') {
       const format = String(params.format || 'mp3').toLowerCase();
       outputSlot = await postgresBilling.reserveGeneratedOutput(identity.sub, task.id, attemptId, 0,
@@ -1496,19 +1578,41 @@ async function runGenerationTaskWorker(identity, task, channel, bodyObj) {
     if (!claimed) return;
     attempt = await postgresBilling.beginGenerationAttempt(identity.sub, task.id);
     bodyObj = { ...bodyObj };
+    const catalogModelId = bodyObj.__qingyuCatalogModelId;
     delete bodyObj.__qingyuCatalogModelId;
     const referenceFiles = await postgresBilling.listGenerationInputFiles(identity.sub, task.id);
-    const { status, payload = {}, text = '' } = await callUpstreamImage(
-      channel,
-      bodyObj,
-      (index, source) => persistGeneratedImage(identity, task, attempt.attemptId, index, source, null),
-      referenceFiles,
-    );
+    // 上游失败时自动换一个不同渠道重试一次
+    let currentChannel = channel;
+    let status, payload = {}, text = '';
+    for (let retryNo = 0; retryNo < 2; retryNo++) {
+      try {
+        const result = await callUpstreamImageForTask(
+          currentChannel,
+          bodyObj,
+          (index, source) => persistGeneratedImage(identity, task, attempt.attemptId, index, source, null),
+          referenceFiles,
+        );
+        status = result.status; payload = result.payload || {}; text = result.text || '';
+        if (status >= 200 && status < 300) break;
+      } catch (err) {
+        if (retryNo >= 1) throw err;
+        status = 0; text = err.message;
+      }
+      if (catalogModelId) {
+        const nextMatch = await findChannelForModel(`catalog:${catalogModelId}`).catch(() => null);
+        if (nextMatch && nextMatch.channel && nextMatch.channel.id !== currentChannel.id) {
+          console.error('[task worker] retrying with channel', nextMatch.channel.name);
+          currentChannel = nextMatch.channel;
+          continue;
+        }
+      }
+      throw new Error(text || `上游返回状态 ${status}`);
+    }
     if (status >= 200 && status < 300 && Array.isArray(payload.data)) {
       // 部分上游返回 task_id 走异步轮询（如麦子 nano-banana）
       const first = payload.data[0] || {};
       if (first.task_id && !first.__hasBase64 && !first.b64_json && !first.url) {
-        const done = await pollAsyncUpstreamTask(channel, first.task_id);
+        const done = await pollAsyncUpstreamTask(currentChannel, first.task_id);
         const urls = done.result_urls || done.urls || [];
         const slots = [];
         for (let i = 0; i < urls.length; i++) {
@@ -2372,6 +2476,11 @@ async function handleAssets(req, res, pathname, method, url) {
     if (restoreAssetMatch && method === 'PUT') {
       return sendJSON(res, 200, await postgresBilling.restoreAsset(identity.sub, restoreAssetMatch[1]));
     }
+    const shareToTeamMatch = pathname.match(/^\/assets\/([^/]+)\/share-to-team$/);
+    if (shareToTeamMatch && method === 'POST') {
+      const input = await parseBody(req);
+      return sendJSON(res, 200, await postgresBilling.shareAssetToTeamWorkspace(identity.sub, shareToTeamMatch[1], String(input.workspaceId || '')));
+    }
     const lifecycleAssetMatch = pathname.match(/^\/assets\/([^/]+)$/);
     if (lifecycleAssetMatch && method === 'DELETE') {
       return sendJSON(res, 200, await postgresBilling.deleteAsset(identity.sub, lifecycleAssetMatch[1]));
@@ -2666,6 +2775,17 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
 
+  // 对认证后的高成本入口按用户限频；不使用浏览器提供的用户编号或转发 IP。
+  if (isUnsafeMethod(req.method) && /^\/api\/(generation-tasks|proxy\/openai|assets\/upload|assets\/upload-sessions)(?:\/|$)/.test(pathname)) {
+    const identity = getBillingIdentity(req);
+    const scope = identity?.sub || req.socket.remoteAddress || 'anonymous';
+    const limits = pathname.startsWith('/api/generation-tasks') ? [10, 60_000]
+      : pathname.startsWith('/api/proxy/openai/') ? [30, 60_000] : [20, 60_000];
+    if (!allowRateLimitedRequest(`${pathname.startsWith('/api/generation-tasks') ? 'generation' : pathname.startsWith('/api/proxy/openai/') ? 'proxy' : 'upload'}:${scope}`, ...limits)) {
+      return sendJSON(res, 429, { error: '请求过于频繁，请稍后再试' }, { 'Retry-After': '60' });
+    }
+  }
+
   try {
     // POST /api/payment/webhooks/:provider — 只接收经过 HMAC 校验的供应商事件，收到不等于已入账
     const paymentWebhookMatch = pathname.match(/^\/api\/payment\/webhooks\/([A-Za-z0-9_-]+)$/);
@@ -2852,10 +2972,10 @@ location.href = 'http://localhost:5173/';
       if (!(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) return sendJSON(res, 401, { error: "当前登录设备已离线，请重新登录" });
       const body = await parseBody(req);
       const taskType = String(body.taskType || '').toLowerCase();
-      if (!['video','audio'].includes(taskType)) return sendJSON(res, 400, { error: '只支持视频或音频任务' });
+      if (!['video','audio','text'].includes(taskType)) return sendJSON(res, 400, { error: '不支持的媒体任务类型' });
       const modelField = String(body.model || '');
       const match = await findChannelForModel(modelField);
-      if (!match || String(match.channel.provider || '').toLowerCase() === 'gemini') return sendJSON(res, 400, { error: '当前媒体模型渠道暂不支持服务器恢复' });
+      if (!match || (String(match.channel.provider || '').toLowerCase() === 'gemini' && taskType !== 'text')) return sendJSON(res, 400, { error: '当前媒体模型渠道暂不支持服务器恢复' });
       const params = body.parameters && typeof body.parameters === 'object' ? body.parameters : {};
       const parameters = taskType === 'video' ? {
         duration: Math.max(1, Math.min(120, Number(params.duration) || 6)),
@@ -2864,6 +2984,8 @@ location.href = 'http://localhost:5173/';
         generateAudio: params.generateAudio !== false,
         watermark: params.watermark === true,
         mode: params.mode === 'reference' ? 'reference' : 'frames',
+      } : taskType === 'text' ? {
+        body: params.body && typeof params.body === 'object' ? params.body : {},
       } : {
         voice: String(params.voice || 'alloy').slice(0, 80),
         format: String(params.format || 'mp3').toLowerCase().slice(0, 16),
@@ -2873,7 +2995,7 @@ location.href = 'http://localhost:5173/';
       const references = Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds : [];
       const idempotencyKey = String(body.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `${taskType}-task:${crypto.randomUUID()}`;
       try {
-        const task = await postgresBilling.createGenerationTask(identity.sub, {
+      const task = await postgresBilling.createGenerationTask(identity.sub, {
           taskType, provider: match.channel.provider, model: match.model, modelCatalogId: match.catalogModelId,
           prompt: String(body.prompt || '').slice(0, 4000), parameters, quantity: 1,
           idempotencyKey, referenceAssetIds: references, timeoutSeconds: 1800, creditQuoteId: body.creditQuoteId,
@@ -2881,7 +3003,7 @@ location.href = 'http://localhost:5173/';
         setImmediate(() => runGenerationTaskMediaWorker(identity, task, match.channel, parameters));
         return sendJSON(res, 202, { taskId: task.id, status: task.status });
       } catch (error) {
-        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(error.message || ''))) return sendJSON(res, 402, { error: error.message });
+        if (/积分|额度|余额|quota|insufficient/i.test(String(error.message || ''))) return sendJSON(res, 402, { error: error.message });
         if (/参考素材编号|参考素材不存在|参考素材不能|同一任务编号不能/.test(String(error.message || ''))) return sendJSON(res, 400, { error: error.message });
         console.error('[media-task] create failed', error.message);
         return sendJSON(res, 500, { error: '媒体生成任务创建失败，请稍后重试' });
@@ -2901,23 +3023,26 @@ location.href = 'http://localhost:5173/';
       const referenceAssetIds = Array.isArray(bodyObj.referenceAssetIds) ? bodyObj.referenceAssetIds : [];
       const creditQuoteId = bodyObj.creditQuoteId;
       const idempotencyKey = String(bodyObj.idempotencyKey || req.headers['idempotency-key'] || '').trim() || `image-task:${crypto.randomUUID()}`;
-      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds; delete bodyObj.referenceAssetIds; delete bodyObj.creditQuoteId;
+      // prompt 单独取出：给数据库做参数快照时不能混在 parameters 里（否则与报价单快照不一致），但转发给上游生图接口时必须带上。
+      const promptText = String(bodyObj.prompt || "").slice(0, 4000);
+      delete bodyObj.idempotencyKey; delete bodyObj.quantity; delete bodyObj.timeoutSeconds; delete bodyObj.referenceAssetIds; delete bodyObj.creditQuoteId; delete bodyObj.prompt;
       if (modelField.includes("::") || match.catalogModelId) bodyObj.model = match.model;
       if (match.catalogModelId) bodyObj.__qingyuCatalogModelId = match.catalogModelId;
       bodyObj.response_format = bodyObj.response_format || "b64_json";
       const quantity = Math.max(1, Math.min(15, Number(bodyObj.n) || 1));
+      const upstreamBody = { ...bodyObj, prompt: promptText };
       try {
         const task = await postgresBilling.createGenerationTask(identity.sub, {
            taskType: "image", provider: channel.provider, model: match.model, modelCatalogId: match.catalogModelId,
-           prompt: String(bodyObj.prompt || "").slice(0, 4000), parameters: bodyObj, quantity,
+           prompt: promptText, parameters: bodyObj, quantity,
            idempotencyKey, referenceAssetIds, creditQuoteId,
            timeoutSeconds: 600,
         });
         // 立即返回，不等待上游；后台异步执行避免请求超时导致状态不确定。
-        setImmediate(() => runGenerationTaskWorker(identity, task, channel, bodyObj));
+        setImmediate(() => runGenerationTaskWorker(identity, task, channel, upstreamBody));
         return sendJSON(res, 202, { taskId: task.id, status: task.status });
       } catch (e) {
-        if (/积分|额度|余额|quota|insufficient|daily/i.test(String(e.message || ""))) return sendJSON(res, 402, { error: e.message });
+        if (/积分|额度|余额|quota|insufficient/i.test(String(e.message || ""))) return sendJSON(res, 402, { error: e.message });
         if (/参考素材编号|参考素材不存在|参考素材不能|同一任务编号不能/.test(String(e.message || ""))) {
           const conflict = String(e.message || "").includes('同一任务编号');
           return sendJSON(res, conflict ? 409 : 400, { error: e.message });
@@ -3012,7 +3137,7 @@ location.href = 'http://localhost:5173/';
       }
       const account = postgresBilling
         ? await postgresBilling.getAdminAccount(body.username)
-        : (body.username === admin.username ? admin : null);
+        : (admin && body.username === admin.username ? admin : null);
       let accountPasswordHash = account?.password_hash || account?.password;
       if (account && (account.status || "active") === "active" && await verifyAdminPassword(body.password, accountPasswordHash)) {
         if (postgresBilling) {
@@ -3032,11 +3157,6 @@ location.href = 'http://localhost:5173/';
                 return sendJSON(res, 401, { error: "用户名或密码错误" });
               }
             }
-          } else if (admin.password === accountPasswordHash) {
-            admin.password = upgradedHash;
-            saveJSON(ADMIN_FILE, admin);
-          } else if (!await verifyAdminPassword(body.password, admin.password)) {
-            return sendJSON(res, 401, { error: "用户名或密码错误" });
           }
         }
         if (postgresBilling) await postgresBilling.clearAdminLoginAttempts(body.username);
@@ -3045,7 +3165,7 @@ location.href = 'http://localhost:5173/';
         const token = signJWT({ sub: account.username, role: "admin", iat: Math.floor(Date.now() / 1000), exp });
         return sendJSON(res, 200, { token });
       }
-      return sendJSON(res, 401, { error: "用户名或密码错误" });
+      return sendJSON(res, postgresBilling ? 401 : 503, { error: postgresBilling ? "用户名或密码错误" : "管理员账号服务尚未初始化" });
     }
 
     // GET /api/admin/monitor/metrics — 管理端读取当前服务实际指标，禁止返回演示数据。
@@ -3175,6 +3295,9 @@ location.href = 'http://localhost:5173/';
       if (payload.role !== "admin") {
         return sendJSON(res, 403, { error: "无管理员权限" });
       }
+      if (!postgresBilling && pathname.startsWith('/api/admin/api-keys')) {
+        return sendJSON(res, 503, { error: "渠道密钥管理服务尚未初始化" });
+      }
     }
 
     // ===== 管理员：对账、异常告警（0046） =====
@@ -3207,31 +3330,23 @@ location.href = 'http://localhost:5173/';
     const pgPutKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
     if (postgresBilling && pgPutKey && req.method === "PUT") {
       const body = await parseBody(req);
-      keys = await postgresBilling.listPlatformApiKeys();
+      keys = await postgresBilling.listPlatformApiKeysForRuntime();
       const updated = await postgresBilling.updatePlatformApiKey(pgPutKey[1], body);
-      keys = await postgresBilling.listPlatformApiKeys();
+      keys = await postgresBilling.listPlatformApiKeysForRuntime();
       void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.update", targetType: "platform_key", targetId: pgPutKey[1], summary: `修改渠道密钥：${updated.name||""}`, metadata: { fields: Object.keys(body) }, ip: req.socket.remoteAddress }).catch(()=>{});
       return sendJSON(res, 200, publicApiKey(updated));
     }
     const pgDeleteKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)$/);
     if (postgresBilling && pgDeleteKey && req.method === "DELETE") {
       const result = await postgresBilling.deletePlatformApiKey(pgDeleteKey[1]);
-      keys = await postgresBilling.listPlatformApiKeys();
+      keys = await postgresBilling.listPlatformApiKeysForRuntime();
       void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.delete", targetType: "platform_key", targetId: pgDeleteKey[1], summary: "删除渠道密钥", ip: req.socket.remoteAddress }).catch(()=>{});
       return sendJSON(res, 200, result);
-    }
-    const pgFullKey = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)\/full$/);
-    if (postgresBilling && pgFullKey && req.method === "GET") {
-      void postgresBilling.writeAdminAudit({ actor: (requestIdentity && requestIdentity.sub) || "admin", action: "api_key.view_secret", targetType: "platform_key", targetId: pgFullKey[1], summary: "查看渠道密钥明文", ip: req.socket.remoteAddress }).catch(()=>{});
-      return sendJSON(res, 200, await postgresBilling.getPlatformApiKeySecret(pgFullKey[1]));
     }
 
     // GET /api/admin/api-keys — 密钥列表（脱敏）
     if (pathname === "/api/admin/api-keys" && req.method === "GET") {
-      const list = keys.map(k => ({
-        ...k,
-        api_key_masked: maskKey(k.api_key),
-      }));
+      const list = keys.map(publicApiKey);
       return sendJSON(res, 200, list);
     }
 
@@ -3254,7 +3369,7 @@ location.href = 'http://localhost:5173/';
       };
       keys.push(newKey);
       saveJSON(KEYS_FILE, keys);
-      return sendJSON(res, 200, { ...newKey, api_key_masked: maskKey(newKey.api_key) });
+      return sendJSON(res, 200, publicApiKey(newKey));
     }
 
     // PUT /api/admin/api-keys/:id — 更新密钥
@@ -3273,7 +3388,7 @@ location.href = 'http://localhost:5173/';
       if (body.max_concurrency !== undefined) keys[idx].max_concurrency = body.max_concurrency ? Number(body.max_concurrency) : null;
       if (body.is_active !== undefined) keys[idx].is_active = Number(body.is_active);
       saveJSON(KEYS_FILE, keys);
-      return sendJSON(res, 200, { ...keys[idx], api_key_masked: maskKey(keys[idx].api_key) });
+      return sendJSON(res, 200, publicApiKey(keys[idx]));
     }
 
     // DELETE /api/admin/api-keys/:id — 删除密钥
@@ -3283,15 +3398,6 @@ location.href = 'http://localhost:5173/';
       keys = keys.filter(k => k.id !== id);
       saveJSON(KEYS_FILE, keys);
       return sendJSON(res, 200, { success: true });
-    }
-
-    // GET /api/admin/api-keys/:id/full — 获取完整密钥（编辑时拉模型用）
-    const fullMatch = pathname.match(/^\/api\/admin\/api-keys\/(\d+)\/full$/);
-    if (fullMatch && req.method === "GET") {
-      const id = parseInt(fullMatch[1], 10);
-      const k = keys.find(k => k.id === id);
-      if (!k) return sendJSON(res, 404, { error: "密钥不存在" });
-      return sendJSON(res, 200, { api_key: k.api_key });
     }
 
     // ===== 模型目录接口 =====
@@ -3423,15 +3529,21 @@ location.href = 'http://localhost:5173/';
       return sendJSON(res, 200, { success: true });
     }
 
-    // POST /api/admin/fetch-models — 从供应商拉取模型列表
+    // POST /api/admin/fetch-models — 通过已保存渠道在服务端拉取模型，密钥不回到浏览器。
     if (pathname === "/api/admin/fetch-models" && req.method === "POST") {
       const body = await parseBody(req);
-      if (!body.base_url || !body.api_key) {
-        return sendJSON(res, 400, { error: "base_url 和 api_key 必填" });
-      }
       try {
-        const base = body.base_url.replace(/\/+$/, "");
+        if (!postgresBilling) return sendJSON(res, 503, { error: "渠道密钥管理服务尚未初始化" });
+        let channel = null;
+        channel = await postgresBilling.fetchPlatformApiKeyModels(String(body.id || ''));
+        if (!channel) return sendJSON(res, 400, { error: "请先保存渠道，再拉取模型" });
+        const base = channel.base_url.replace(/\/+$/, "");
         const modelsUrl = new URL(base + "/models");
+        if (!['https:', 'http:'].includes(modelsUrl.protocol) || modelsUrl.username || modelsUrl.password
+          || ['localhost', '127.0.0.1', '::1'].includes(modelsUrl.hostname)
+          || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(modelsUrl.hostname)) {
+          return sendJSON(res, 400, { error: "渠道地址无效" });
+        }
         const isHttps = modelsUrl.protocol === "https:";
         const lib = isHttps ? https : http;
         const result = await new Promise((resolve, reject) => {
@@ -3439,7 +3551,7 @@ location.href = 'http://localhost:5173/';
             hostname: modelsUrl.hostname,
             port: modelsUrl.port || (isHttps ? 443 : 80),
             path: modelsUrl.pathname + modelsUrl.search,
-            headers: { "Authorization": `Bearer ${body.api_key}` },
+            headers: { "Authorization": `Bearer ${channel.api_key}` },
             timeout: 15000,
           }, resp => {
             let d = "";
@@ -3457,6 +3569,25 @@ location.href = 'http://localhost:5173/';
         return sendJSON(res, 200, { data: modelList });
       } catch (e) {
         return sendJSON(res, 502, { error: "拉取模型失败: " + e.message });
+      }
+    }
+
+    const testChannelMatch = pathname.match(/^\/api\/admin\/api-keys\/([^/]+)\/test$/);
+    if (testChannelMatch && req.method === "POST") {
+      try {
+        if (!postgresBilling) return sendJSON(res, 503, { error: "渠道密钥管理服务尚未初始化" });
+        let channel;
+        channel = await postgresBilling.fetchPlatformApiKeyModels(testChannelMatch[1]);
+        const modelsUrl = new URL(channel.base_url.replace(/\/+$/, "") + "/models");
+        if (!['https:', 'http:'].includes(modelsUrl.protocol) || modelsUrl.username || modelsUrl.password
+          || ['localhost', '127.0.0.1', '::1'].includes(modelsUrl.hostname)
+          || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(modelsUrl.hostname)) {
+          return sendJSON(res, 400, { error: "渠道地址无效" });
+        }
+        const response = await fetch(modelsUrl, { headers: { Authorization: `Bearer ${channel.api_key}` }, signal: AbortSignal.timeout(15000) });
+        return sendJSON(res, response.ok ? 200 : 502, { success: response.ok });
+      } catch {
+        return sendJSON(res, 502, { error: "渠道连接失败" });
       }
     }
 
@@ -3509,13 +3640,7 @@ location.href = 'http://localhost:5173/';
         }
         const changed = await postgresBilling.changeAdminPassword(username, account.password_hash, newHash);
         if (!changed) return sendJSON(res, 409, { error: "密码已在其他操作中更新，请重新验证后重试" });
-      } else {
-        const currentHash = admin.password;
-        if (!await verifyAdminPassword(oldPassword, currentHash)) return sendJSON(res, 400, { error: "原密码错误" });
-        if (admin.password !== currentHash) return sendJSON(res, 409, { error: "密码已在其他操作中更新，请重新验证后重试" });
-        admin.password = newHash;
-        saveJSON(ADMIN_FILE, admin);
-      }
+      } else return sendJSON(res, 503, { error: "管理员账号服务尚未初始化" });
       return sendJSON(res, 200, { success: true });
     }
 

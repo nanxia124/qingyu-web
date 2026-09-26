@@ -7,7 +7,6 @@ DECLARE
     wid uuid;
     account uuid;
     reservation uuid;
-    daily_reservation uuid;
     rejected boolean := false;
 BEGIN
     INSERT INTO app.user_accounts(appwrite_user_id)
@@ -29,14 +28,6 @@ BEGIN
     END;
     IF NOT rejected THEN RAISE EXCEPTION '额度预占没有拒绝金额不一致的幂等重试'; END IF;
 
-    rejected := false;
-    SELECT app.reserve_free_daily_usage(wid, uid, 'ai_proxy', 1, 'daily-scope-key', 20, now() + interval '10 minutes') INTO daily_reservation;
-    BEGIN
-        PERFORM app.reserve_free_daily_usage(wid, uid, 'image', 1, 'daily-scope-key', 20, now() + interval '10 minutes');
-    EXCEPTION WHEN others THEN
-        IF SQLERRM LIKE '%幂等键已用于其他%' THEN rejected := true; ELSE RAISE; END IF;
-    END;
-    IF NOT rejected THEN RAISE EXCEPTION '每日额度预占没有拒绝功能不一致的幂等重试'; END IF;
 END;
 $$;
 

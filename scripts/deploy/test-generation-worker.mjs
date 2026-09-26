@@ -38,6 +38,13 @@ const recoveryStart = source.indexOf('async function processGeneratedOutputRecov
 const recoveryEnd = source.indexOf('async function processFileUploadRecoveryJob(', recoveryStart);
 assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart);
 const recoveryWorkerSource = source.slice(recoveryStart, recoveryEnd);
+const mediaWorkerStart = source.indexOf('async function runGenerationTaskMediaWorker(');
+const mediaWorkerEnd = source.indexOf('async function runGenerationTaskWorker(', mediaWorkerStart);
+assert.ok(mediaWorkerStart >= 0 && mediaWorkerEnd > mediaWorkerStart);
+const mediaWorkerSource = source.slice(mediaWorkerStart, mediaWorkerEnd);
+const imageWorkerSource = source.slice(source.indexOf('async function runGenerationTaskWorker('), source.indexOf('// ===================== 计费路由处理器'));
+const canvasImageService = await readFile(new URL('../../src/canvas/services/api/image.ts', import.meta.url), 'utf8');
+const canvasPluginHost = await readFile(new URL('../../src/canvas/pages/canvas/hooks/use-plugin-host.tsx', import.meta.url), 'utf8');
 async function readStream(stream) {
   const chunks = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
@@ -47,6 +54,18 @@ async function readStream(stream) {
 test('渠道地址已包含 /v1 时不会重复拼接', () => {
   assert.equal(imagePipeline.buildUpstreamImageUrl('https://provider.example/v1').pathname, '/v1/images/generations');
   assert.equal(imagePipeline.buildUpstreamImageUrl('https://provider.example').pathname, '/v1/images/generations');
+});
+
+test('画布普通生图、改图和插件生图入口都复用报价与 generation task 服务', () => {
+  const requestGeneration = canvasImageService.match(/export async function requestGeneration[\s\S]*?\n}\n/);
+  const requestEdit = canvasImageService.match(/export async function requestEdit[\s\S]*?\n}\n/);
+  const requestImageQuestion = canvasImageService.match(/export async function requestImageQuestion[\s\S]*?\n}\n/);
+  assert.ok(requestGeneration && /runBilledImageTask\(/.test(requestGeneration[0]));
+  assert.ok(requestEdit && /runBilledImageTask\(/.test(requestEdit[0]));
+  assert.ok(requestImageQuestion && /billingApi\.quote\(/.test(requestImageQuestion[0]) && /\/api\/generation-tasks\/media/.test(requestImageQuestion[0]));
+  assert.doesNotMatch(canvasImageService, /runModelPlugin\(|https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/.*generateContent|\/images\/(?:generations|edits)/);
+  assert.match(canvasPluginHost, /generateImage:[\s\S]*?request(?:Edit|Generation)\(/);
+  assert.match(canvasPluginHost, /generateText:[\s\S]*?requestImageQuestion\(/);
 });
 
 test('上游图片地址以响应流返回，不在下载阶段拼接整张图片', async t => {
@@ -222,6 +241,11 @@ test('重复 worker 只允许领取成功者调用上游', async () => {
       const savedOutput = await onBase64Output(0, { body: Readable.from([Buffer.from('test-image-data')]) });
       return { status: 200, payload: { data: [{ __hasBase64: true, __savedOutput: savedOutput }] } };
     },
+    async callUpstreamImageForTask(_channel, _body, callback) {
+      calls++;
+      const savedOutput = await callback(0, { body: Readable.from([Buffer.from('test-image-data')]) });
+      return { status: 200, payload: { data: [{ __hasBase64: true, __savedOutput: savedOutput }] } };
+    },
     async persistGeneratedImage(_identity, _task, _attempt, index, source) {
       storedContents.push(await readStream(source.body));
       return { type: 'image', index, fileId: `file-${index}`, objectKey: `test/${index}.png` };
@@ -256,6 +280,7 @@ test('URL 图片先持久化加密恢复来源，确认上游响应完整后才�
     async callUpstreamImage() {
       return { status: 200, payload: { id: 'provider-1', data: [{ url: 'https://provider.example/signed-image?sig=secret' }] } };
     },
+    async callUpstreamImageForTask() { return { status: 200, payload: { id: 'provider-1', data: [{ url: 'https://provider.example/signed-image?sig=secret' }] } }; },
     async persistGeneratedImageUrl(_identity, _task, _attempt, index, _url, _prompt, slot) {
       events.push(['upload', index, slot.outputId]);
       return { type: 'image', index, fileId: slot.fileId, objectKey: slot.objectKey };
@@ -318,8 +343,61 @@ test('领取失败不能调用供应商或释放其他 worker 的额度', async 
       async failTask() { refunds++; },
     },
     async callUpstreamImage() { calls++; },
+    async callUpstreamImageForTask() { calls++; },
   });
   await worker({ sub: 'test-user' }, { id: 'task' }, {}, {});
   assert.equal(calls, 0);
   assert.equal(refunds, 0);
+});
+
+test('文本问答任务由服务端调用渠道、成功结算并把答案写入任务输出', async () => {
+  const events = [];
+  const worker = vm.runInNewContext(`${mediaWorkerSource}; runGenerationTaskMediaWorker`, {
+    console: { error() {} },
+    async callUpstreamText(_channel, task) { events.push(['provider', task.parameters.body.model]); return '回答内容'; },
+    postgresBilling: {
+      async markTaskRunning() { events.push('claim'); return true; },
+      async beginGenerationAttempt() { events.push('attempt'); return { attemptId: 'attempt-text' }; },
+      async completeGenerationAttempt(_user, _task, _attempt, count) { events.push(['complete', count]); },
+      async settleTextTask(_user, _task, answer) { events.push(['settle-text', answer]); },
+      async failTask(...args) { events.push(['refund', ...args]); },
+    },
+  });
+  await worker({ sub: 'test-user' }, { id: 'text-task', taskType: 'text', status: 'pending', parameters: { body: { model: 'catalog-model' } } }, { provider: 'openai' }, { body: { model: 'catalog-model' } });
+  assert.deepEqual(events, ['claim', 'attempt', ['provider', 'catalog-model'], ['complete', 1], ['settle-text', '回答内容']]);
+});
+
+test('文本问答供应商失败时退款，不执行成功结算', async () => {
+  const events = [];
+  const worker = vm.runInNewContext(`${mediaWorkerSource}; runGenerationTaskMediaWorker`, {
+    console: { error() {} },
+    postgresBilling: {
+      async markTaskRunning() { return true; },
+      async beginGenerationAttempt() { return { attemptId: 'attempt-text' }; },
+      async failTask(_user, _task, code, message, refund) { events.push([code, message, refund]); },
+    },
+    async callUpstreamText() { throw new Error('供应商拒绝请求'); },
+  });
+  await worker({ sub: 'test-user' }, { id: 'text-task', taskType: 'text', status: 'pending', parameters: {} }, { provider: 'openai' }, {});
+  assert.equal(events.length, 1);
+  assert.equal(events[0][0], 'upstream_error');
+  assert.match(events[0][1], /供应商拒绝请求/);
+  assert.equal(events[0][2], true);
+});
+
+test('图片与改图任务仍经过计费图片 worker，输出失败会退款', async () => {
+  const events = [];
+  const worker = vm.runInNewContext(`${workerSource}; runGenerationTaskWorker`, {
+    console: { error() {} }, ...streamHelpers,
+    postgresBilling: {
+      async markTaskRunning() { return true; },
+      async beginGenerationAttempt() { return { attemptId: 'attempt-image' }; },
+      async listGenerationInputFiles() { return [{ mediaType: 'image' }]; },
+      async failTask(_user, _task, code, message, refund) { events.push([code, message, refund]); },
+    },
+    async callUpstreamImageForTask() { return { status: 503, text: '上游失败', payload: {} }; },
+  });
+  await worker({ sub: 'test-user' }, { id: 'edit-task' }, {}, { __qingyuCatalogModelId: 1 });
+  assert.equal(events.length, 1);
+  assert.equal(events[0][2], true);
 });

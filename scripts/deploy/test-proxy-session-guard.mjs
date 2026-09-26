@@ -82,7 +82,7 @@ async function assertProductionStartRejected(jwtSecret, reason) {
   assert.match(output, /JWT_SECRET/, `拒绝原因应明确指出需要配置 JWT_SECRET：${output}`);
 }
 
-async function assertProductionStartAccepted(jwtSecret) {
+async function assertProductionFileStorageRejected(jwtSecret) {
   const candidate = spawn(process.execPath, [path.join(directory, 'api-server.mjs')], {
     env: { ...process.env, NODE_ENV: 'production', BILLING_STORE: 'file', PORT: String(port), JWT_SECRET: jwtSecret },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -92,16 +92,10 @@ async function assertProductionStartAccepted(jwtSecret) {
   candidate.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });
   const ended = once(candidate, 'exit').then(([code, signal]) => ({ code, signal }));
   try {
-    let response;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (candidate.exitCode !== null) throw new Error(`配置有效 JWT_SECRET 后服务意外退出：\n${output}`);
-      try {
-        response = await fetch(`${base}/api/config/public`);
-        if (response.ok) break;
-      } catch {}
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    assert.equal(response?.status, 200, `生产环境配置有效 JWT_SECRET 后应能启动：\n${output}`);
+    const outcome = await Promise.race([ended, new Promise(resolve => setTimeout(() => resolve(null), 2000))]);
+    assert.ok(outcome, `生产环境文件存储未及时拒绝启动：\n${output}`);
+    assert.equal(outcome.code, 1, `生产环境必须拒绝文件存储：\n${output}`);
+    assert.match(output, /PostgreSQL/, `拒绝原因应说明生产环境需要数据库存储：\n${output}`);
   } finally {
     if (candidate.exitCode === null) {
       candidate.kill();
@@ -132,7 +126,7 @@ try {
   ]);
   await assertProductionStartRejected(undefined, '缺少 JWT_SECRET');
   await assertProductionStartRejected('qingyu-api-jwt-secret-2026-change-me', '公开默认 JWT_SECRET');
-  await assertProductionStartAccepted('isolated-production-secret-with-sufficient-entropy-2026');
+  await assertProductionFileStorageRejected('isolated-production-secret-with-sufficient-entropy-2026');
   const systemdServiceInstaller = await readFile(new URL('./step_systemd.sh', import.meta.url), 'utf8');
   assert.match(systemdServiceInstaller, /^EnvironmentFile=\/etc\/qingyu-api\.env$/m, 'systemd 必须加载部署文档指定的 API 环境配置');
   await start();
@@ -169,7 +163,7 @@ try {
   const queryTokenResponse = await fetch(`${base}/api/generation-tasks/${randomUUID()}/outputs/0/content?token=${encodeURIComponent(sessionToken)}`);
   assert.equal(queryTokenResponse.status, 401, '图片结果接口不能用 URL 查询参数里的登录票鉴权');
 
-  console.log('通过：生产环境缺少或使用公开默认 JWT_SECRET 时拒绝启动；有效密钥可启动；Cookie 会话及旧 Bearer/自定义头/URL 登录票拒绝；跨站写入拒绝；无计费数据库时 AI 代理关闭。');
+  console.log('通过：生产环境缺少或使用公开默认 JWT_SECRET 时拒绝启动；生产文件存储拒绝启动；Cookie 会话及旧 Bearer/自定义头/URL 登录票拒绝；跨站写入拒绝；无计费数据库时 AI 代理关闭。');
 } finally {
   await stop();
   await rm(directory, { recursive: true, force: true });

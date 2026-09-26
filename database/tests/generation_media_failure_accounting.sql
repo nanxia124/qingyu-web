@@ -36,12 +36,10 @@ DECLARE
   v_timeout_file_id uuid;
   v_task_status text;
   v_usage_result text;
-  v_daily_feature text;
 BEGIN
-  SELECT id,daily_reservation_id,usage_record_id
+  SELECT id,quota_reservation_id,usage_record_id
     INTO v_task_id,v_reservation_id,v_usage_id FROM media_task;
-  SELECT feature_code INTO v_daily_feature FROM app.daily_usage_reservations WHERE id=v_reservation_id;
-  IF v_daily_feature <> 'ai_proxy' THEN RAISE EXCEPTION '媒体任务应占用 AI 代理每日额度，实际为 %',v_daily_feature; END IF;
+  IF v_reservation_id IS NULL THEN RAISE EXCEPTION '媒体任务必须预留积分'; END IF;
   IF (SELECT feature_code FROM app.usage_records WHERE id=v_usage_id) <> 'ai_proxy' THEN
     RAISE EXCEPTION '媒体任务使用记录应属于 ai_proxy';
   END IF;
@@ -69,8 +67,8 @@ BEGIN
   IF v_task_status <> 'failed' OR v_usage_result <> 'committed' THEN
     RAISE EXCEPTION '无法恢复的已生成媒体必须标记失败并保留扣费：task %, usage %',v_task_status,v_usage_result;
   END IF;
-  IF (SELECT status FROM app.daily_usage_reservations WHERE id=v_reservation_id) <> 'committed' THEN
-    RAISE EXCEPTION '无法恢复的媒体结果不应释放预占额度';
+  IF (SELECT status FROM app.quota_reservations WHERE id=v_reservation_id) <> 'committed' THEN
+    RAISE EXCEPTION '无法恢复的媒体结果不应释放积分预留';
   END IF;
   IF (SELECT availability FROM app.generation_outputs WHERE id=v_output_id) <> 'unavailable' THEN
     RAISE EXCEPTION '无法恢复的媒体输出应标记为不可用';
@@ -79,7 +77,7 @@ BEGIN
     RAISE EXCEPTION '无法恢复的媒体文件应标记失败';
   END IF;
 
-  SELECT id,daily_reservation_id,usage_record_id INTO v_timeout_task_id,v_timeout_reservation_id,v_timeout_usage_id FROM timeout_media_task;
+  SELECT id,quota_reservation_id,usage_record_id INTO v_timeout_task_id,v_timeout_reservation_id,v_timeout_usage_id FROM timeout_media_task;
   PERFORM app.mark_generation_task_running(v_timeout_task_id,NULL);
   INSERT INTO app.generation_attempts(workspace_id,task_id,attempt_no,provider,response_complete,returned_output_count,finished_at)
   VALUES(v_workspace_id,v_timeout_task_id,1,'test',true,1,now()) RETURNING id INTO v_timeout_attempt_id;
@@ -91,10 +89,10 @@ BEGIN
   PERFORM app.mark_generation_task_saving(v_timeout_task_id);
   UPDATE app.generation_tasks SET timeout_at=now()-interval '1 second' WHERE id=v_timeout_task_id;
   IF app.reap_stale_generation_output_tasks() <> 1 THEN RAISE EXCEPTION '过期的媒体保存任务应被自动结算'; END IF;
-  IF (SELECT status FROM app.daily_usage_reservations WHERE id=v_timeout_reservation_id) <> 'committed'
+  IF (SELECT status FROM app.quota_reservations WHERE id=v_timeout_reservation_id) <> 'committed'
      OR (SELECT result FROM app.usage_records WHERE id=v_timeout_usage_id) <> 'committed' THEN
     RAISE EXCEPTION '已生成但保存超时的媒体不应被自动退费';
   END IF;
-  RAISE NOTICE 'PASS: 媒体任务使用 ai_proxy 免费额度；保存不可恢复时失败留档、扣费结算且重复处理不重复记账';
+  RAISE NOTICE 'PASS: 媒体任务按积分计费；保存不可恢复时失败留档、扣费结算且重复处理不重复记账';
 END $$;
 ROLLBACK;

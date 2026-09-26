@@ -21,6 +21,7 @@ export interface GenTaskOutput {
   fileId?: string | null;
   objectKey?: string | null;
   revisedPrompt?: string | null;
+  text?: string | null;
   mimeType?: string | null;
   sizeBytes?: number | null;
   width?: number | null;
@@ -136,9 +137,10 @@ export async function submitImageTask(body: Record<string, unknown>): Promise<{ 
   return data;
 }
 
-export async function fetchTask(taskId: string): Promise<GenTask> {
+export async function fetchTask(taskId: string, signal?: AbortSignal): Promise<GenTask> {
   const res = await fetch(`${API}/api/generation-tasks/${encodeURIComponent(taskId)}`, {
     credentials: 'include',
+    signal,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : i18n.t('imageTools.taskQueryFailed'));
@@ -158,17 +160,29 @@ export async function listImageTasks(limit = 50): Promise<GenTask[]> {
 
 export async function pollImageTask(
   taskId: string,
-  options: { intervalMs?: number; timeoutMs?: number; onTick?: (t: GenTask) => void } = {},
+  options: { intervalMs?: number; timeoutMs?: number; onTick?: (t: GenTask) => void; signal?: AbortSignal } = {},
 ): Promise<GenTask> {
   const intervalMs = options.intervalMs ?? 1500;
   const timeoutMs = options.timeoutMs ?? 600000;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const task = await fetchTask(taskId);
+    if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const task = await fetchTask(taskId, options.signal);
     options.onTick?.(task);
     if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'refunded') return task;
     if (Date.now() > deadline) throw new Error(i18n.t('imageTools.pollTimeout'));
-    await new Promise((r) => setTimeout(r, intervalMs));
+    await new Promise<void>((resolve, reject) => {
+      const signal = options.signal;
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, intervalMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }
 

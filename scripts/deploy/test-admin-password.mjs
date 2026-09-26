@@ -32,8 +32,8 @@ async function waitForApi(child, port) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`本地 API 提前退出：${logs}`);
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/config/public`);
-      if (response.ok) return;
+      await fetch(`http://127.0.0.1:${port}/api/config/public`);
+      return;
     } catch { /* API 尚未开始监听 */ }
     await new Promise(resolve => setTimeout(resolve, 50));
   }
@@ -107,7 +107,7 @@ test('数据库只在密码仍匹配旧值时升级，迟到的并发升级不�
   await store.close();
 });
 
-test('本地后台登录会升级旧密码；修改后旧密码失效，新密码可登录', async () => {
+test('文件存储模式不读取旧管理员文件，也不允许管理员登录', async () => {
   const testDirectory = fs.mkdtempSync(path.join(scriptDirectory, '.admin-password-test-'));
   const deployDirectory = path.resolve(scriptDirectory);
   const resolvedTestDirectory = path.resolve(testDirectory);
@@ -149,26 +149,10 @@ test('本地后台登录会升级旧密码；修改后旧密码失效，新密�
     });
 
     const firstLogin = await login(oldPassword);
-    assert.equal(firstLogin.status, 200, '旧密码应可登录并自动升级');
+    assert.equal(firstLogin.status, 503, '文件存储模式必须拒绝管理员登录');
     const storedAfterUpgrade = JSON.parse(fs.readFileSync(path.join(adminDataDirectory, 'admin.json'), 'utf8')).password;
-    assert.ok(storedAfterUpgrade.startsWith('scrypt$'));
-    assert.equal(await verifyAdminPassword(oldPassword, storedAfterUpgrade), true);
-
-    const secondLogin = await login(oldPassword);
-    assert.equal(secondLogin.status, 200, '升级后旧密码仍是当前密码');
-    const { token } = await secondLogin.json();
-    const changeResponse = await fetch(`http://127.0.0.1:${port}/api/admin/change-password`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ oldPassword, newPassword, confirmPassword: newPassword }),
-    });
-    assert.equal(changeResponse.status, 200);
-
-    const storedAfterChange = JSON.parse(fs.readFileSync(path.join(adminDataDirectory, 'admin.json'), 'utf8')).password;
-    assert.equal(await verifyAdminPassword(newPassword, storedAfterChange), true);
-    assert.equal(await verifyAdminPassword(oldPassword, storedAfterChange), false);
-    assert.equal((await login(oldPassword)).status, 401);
-    assert.equal((await login(newPassword)).status, 200);
+    assert.equal(storedAfterUpgrade, legacyHash, '文件模式不得读取或升级磁盘上的管理员密码');
+    assert.equal((await login(newPassword)).status, 503);
   } catch (error) {
     error.message = `${error.message}\n${output}`;
     throw error;

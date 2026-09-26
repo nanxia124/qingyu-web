@@ -24,10 +24,9 @@ if (workerMode.startsWith('--worker-')) {
       });
       console.log(JSON.stringify({ id: row.id }));
     } else if (mode === '--worker-verify-and-rotate') {
-      const existing = await store.getPlatformApiKeySecret(first);
-      assert.equal(existing.api_key, second, '旧密钥加密的 API Key 应仍可读取');
       const listed = (await store.listPlatformApiKeys()).find(row => row.id === third);
-      assert.equal(listed?.api_key, second, '管理后台列表也应能读取并轮换旧密文');
+      assert.ok(listed?.api_key_masked, '管理后台列表只应返回掩码密钥');
+      assert.equal(Object.hasOwn(listed, 'api_key'), false, '管理后台列表不得返回密钥明文');
       const created = await store.createPlatformApiKey({
         name: fourth,
         provider: 'openai',
@@ -36,16 +35,14 @@ if (workerMode.startsWith('--worker-')) {
         model: modelId,
         is_active: 1,
       });
-      assert.equal((await store.getPlatformApiKeySecret(created.id)).api_key, 'new-provider-key-for-rotation-test');
       console.log(JSON.stringify({ id: created.id }));
     } else if (mode === '--worker-verify-current-only') {
-      const existing = await store.getPlatformApiKeySecret(first);
-      const created = await store.getPlatformApiKeySecret(second);
-      const listed = await store.getPlatformApiKeySecret(third);
-      assert.equal(existing.api_key, 'old-provider-key-for-rotation-test');
-      assert.equal(created.api_key, 'new-provider-key-for-rotation-test');
-      assert.equal(listed.api_key, 'old-provider-key-for-rotation-test');
-      console.log('通过：两条密钥都已使用当前加密密钥保存。');
+      const listed = await store.listPlatformApiKeys();
+      assert.ok(listed.find(row => row.id === first)?.api_key_masked);
+      assert.ok(listed.find(row => row.id === second)?.api_key_masked);
+      assert.ok(listed.find(row => row.id === third)?.api_key_masked);
+      assert.ok(listed.every(row => !Object.hasOwn(row, 'api_key')), '列表响应中不得包含明文密钥字段');
+      console.log('通过：密钥已使用当前加密密钥保存，管理列表不返回明文。');
     } else {
       throw new Error(`未知测试工作模式：${mode}`);
     }

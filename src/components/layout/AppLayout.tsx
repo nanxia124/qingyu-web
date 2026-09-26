@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Tooltip } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import {
   Settings,
   MessageSquareWarning,
@@ -28,6 +28,7 @@ import AuthModal from '@/components/AuthModal'
 import InviteModal from '@/components/InviteModal'
 import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useBillingStore } from '@/stores/useBillingStore'
 import { useThemeStore } from '@canvas/stores/use-theme-store'
 import { AnimatedThemeToggler } from '@canvas/components/ui/animated-theme-toggler'
 import i18n, { changeAppLocale, onLanguageSuggestion, type AppLocale } from '@canvas/i18n'
@@ -90,11 +91,20 @@ export default function AppLayout() {
 
   // Auth store
   const { isLoggedIn, logout, checkSession, user, authModalOpen, openAuthModal, closeAuthModal } = useAuthStore()
+  // Billing store：登录后全站点统一拉一次，所有页面共享同一份余额
+  const billingUser = useBillingStore((s) => s.user)
+  const initBillingFromAuth = useBillingStore((s) => s.initFromAuth)
 
   // 页面加载时检查会话
   useEffect(() => {
     checkSession()
   }, [])
+
+  // 登录态就绪后统一拉取计费账户信息；各子页面不再各自重复拉取
+  useEffect(() => {
+    if (!user?.id) return
+    void initBillingFromAuth({ id: user.id, email: user.email })
+  }, [user?.id, user?.email, initBillingFromAuth])
 
   // 未登录直接访问需登录页面（团队资产/我的收藏/团队管理/个人中心）时，弹出登录窗
   useEffect(() => {
@@ -197,7 +207,7 @@ export default function AppLayout() {
     preload?: () => void,
     requireAuth?: boolean,
   ) => (
-    <Tooltip title={t(tooltip)}>
+    <Tooltip title={expanded ? undefined : t(tooltip)} placement="right">
     <NavLink
       key={to + label}
       to={to}
@@ -230,7 +240,7 @@ export default function AppLayout() {
           </span>
           <span
             className={cn(
-              'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px] transition-all duration-200',
+              'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px]',
               expanded ? 'ml-[60px] w-[84px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
               isActive ? 'text-text' : 'text-text-muted',
             )}
@@ -250,7 +260,7 @@ export default function AppLayout() {
     Icon: typeof Settings,
     requireAuth?: boolean,
   ) => (
-    <Tooltip title={t(tooltip)}>
+    <Tooltip title={expanded ? undefined : t(tooltip)} placement="right">
     <NavLink
       key={to}
       to={to}
@@ -280,7 +290,7 @@ export default function AppLayout() {
           </span>
           <span
             className={cn(
-              'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px] transition-all duration-200',
+              'overflow-hidden whitespace-nowrap text-left text-[14px] font-medium leading-[20px]',
               expanded ? 'ml-[60px] w-[84px] translate-x-0 opacity-100' : 'w-[0px] -translate-x-2 opacity-0',
               isActive ? 'text-text' : 'text-text-muted',
             )}
@@ -335,7 +345,12 @@ export default function AppLayout() {
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Tooltip title="通知"><button className="relative flex size-9 items-center justify-center rounded-xl text-text-muted hover:bg-nav-hover hover:text-text"><Bell size={17} /><span className="absolute right-2 top-2 size-1.5 rounded-full bg-accent" /></button></Tooltip>
           <button onClick={() => (isLoggedIn ? setInviteModalOpen(true) : openAuthModal())} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Gift size={14} />邀请有礼</button>
-          <button onClick={() => navigate('/wallet')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Coins size={14} />积分商城</button>
+          <Tooltip title={isLoggedIn ? t('nav.balance') : undefined}>
+            <button onClick={() => (isLoggedIn ? navigate('/wallet') : openAuthModal())} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex">
+              <Coins size={14} />
+              {isLoggedIn ? <span className="tabular-nums">{billingUser?.balance ?? '—'}</span> : <span>积分商城</span>}
+            </button>
+          </Tooltip>
           <button onClick={() => navigate('/subscription')} className="hidden items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text sm:flex"><Crown size={14} />订阅</button>
           {/* 我的：未登录点此弹登录；已登录弹出账号菜单 */}
           <div className="relative">
@@ -383,7 +398,7 @@ export default function AppLayout() {
       {/* ── 左侧导航栏 ── */}
       <aside
         className={cn(
-          'relative z-40 flex h-full shrink-0 flex-col bg-nav-bg transition-all duration-300 ease-out',
+          'relative z-40 flex h-full shrink-0 flex-col bg-nav-bg',
           sidebarWidth,
         )}
       >
@@ -402,7 +417,7 @@ export default function AppLayout() {
         {/* 底部：主题切换 + 语言切换 */}
         <div className="shrink-0 border-t border-border px-2 py-2">
           {/* 浅色 / 深色 切换 */}
-          <Tooltip title={theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')}>
+          <Tooltip title={expanded ? undefined : theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')} placement="right">
           <AnimatedThemeToggler
             theme={theme}
             onThemeChange={setTheme}
@@ -430,7 +445,7 @@ export default function AppLayout() {
             ref={langMenuRef}
             className="relative"
           >
-            <Tooltip title={t("nav.language")}>
+            <Tooltip title={expanded ? undefined : t("nav.language")} placement="right">
             <button
               onClick={() => setLangMenuOpen((v) => !v)}
               aria-expanded={langMenuOpen}
@@ -482,7 +497,6 @@ export default function AppLayout() {
           className={cn(
             'relative flex-1 overflow-hidden',
             isCanvas && 'bg-transparent',
-            !(isCanvas || isVideo) && 'rounded-tl-[16px]',
           )}
         >
           <RouteErrorBoundary inline>

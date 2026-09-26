@@ -1,4 +1,4 @@
-﻿import { Tooltip } from 'antd'
+﻿import Tooltip from '@/components/ui/Tooltip'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { CanvasNode, NodeType, Viewport, ViewportSize } from './types'
 

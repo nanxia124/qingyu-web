@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Tooltip } from "antd";
+import Tooltip from '@/components/ui/Tooltip'
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@canvas/lib/canvas-theme";

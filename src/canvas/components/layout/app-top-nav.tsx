@@ -1,5 +1,6 @@
 import { Bot, Menu } from "lucide-react";
-import { Button, Tooltip } from "antd";
+import { Button } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 

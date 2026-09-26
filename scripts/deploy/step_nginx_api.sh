@@ -68,9 +68,6 @@ sudo systemctl reload nginx
 echo "=== test /api/config/public via nginx ==="
 curl -s http://127.0.0.1/api/config/public
 echo ""
-echo "=== test /api/admin/login via nginx ==="
-curl -s -X POST http://127.0.0.1/api/admin/login -H "Content-Type: application/json" -d '{"username":"admin","password":"QingyuAdmin2026!"}' | head -c 100
-echo ""
 echo "=== test /v1 still works ==="
 curl -s http://127.0.0.1/v1/health/version
 echo ""

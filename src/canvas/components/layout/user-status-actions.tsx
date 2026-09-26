@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { Tooltip, Dropdown } from "antd";
+import { Dropdown } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { BookOpen, Keyboard, Puzzle, Settings2, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 

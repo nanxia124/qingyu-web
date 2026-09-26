@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { App, Button, Image, Modal, Popover } from "antd";
-import { Brain, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, Copy, ExternalLink, FilePenLine, FileText, FolderOpen, ListChecks, LoaderCircle, RefreshCw, Search, ShieldAlert, TerminalSquare, Wrench, XCircle } from "lucide-react";
+import { App, Button, Dropdown, Image, Modal, Popover } from "antd";
+import { Brain, CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, Copy, Download, ExternalLink, FilePenLine, FileText, FolderOpen, ListChecks, LoaderCircle, RefreshCw, Search, ShieldAlert, Table2, TerminalSquare, Volume2, Wrench, XCircle } from "lucide-react";
 import { Streamdown, type LinkSafetyModalProps } from "streamdown";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +11,10 @@ import { useAgentStore, type AgentCanvasReference, type AgentPendingApproval, ty
 import { resolveAgentMessageAssetUrl, revealAgentLocalFile } from "@canvas/services/api/canvas-agent";
 import { AgentCanvasReferencePreview, canvasReferenceIcon, canvasReferenceKindLabel } from "./agent-canvas-reference-preview";
 import { agentInlineTokenClass, agentInlineTokenIconClass, agentInlineTokenMediaClass, agentReferenceMarker, parseAgentInlineTokens } from "./agent-chat-inline-tokens";
+import { getMessageHighlight, getMessageNote, setMessageHighlight, setMessageNote } from "./agent-message-notes";
+import { speakText } from "./agent-tts";
+import { toPng } from "html-to-image";
+import * as XLSX from "xlsx";
 
 const streamdownProps = () => ({
     className: "agent-streamdown",
@@ -105,9 +109,15 @@ export type AgentChatMessageItem = {
 export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onRegenerate, onEditMessage }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void; onRegenerate?: () => void; onEditMessage?: (id: string) => void }) {
     const copyText = useCopyText();
     const [expanded, setExpanded] = useState(false);
+    const [note, setNoteState] = useState(() => getMessageNote(item.id));
+    const [noteModalOpen, setNoteModalOpen] = useState(false);
+    const [noteInput, setNoteInput] = useState(note);
+    const [highlight, setHighlight] = useState(() => getMessageHighlight(item.id));
+    const [editing, setEditing] = useState(false);
+    const [editText, setEditText] = useState(item.text);
     const isUser = item.role === "user";
     const isSystem = item.role === "system";
-    const color = item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
+    const color = item.failed ? "#dc2626" : item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
     if (isSystem) {
         return (
             <div className="flex justify-center text-xs">
@@ -122,11 +132,32 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onR
         if (objectField(item.detail, "status") === "pending") return <AgentPendingToolCard summary={item.text} detail={item.detail} theme={theme} onReject={() => onRejectTool?.(item.id)} onApprove={() => onApproveTool?.(item.id)} />;
         return <AgentToolCard title={item.title || tr("toolCall")} text={item.text} detail={item.detail} theme={theme} />;
     }
-    return (
-        <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+        return (
+        <>
+        <Dropdown trigger={["contextMenu"]} menu={{ items: [
+            { key: "copy", label: "复制", icon: <Copy className="size-3.5" />, onClick: () => copyText(item.text, tr("copied")) },
+            { key: "quote", label: "引用到输入框", icon: <FileText className="size-3.5" />, onClick: () => { const c = useAgentStore.getState().prompt; useAgentStore.getState().setAgentState({ prompt: c ? c + String.fromCharCode(10) + item.text : item.text }); } },
+            { type: "divider" },
+            { key: "note", label: note ? "编辑备注" : "加备注", icon: <FileText className="size-3.5" />, onClick: () => { setNoteInput(note); setNoteModalOpen(true); } },
+            { key: "hl", label: "高亮", icon: <ListChecks className="size-3.5" />, children: [
+                { key: "hly", label: "黄色", onClick: () => { setMessageHighlight(item.id, "#fef9c3"); setHighlight("#fef9c3"); } },
+                { key: "hlg", label: "绿色", onClick: () => { setMessageHighlight(item.id, "#dcfce7"); setHighlight("#dcfce7"); } },
+                { key: "hlb", label: "蓝色", onClick: () => { setMessageHighlight(item.id, "#dbeafe"); setHighlight("#dbeafe"); } },
+                { key: "hln", label: "取消", onClick: () => { setMessageHighlight(item.id, ""); setHighlight(""); } },
+            ]},
+            { key: "excel", label: "导出表格", icon: <Table2 className="size-3.5" />, onClick: () => {
+                var lines = item.text.split(String.fromCharCode(10)).filter(function(l) { return l.trim().startsWith("|"); });
+                if (lines.length < 2) return;
+                var rows = lines.map(function(l) { return l.split("|").map(function(c) { return c.trim(); }).filter(Boolean); });
+                var ws = XLSX.utils.aoa_to_sheet(rows);
+                var wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                XLSX.writeFile(wb, "message-" + item.id + ".xlsx");
+            }},
+        ] }}>      <div data-msg-id={item.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
             <div
                 className={isUser ? "min-w-0 max-w-[82%] py-1 text-right text-sm leading-6" : "min-w-0 w-full text-left text-sm leading-6"}
-                style={{ color }}
+                style={{ color, ...(highlight ? { background: highlight, borderRadius: 8, padding: "4px 8px" } : {}) }}
             >
                 {isUser ? (
                     <div className="group relative inline-block">
@@ -147,7 +178,27 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onR
                 ) : (
                     <div className="group relative">
                         <div className={expanded ? "" : "relative max-h-[320px] overflow-hidden"}>
-                            <Streamdown {...streamdownProps()} animated={streamdownAnimation} isAnimating={!!item.streamId}>{item.text}</Streamdown>
+                            {editing ? (
+                                <div className="space-y-2">
+                                    <textarea autoFocus className="thin-scrollbar h-40 w-full resize-none rounded-lg px-3 py-2 text-sm outline-none"
+                                        style={{ background: "rgba(0,0,0,.05)", color }} value={editText}
+                                        onChange={(e) => setEditText(e.target.value)} />
+                                    <div className="flex gap-2">
+                                        <button type="button" className="rounded-lg px-3 py-1 text-xs"
+                                            style={{ background: theme.node.text, color: theme.node.panel }}
+                                            onClick={() => {
+                                                useAgentStore.getState().setAgentState({
+                                                    messages: useAgentStore.getState().messages.map(function(m) { return m.id === item.id ? Object.assign({}, m, { text: editText }) : m; })
+                                                });
+                                                setEditing(false);
+                                            }}>保存</button>
+                                        <button type="button" className="rounded-lg px-3 py-1 text-xs opacity-70"
+                                            onClick={() => { setEditText(item.text); setEditing(false); }}>取消</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Streamdown {...streamdownProps()} animated={streamdownAnimation} isAnimating={!!item.streamId}>{item.text}</Streamdown>
+                            )}
                             {!expanded && !item.streamId ? (
                                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16" style={{ background: `linear-gradient(to bottom, transparent, ${theme.node.panel})` }} />
                             ) : null}
@@ -190,8 +241,18 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onR
                 )}
                 {item.attachments?.length ? <AgentMessageAttachments attachments={item.attachments} alignRight={isUser} /> : null}
                 {item.meta ? <div className={`mt-1 text-[11px] tabular-nums opacity-55 ${isUser ? "text-right" : ""}`}>{item.meta}</div> : null}
+                {note ? <div className={`mt-1 rounded-md px-2 py-1 text-[11px] leading-4 ${isUser ? "text-right" : ""}`} style={{ background: "rgba(251, 191, 36, .12)", color: "#b45309" }}>{note}</div> : null}
             </div>
         </div>
+            </Dropdown>
+        <Modal open={noteModalOpen} title="消息备注" okText="保存" cancelText="取消"
+            onCancel={() => setNoteModalOpen(false)}
+            onOk={() => { setMessageNote(item.id, noteInput.trim()); setNoteState(noteInput.trim()); setNoteModalOpen(false); }}>
+            <textarea autoFocus className="thin-scrollbar h-28 w-full resize-none rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ background: "rgba(0,0,0,.04)" }} value={noteInput}
+                onChange={(e) => setNoteInput(e.target.value)} placeholder="写点只有自己看得到的备注..." />
+        </Modal>
+        </>
     );
 }
 

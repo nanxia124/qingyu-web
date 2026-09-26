@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { useRef } from 'react'
 import { ArrowUp, Copy, Maximize2, X } from 'lucide-react'
 import type { CanvasNode, NodeConfig } from './types'

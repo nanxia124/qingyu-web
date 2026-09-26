@@ -1,6 +1,7 @@
 ﻿import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { App, Tooltip } from "antd";
+import { App } from 'antd'
+import Tooltip from '@/components/ui/Tooltip'
 import { Check, Download, FolderOpen, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { useCanvasStore } from "@canvas/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@canvas/stores/canvas/use-canvas-ui-store";

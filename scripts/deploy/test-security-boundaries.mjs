@@ -320,6 +320,10 @@ try {
       'HTTP 与 HTTPS 必须分别配置管理台子域名');
     assert.equal(nginxSource.split('rewrite ^/console/(.*)$ https://console.litzone.art/$1 redirect;').length - 1, 2,
       '旧管理台路径必须把路径前缀剥掉后跳到新域名');
+    assert.equal(nginxSource.split('location /umami/ {').length - 1, 2,
+      'Umami 反向代理必须同时配置在 HTTP 与 HTTPS 主站中');
+    assert.equal(nginxSource.split('proxy_pass http://127.0.0.1:3000/;').length - 1, 2,
+      'HTTP 与 HTTPS 的 Umami 反向代理都必须去掉 /umami/ 前缀');
     assert.ok(!nginxSource.includes('proxy_redirect ~^(/.*)$ /console$1;'),
       '管理台不再依赖子路径代理改写上游跳转');
     for (const legacyScript of ['step_nginx.sh', 'step_nginx_api.sh']) {
@@ -370,6 +374,10 @@ server {
   listen 3001;
   location / { default_type text/plain; return 200 'mock-qingyu-api'; }
 }
+server {
+  listen 3000;
+  location = /script.js { default_type application/javascript; return 200 'mock-umami-script'; }
+}
 }`);
     await writeFile(path.join(directory, 'run.sh'), `set -eu
 apk add --no-cache openssl curl >/dev/null
@@ -387,6 +395,9 @@ for protocol in http https; do
   done
   curl -ks -o /test/site-assets.js "$protocol://127.0.0.1/assets/app.js"
   grep -q '正常资源' /test/site-assets.js
+  umami_status=$(curl -ksS -o /test/umami-script.js -w '%{http_code}|%{content_type}' "$protocol://127.0.0.1/umami/script.js")
+  test "$umami_status" = '200|application/javascript'
+  grep -q 'mock-umami-script' /test/umami-script.js
 
   curl -ksS -D /test/legacy-console-headers -o /dev/null "$protocol://127.0.0.1/console/"
   grep -qi '^Location: https://console.litzone.art/' /test/legacy-console-headers
@@ -455,7 +466,7 @@ for protocol in http https; do
   test "$status" = 413
 done
 nginx -s quit -c /test/nginx.conf
-echo '通过：HTTP/HTTPS 敏感文件拒绝、主站与 API、Appwrite 页面和资源路由、证书验证及登录请求体限制。'
+echo '通过：HTTP/HTTPS 敏感文件拒绝、主站与 API、Umami JavaScript 路由、Appwrite 页面和资源路由、证书验证及登录请求体限制。'
 `);
     const docker = spawnSync('docker', ['run', '--rm', '--mount', `type=bind,source=${directory},target=/test`, '--entrypoint', 'sh', 'nginx:alpine', '/test/run.sh'], {
       cwd: scriptDirectory, encoding: 'utf8', timeout: 180000,

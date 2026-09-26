@@ -268,7 +268,7 @@ try {
 
   // 以可控时间执行同一限速函数，验证到期恢复和内存上限，无需等待十五分钟。
   const limiterSource = serverSource.slice(serverSource.indexOf('const adminLoginAttempts = new Map();'), serverSource.indexOf('function maskKey('));
-  const limiter = vm.runInNewContext(`${limiterSource}\nreserveAdminLoginAttempt`, { crypto });
+  const limiter = vm.runInNewContext(`${limiterSource}\nreserveAdminLoginAttempt`, { crypto, process: { env: {} } });
   for (let index = 0; index < 10; index++) assert.equal(limiter('Admin', 1000).retryAfter, 0);
   assert.equal(limiter(' admin ', 1000).retryAfter, 900);
   assert.equal(limiter('admin', 901000).retryAfter, 0, '到期后恢复尝试');
@@ -305,6 +305,9 @@ try {
   const deployScript = steps.find(step => step.name === 'Reload Nginx').with.script;
   assert.ok(deployScript.includes('cp -a "$deploy_root/frontend/."'));
   assert.ok(deployScript.includes('127.0.0.1:8081:80'));
+  assert.ok(deployScript.includes('_APP_CONSOLE_DOMAIN=console.litzone.art'));
+  assert.ok(deployScript.includes('test -s /etc/letsencrypt/live/console.litzone.art/fullchain.pem'));
+  assert.ok(!deployScript.includes('_APP_CONSOLE_DOMAIN=litzone.art|'));
   assert.ok(!deployScript.includes('- "8081:80"'));
   // Git 路径以仓库根为基准核实，避免子目录 pathspec 漏查。
   const rootTrackedKey = spawnSync('git', ['ls-files', '--', ':(top)github_actions_deploy'], { cwd: scriptDirectory, encoding: 'utf8' });
@@ -313,13 +316,18 @@ try {
 
   if (process.argv.includes('--nginx')) {
     const nginxSource = await readFile(path.join(scriptDirectory, 'nginx-qingyu-web.conf'), 'utf8');
-    assert.equal(nginxSource.split('proxy_redirect ~^(/.*)$ /console$1;').length - 1, 2,
-      'HTTP 与 HTTPS 管理页都必须把上游根路径跳转保留在 /console/ 下');
+    assert.equal(nginxSource.split('server_name console.litzone.art;').length - 1, 2,
+      'HTTP 与 HTTPS 必须分别配置管理台子域名');
+    assert.equal(nginxSource.split('rewrite ^/console/(.*)$ https://console.litzone.art/$1 redirect;').length - 1, 2,
+      '旧管理台路径必须把路径前缀剥掉后跳到新域名');
+    assert.ok(!nginxSource.includes('proxy_redirect ~^(/.*)$ /console$1;'),
+      '管理台不再依赖子路径代理改写上游跳转');
     for (const legacyScript of ['step_nginx.sh', 'step_nginx_api.sh']) {
       const legacySource = await readFile(path.join(scriptDirectory, legacyScript), 'utf8');
-      assert.ok(legacySource.includes('location = /console { return 301 /console/; }'), `${legacyScript} 必须兼容不带尾斜杠的控制台地址`);
-      assert.ok(legacySource.includes('rewrite ^/console/(.*)$ /$1 break;'), `${legacyScript} 必须把控制台入口转发到上游根路径`);
-      assert.ok(legacySource.includes("sub_filter_once off;"), `${legacyScript} 必须改写页面中的全部静态资源链接`);
+      assert.ok(legacySource.includes('此旧脚本已停用'), legacyScript + ' 必须明确停用，避免覆盖现行 Nginx 配置');
+      assert.ok(legacySource.includes('exit 1'), legacyScript + ' 停用后必须拒绝继续执行');
+      assert.ok(!legacySource.includes('sudo tee /etc/nginx/sites-available/qingyu-web'),
+        legacyScript + ' 不能再直接覆盖生产 Nginx 配置');
     }
     await mkdir(path.join(directory, 'www/.well-known/acme-challenge'), { recursive: true });
     await mkdir(path.join(directory, 'www/assets'));
@@ -342,7 +350,9 @@ try {
     const nginxConfig = nginxSource.replaceAll('/var/www/qingyu-web', '/test/www')
       .replaceAll('127.0.0.1:3002', '127.0.0.1:8081')
       .replaceAll('/etc/letsencrypt/live/litzone.art/fullchain.pem', '/test/cert.pem')
-      .replaceAll('/etc/letsencrypt/live/litzone.art/privkey.pem', '/test/key.pem');
+      .replaceAll('/etc/letsencrypt/live/litzone.art/privkey.pem', '/test/key.pem')
+      .replaceAll('/etc/letsencrypt/live/console.litzone.art/fullchain.pem', '/test/cert.pem')
+      .replaceAll('/etc/letsencrypt/live/console.litzone.art/privkey.pem', '/test/key.pem');
     await writeFile(path.join(directory, 'nginx.conf'), `events {}\nhttp { include /etc/nginx/mime.types; access_log off; ${nginxConfig}
 server {
   listen 8081;
@@ -377,45 +387,70 @@ for protocol in http https; do
   done
   curl -ks -o /test/site-assets.js "$protocol://127.0.0.1/assets/app.js"
   grep -q '正常资源' /test/site-assets.js
-  status=$(curl -ks -o /dev/null -w '%{http_code}' "$protocol://127.0.0.1/console")
-  test "$status" = 301
-  curl -ks -D /test/console-headers -o /test/console.html "$protocol://127.0.0.1/console/"
-  grep -q 'href="/console/assets/index.css"' /test/console.html
-  grep -q 'src="/console/assets/index.js"' /test/console.html
-  grep -q 'href="/console/favicon.ico"' /test/console.html
-  grep -q 'href="/console/apple-touch-icon.png"' /test/console.html
-  grep -q 'src="/console/logo.svg"' /test/console.html
-  grep -q 'src="/appwrite-zh.js"' /test/console.html
-  curl -ksS -D /test/console-login-redirect-headers -o /dev/null \
+
+  curl -ksS -D /test/legacy-console-headers -o /dev/null "$protocol://127.0.0.1/console/"
+  grep -qi '^Location: https://console.litzone.art/' /test/legacy-console-headers
+  curl -ksS -D /test/legacy-console-sign-in-headers -o /dev/null "$protocol://127.0.0.1/console/sign-in"
+  grep -qi '^Location: https://console.litzone.art/sign-in' /test/legacy-console-sign-in-headers
+
+  console_http_status=$(curl -ksS --resolve console.litzone.art:80:127.0.0.1 \
+    -o /dev/null -w '%{http_code}' http://console.litzone.art/.well-known/acme-challenge/probe)
+  test "$console_http_status" = 200
+  console_redirect_status=$(curl -ksS --resolve console.litzone.art:80:127.0.0.1 \
+    -D /test/console-http-headers -o /dev/null -w '%{http_code}' http://console.litzone.art/sign-in)
+  test "$console_redirect_status" = 301
+  grep -qi '^Location: https://console.litzone.art/sign-in' /test/console-http-headers
+
+  curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
     -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
-    "$protocol://127.0.0.1/console/"
-  grep -qi '^Location: .*/console/sign-in' /test/console-login-redirect-headers
-  status=$(curl -ks -o /test/console-sign-in -w '%{http_code}' "$protocol://127.0.0.1/console/sign-in")
-  test "$status" = 200
+    -D /test/console-login-redirect-headers -o /dev/null https://console.litzone.art/
+  grep -qi '^Location: /sign-in' /test/console-login-redirect-headers
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 -L \
+    -o /test/console-sign-in -w '%{http_code}|%{url_effective}' \
+    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+    https://console.litzone.art/)
+  test "$status" = '200|https://console.litzone.art/sign-in'
   grep -q 'mock-appwrite-sign-in' /test/console-sign-in
-  curl -ks -o /test/appwrite-zh.js "$protocol://127.0.0.1/appwrite-zh.js"
+
+  curl -ksS --resolve console.litzone.art:443:127.0.0.1 -o /test/console.html \
+    -H 'Accept: */*' https://console.litzone.art/
+  grep -q 'href="/assets/index.css"' /test/console.html
+  grep -q 'src="/assets/index.js"' /test/console.html
+  grep -q 'src="/appwrite-zh.js"' /test/console.html
+  curl -ksS --resolve console.litzone.art:443:127.0.0.1 -o /test/appwrite-zh.js \
+    https://console.litzone.art/appwrite-zh.js
   grep -q 'appwriteTranslationLoaded = true' /test/appwrite-zh.js
-  status=$(curl -ks -o /test/console.css -w '%{http_code}|%{content_type}' "$protocol://127.0.0.1/console/assets/index.css")
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console.css -w '%{http_code}|%{content_type}' https://console.litzone.art/assets/index.css)
   test "$status" = '200|text/css'
   grep -q 'APPWRITE_CONSOLE_CSS' /test/console.css
-  status=$(curl -ks -o /test/console.js -w '%{http_code}' "$protocol://127.0.0.1/console/assets/index.js")
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console.js -w '%{http_code}' https://console.litzone.art/assets/index.js)
   test "$status" = 200
   grep -q 'APPWRITE_CONSOLE_JS' /test/console.js
-  status=$(curl -ks -o /test/console-logo.svg -w '%{http_code}' "$protocol://127.0.0.1/console/logo.svg")
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console-logo.svg -w '%{http_code}' https://console.litzone.art/logo.svg)
   test "$status" = 200
   grep -q 'APPWRITE_CONSOLE_LOGO' /test/console-logo.svg
-  status=$(curl -ks -o /test/console-favicon.ico -w '%{http_code}' "$protocol://127.0.0.1/console/favicon.ico")
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console-favicon.ico -w '%{http_code}' https://console.litzone.art/favicon.ico)
   test "$status" = 200
   grep -q 'APPWRITE_CONSOLE_FAVICON' /test/console-favicon.ico
-  status=$(curl -ks -o /test/console-touch-icon.png -w '%{http_code}' "$protocol://127.0.0.1/console/apple-touch-icon.png")
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console-touch-icon.png -w '%{http_code}' https://console.litzone.art/apple-touch-icon.png)
   test "$status" = 200
   grep -q 'APPWRITE_CONSOLE_TOUCH_ICON' /test/console-touch-icon.png
+
   status=$(curl -ks -o /test/api-config -w '%{http_code}' "$protocol://127.0.0.1/api/config/public")
   test "$status" = 200
   grep -q 'mock-qingyu-api' /test/api-config
   status=$(curl -ks -o /test/appwrite-health -w '%{http_code}' "$protocol://127.0.0.1/v1/health/version")
   test "$status" = 200
   grep -q 'mock-appwrite' /test/appwrite-health
+  status=$(curl -ksS --resolve console.litzone.art:443:127.0.0.1 \
+    -o /test/console-appwrite-health -w '%{http_code}' https://console.litzone.art/v1/health/version)
+  test "$status" = 200
+  grep -q 'mock-appwrite' /test/console-appwrite-health
   status=$(head -c 9000 /dev/zero | curl -ks -o /dev/null -w '%{http_code}' --data-binary @- "$protocol://127.0.0.1/api/admin/login")
   test "$status" = 413
 done

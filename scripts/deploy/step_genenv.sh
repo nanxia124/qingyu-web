@@ -15,7 +15,7 @@ sed -i "s|^_APP_DOMAIN=.*|_APP_DOMAIN=litzone.art|" .env
 sed -i "s|^_APP_DOMAIN_FUNCTIONS=.*|_APP_DOMAIN_FUNCTIONS=litzone.art|" .env
 sed -i "s|^_APP_DOMAIN_SITES=.*|_APP_DOMAIN_SITES=litzone.art|" .env
 sed -i "s|^_APP_DOMAIN_TARGET_A=.*|_APP_DOMAIN_TARGET_A=litzone.art|" .env
-sed -i "s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=litzone.art|" .env
+sed -i "s|^_APP_CONSOLE_DOMAIN=.*|_APP_CONSOLE_DOMAIN=console.litzone.art|" .env
 sed -i "s|^_APP_DB_PASS=.*|_APP_DB_PASS=${DB_PASS}|" .env
 sed -i "s|^_APP_DB_ROOT_PASS=.*|_APP_DB_ROOT_PASS=${DB_ROOT_PASS}|" .env
 sed -i "s|^_APP_EXECUTOR_SECRET=.*|_APP_EXECUTOR_SECRET=${EXEC_SECRET}|" .env

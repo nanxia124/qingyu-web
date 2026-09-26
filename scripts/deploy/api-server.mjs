@@ -411,6 +411,31 @@ function reserveAdminLoginAttempt(username, now = Date.now()) {
   return { key, retryAfter: 0 };
 }
 
+function getClientIp(req) {
+  const cf = req.headers["cf-connecting-ip"];
+  if (cf) return String(cf).trim();
+  const xff = req.headers["x-forwarded-for"];
+  if (xff) return String(xff).split(",")[0].trim();
+  return req.socket?.remoteAddress || "";
+}
+
+const ADMIN_ALLOWED_IPS = new Set(String(process.env.ADMIN_ALLOWED_IPS || "").split(",").map(s => s.trim()).filter(Boolean));
+const TURNSTILE_SECRET_KEY = String(process.env.TURNSTILE_SECRET_KEY || "").trim();
+
+async function verifyTurnstile(token, ip) {
+  if (!TURNSTILE_SECRET_KEY) return true;
+  if (!token) return false;
+  try {
+    const body = new URLSearchParams({ secret: TURNSTILE_SECRET_KEY, response: token });
+    if (ip) body.set("remoteip", ip);
+    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body });
+    const data = await r.json();
+    return !!data.success;
+  } catch {
+    return false;
+  }
+}
+
 function maskKey(key) {
   if (!key || key.length <= 8) return "****";
   return key.slice(0, 4) + "..." + key.slice(-4);
@@ -1772,7 +1797,8 @@ async function handleBilling(req, res, pathname, method, url) {
     // GET /api/billing/me
     if (pathname === "/api/billing/me" && method === "GET") {
       if (postgresBilling) {
-        const userOut = { ...me };
+        const sessionStatus = await postgresBilling.getSessionStatus(identity.sub, identity.sid || "");
+        const userOut = { ...me, admissionStatus: sessionStatus.admissionStatus };
         return sendJSON(res, 200, { user: userOut, settings: { currency: "CNY", inviteCode: me.inviteCode, inviteRewardQuota: 0 } });
       }
       return sendJSON(res, 200, { user: publicUser(me), settings: {
@@ -3172,6 +3198,14 @@ location.href = 'http://localhost:5173/';
         || typeof body.password !== "string" || body.password.length > 1024) {
         return sendJSON(res, 400, { error: "请输入有效的用户名和密码" });
       }
+      const clientIp = getClientIp(req);
+      if (ADMIN_ALLOWED_IPS.size > 0 && !ADMIN_ALLOWED_IPS.has(clientIp)) {
+        return sendJSON(res, 403, { error: "当前网络不允许登录管理员后台" });
+      }
+      if (TURNSTILE_SECRET_KEY) {
+        const ok = await verifyTurnstile(typeof body.turnstileToken === "string" ? body.turnstileToken : "", clientIp);
+        if (!ok) return sendJSON(res, 400, { error: "人机验证失败，请重试" });
+      }
       const attempt = postgresBilling
         ? await postgresBilling.reserveAdminLoginAttempt(body.username)
         : reserveAdminLoginAttempt(body.username);
@@ -3248,6 +3282,36 @@ location.href = 'http://localhost:5173/';
         }
         return sendJSON(res, 404, { error: "会话接口不存在" });
       } catch (error) { return sendJSON(res, 400, { error: error.message || "会话操作失败" }); }
+    }
+
+    // 设备登录冲突确认：待确认设备查自己状态/自助接管或取消；在线设备轮询新请求并允许/拒绝。
+    if (postgresBilling && (pathname === "/api/billing/session-status" || pathname === "/api/billing/pending-takeover" || pathname.startsWith("/api/billing/pending-takeover/"))) {
+      const identity = getBillingIdentity(req);
+      if (!identity || identity.role !== "customer") return sendJSON(res, 401, { error: "未登录或登录已过期" });
+      try {
+        if (pathname === "/api/billing/session-status" && method === "GET") {
+          return sendJSON(res, 200, await postgresBilling.getSessionStatus(identity.sub, identity.sid || ""));
+        }
+        if (pathname === "/api/billing/pending-takeover" && method === "GET") {
+          const activeOk = await postgresBilling.isSessionActive(identity.sub, identity.sid || "");
+          if (!activeOk) return sendJSON(res, 200, { request: null });
+          return sendJSON(res, 200, { request: await postgresBilling.getPendingTakeover(identity.sub) });
+        }
+        const m = pathname.match(/^\/api\/billing\/pending-takeover\/([^/]+)\/(activate|deny)$/);
+        if (m && method === "POST") {
+          const targetSid = m[1];
+          const action = m[2];
+          const isSelf = targetSid === identity.sid;
+          if (!isSelf && !(await postgresBilling.isSessionActive(identity.sub, identity.sid || ""))) {
+            return sendJSON(res, 403, { error: "当前设备无权处理该登录请求" });
+          }
+          const result = action === "activate"
+            ? await postgresBilling.admitPendingSession(identity.sub, targetSid)
+            : await postgresBilling.denyPendingSession(identity.sub, targetSid);
+          return sendJSON(res, 200, result);
+        }
+        return sendJSON(res, 404, { error: "接口不存在" });
+      } catch (error) { return sendJSON(res, 400, { error: error.message || "操作失败" }); }
     }
 
     // 新版业务 Token 带数据库会话编号；会话被撤销或被另一台设备接管后，业务请求立即拒绝。

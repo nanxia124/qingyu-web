@@ -8,6 +8,29 @@ export default {
         welcome: "欢迎来到",
         documentTitle: "LitZone · 全球视觉设计师、创作者/团队的智能AI创意助手 ~",
     },
+
+    takeover: {
+        newTitle: "检测到其他设备正在使用",
+        newDesc: "另一台设备正在使用本账号：{{device}}。切到这台设备后，旧设备会自动下线。",
+        takeOver: "切到这台设备",
+        cancel: "取消",
+        waiting: "等待确认中…",
+        denied: "登录请求已被其他设备拒绝",
+        expired: "登录确认已超时，请重新登录",
+        oldTitle: "检测到新设备登录",
+        oldDesc: "有一台新设备（{{device}}）正在请求登录本账号。",
+        leakWarn: "如果这不是你本人操作，可能是密码已经泄露，请立即修改密码。",
+        allow: "允许并下线本机",
+        deny: "拒绝",
+        changePwd: "去修改密码",
+        pwdTitle: "修改密码",
+        oldPwd: "当前密码",
+        newPwd: "新密码",
+        confirmPwd: "确认新密码",
+        changing: "修改中…",
+        pwdChanged: "密码已修改，请重新登录",
+        deviceUnknown: "未知设备",
+    },
     mainHome: {
         searchPlaceholder: "搜索灵感、作品、教程…",
         invite: "邀请有礼",
@@ -269,7 +292,7 @@ export default {
         resetPwd: { invalid: "无效的重置链接，请重新申请", invalidOnly: "无效的重置链接", pwdMin: "密码至少 8 位", mismatch: "两次输入的密码不一致", success: "密码重置成功，正在跳转登录...", failed: "重置失败", failedRetry: "重置失败，请稍后重试", title: "重置密码", subtitle: "请设置新密码", newPwdPh: "新密码（至少8位）", confirmPh: "确认新密码", submitting: "提交中...", confirm: "确认重置", backHome: "返回首页", pwdNeedLetterAndDigit: "密码必须同时包含字母和数字", pwMatch: "两次输入一致" },
         plan: { market: "市场分析", vision: "视觉战略", compliance: "合规审查", export: "导出成果", title: "AI 全案策划", subtitle: "输入产品信息，自动完成市场分析 → 视觉战略 → 合规审查 → 导出全案", productPh: "产品名称 / 品牌，例如：LITZONE 会员订阅", bgPh: "补充目标用户、投放平台、预算等背景（可选）", running: "策划生成中…", start: "开始生成全案" },
         admin: {
-            login: { failed: "登录失败", title: "管理后台登录", username: "用户名", password: "密码", loading: "登录中...", login: "登录" },
+            login: { failed: "登录失败", title: "管理后台登录", username: "用户名", password: "密码", loading: "登录中...", login: "登录", turnstileRequired: "请完成人机验证" },
             audits: { title: "审计日志", searchPh: "搜索操作或用户...", loading: "加载中...", did: "执行了" },
             tenants: { title: "租户管理", searchPh: "搜索租户名称...", loading: "加载中...", tenant: "租户", plan: "计划", members: "成员数", status: "状态", created: "创建时间", action: "操作", people: "人", normal: "正常", disabled: "已禁用" },
             users: { title: "用户管理", searchPh: "搜索用户邮箱或昵称...", loading: "加载中...", user: "用户", status: "状态", registered: "注册时间", lastLogin: "最后登录", action: "操作", normal: "正常", disabled: "已禁用" },
@@ -1000,7 +1023,8 @@ export default {
             imageTooLarge: "图片过大", imagePayloadTooLarge: "图片附件超过 30MB，请删减后再发送。", imagesSent: "发送了 {{count}} 张图片", canvasReferencesSent: "引用了 {{count}} 个画布素材", someCanvasReferencesMissing: "部分引用的画布素材已不存在", canvasReferencesMissing: "引用的画布素材已不存在，请重新选择", readingCanvasImages: "正在读取画布图片", canvasImageReadFailed: "画布图片读取失败", tooManyImages: "图片数量过多", imageCountLimit: "上传图片和引用的画布图片合计最多 {{count}} 张。", sending: "发送中", defaultModel: "默认模型", defaultEffort: "默认强度", sendTask: "发送任务", attachmentCount: "附件 {{count}}", canvasReferenceCount: "画布素材 {{count}}", attachmentsOnly: "仅附件", canvasReferencesOnly: "画布素材", startConversationFailed: "启动对话失败", attachmentHistoryFailed: "保存附件历史失败", sendFailed: "发送失败", conversationSynced: "会话已同步", taskStillRunning: "任务仍在运行", stopping: "停止中", stopTask: "停止任务", taskStopped: "任务已停止", stopFailed: "停止失败", imageLimit: "图片附件最多约 30MB。", imageReadFailed: "图片读取失败", pendingCanvasTool: "仍有待确认的画布工具调用", awaitingConfirmation: "等待确认", toolCompleted: "{{tool}}完成", toolExecutionFailed: "工具执行失败", openCanvasFirst: "当前不在画布页，请先用 site_navigate 打开画布", canvasOperationFailed: "画布操作失败", canvasToolCanceled: "用户取消了画布工具调用",
             submittingApproval: "正在提交权限决定", waitingCodexApproval: "等待 Agent 确认权限", approvalFailed: "权限审批失败", enableFullAccess: "启用完全访问权限", fullAccessDescription: "Agent 将不受沙箱限制，可访问互联网及本机任意文件。请仅在信任当前任务时使用。", enableFullAccessAction: "启用完全访问", offline: "离线", addressRequired: "请检查服务配置", agentNotFound: "服务暂不可用，请稍后重试", invalidAddress: "服务配置异常，请联系管理员", connecting: "连接中", creatingConversation: "正在新建对话", newConversation: "新对话", newConversationFailed: "新建对话失败", conversationResumed: "已恢复会话", resumeConversationFailed: "恢复对话失败", recordsDeleted: "已删除 {{count}} 条记录", deleteConversationFailed: "删除对话失败", deleteConversations: "删除 {{count}} 条对话记录", deleteConversationsDescription: "删除后无法恢复，确定继续吗？", importGeneratedImages: "导入生成图片", addedToSourceCanvas: "已添加到发起任务的画布", imageGenerated: "图片已生成", noImageAttachments: "没有可添加的图片附件", invalidAttachmentNode: "图片附件节点参数无效", attachmentReadFailed: "读取图片附件失败", referenceImage: "参考图", generatedImageReadFailed: "读取 Codex 生成图片失败", generatedImageName: "生成图片 {{index}}",
         },
-    },
+    },
+
     simpleChat: {
         newConversation: "新建对话",
         historyEmpty: "还没有历史对话",

@@ -1,7 +1,17 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from 'react-i18next'
 
 const API = import.meta.env.VITE_API_URL || "";
+const TURNSTILE_SITEKEY = import.meta.env.VITE_TURNSTILE_SITEKEY || "";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: any) => string;
+      reset: (id?: string) => void;
+    };
+  }
+}
 
 export default function AdminLogin({ onLogin }: { onLogin: (token: string) => void }) {
     const { t } = useTranslation()
@@ -9,16 +19,41 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [turnstileToken, setTurnstileToken] = useState("");
+    const turnstileRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!TURNSTILE_SITEKEY || !window.turnstile || !turnstileRef.current) return;
+        window.turnstile.render(turnstileRef.current, {
+            sitekey: TURNSTILE_SITEKEY,
+            callback: (token: string) => setTurnstileToken(token),
+            "expired-callback": () => setTurnstileToken(""),
+        });
+    }, []);
+
+    useEffect(() => {
+        if (!TURNSTILE_SITEKEY) return;
+        const s = document.createElement("script");
+        s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        s.async = true;
+        s.defer = true;
+        document.head.appendChild(s);
+        return () => { s.remove(); };
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
+        if (TURNSTILE_SITEKEY && !turnstileToken) {
+            setError(t("pages.admin.login.turnstileRequired"));
+            return;
+        }
         setLoading(true);
         try {
             const res = await fetch(`${API}/api/admin/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password, turnstileToken }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || t("pages.admin.login.failed"));
@@ -26,6 +61,8 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
             onLogin(data.token);
         } catch (err: any) {
             setError(err.message);
+            if (window.turnstile) window.turnstile.reset();
+            setTurnstileToken("");
         } finally {
             setLoading(false);
         }
@@ -55,6 +92,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
                             className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none focus:ring-2 focus:ring-accent"
                         />
                     </div>
+                    {TURNSTILE_SITEKEY && <div ref={turnstileRef} />}
                     <button
                         type="submit"
                         disabled={loading}

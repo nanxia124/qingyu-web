@@ -790,7 +790,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             const res = await fetch(`${API}/api/admin/change-password`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ oldPassword: pwForm.oldPassword, newPassword: pwForm.newPassword }),
+                body: JSON.stringify({ oldPassword: pwForm.oldPassword, newPassword: pwForm.newPassword, confirmPassword: pwForm.confirmPassword }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);

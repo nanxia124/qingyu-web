@@ -36,6 +36,7 @@ jobs:
         env:
           # Google OAuth / Appwrite 回调地址必须固定为生产正式域名，不能跟随访问者的 www 或旧域名。
           VITE_OAUTH_ORIGIN: https://litzone.art
+          VITE_TURNSTILE_SITEKEY: 0x4AAAAAAFEaP6-PGvO0P8WF
         run: npm run build
 
       - name: Verify duplicate speech model archive is excluded

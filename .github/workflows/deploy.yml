@@ -93,7 +93,7 @@ jobs:
             test -s "$nginx_conf"
             grep -q 'server_name console.litzone.art;' "$nginx_conf"
             test -s /etc/letsencrypt/live/console.litzone.art/fullchain.pem
-            test -s /etc/letsencrypt/live/console.litzone.art/privkey.pem
+            sudo test -s /etc/letsencrypt/live/console.litzone.art/privkey.pem
             sudo mkdir -p /var/www/qingyu-web
             sudo cp -a "$deploy_root/frontend/." /var/www/qingyu-web/
             sudo chown -R www-data:www-data /var/www/qingyu-web

@@ -102,8 +102,8 @@ export type AgentChatMessageItem = {
     attachments?: AgentChatAttachment[];
     canvasReferences?: AgentCanvasReference[];
     skill?: AgentSkillReference;
-    /** Present while the message is actively streaming; cleared on completion. */
     streamId?: string;
+    failed?: boolean;
 };
 
 export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool, onRegenerate, onEditMessage }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void; onRegenerate?: () => void; onEditMessage?: (id: string) => void }) {

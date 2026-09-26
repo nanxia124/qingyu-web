@@ -1724,7 +1724,7 @@ async function handleBilling(req, res, pathname, method, url) {
         return sendJSON(res, 401, { error: "登录身份校验失败，请重新登录" });
       }
       if (postgresBilling) {
-        const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "", appwriteUser.$createdAt);
+        const user = await postgresBilling.ensureUser(body.userId, body.email || "", body.inviteCode || "", appwriteUser.$createdAt, appwriteUser.name || "");
         const session = await postgresBilling.registerSession(body.userId, {
           installationId: body.installationId,
           displayName: body.displayName,
@@ -1965,6 +1965,22 @@ async function handleBilling(req, res, pathname, method, url) {
     }
 
     return false;
+  }
+
+  // ---------- 管理端：/api/admin/users ----------
+  if (pathname === "/api/admin/users" && method === "GET") {
+    const adminIdentity = getBillingIdentity(req);
+    if (!adminIdentity || adminIdentity.role !== "admin") {
+      return sendJSON(res, 403, { error: "无管理员权限" });
+    }
+    if (postgresBilling) {
+      return sendJSON(res, 200, await postgresBilling.adminListUsers({ search: url.searchParams.get("search") || "" }));
+    }
+    const kw = String(url.searchParams.get("search") || "").toLowerCase();
+    const list = billingUsers
+      .filter((u) => !kw || (u.email || "").toLowerCase().includes(kw))
+      .map((u) => ({ id: u.id, email: u.email || "", name: (u.email || "").split("@")[0], status: "active", createdAt: u.createdAt || 0 }));
+    return sendJSON(res, 200, list);
   }
 
   // ---------- 管理端：/api/admin/billing/* ----------

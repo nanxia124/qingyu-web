@@ -366,6 +366,18 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
         await client.query('commit');
         return { id: existing.rows[0].id, deviceId: existing.rows[0].device_id, installationId, expiresAt: new Date(existing.rows[0].expires_at).toISOString(), maxActiveSessions: Number(user.rows[0].max_active_sessions || 3) };
       }
+      // 新设备：若已有其他设备在线，先建 pending 会话等双方确认，不直接挤人。
+      const online = await client.query(`select s.id,s.device_id,s.last_seen_at,d.display_name,d.client_type,d.os_family,d.browser_family
+        from app.user_sessions s join app.user_devices d on d.id=s.device_id
+        where s.user_id=$1 and s.admission_status='active' and s.is_online=true and s.expires_at > now() and s.device_id<>$2 limit 1`, [user.rows[0].id, device.rows[0].id]);
+      if (online.rowCount) {
+        await client.query(`update app.user_sessions set admission_status='denied' where user_id=$1 and admission_status='pending' and expires_at > now()`, [user.rows[0].id]);
+        const pending = await client.query(`insert into app.user_sessions(user_id,device_id,identity_provider,provider_session_id,admission_status,is_online,expires_at,last_seen_at,admitted_auth_version)
+          values($1,$2,'qingyu',$3,'pending',false,now()+interval '10 minutes',now(),(select auth_version from app.user_accounts where id=$1)) returning id,device_id,expires_at`, [user.rows[0].id, device.rows[0].id, providerSessionId]);
+        await client.query('commit');
+        const od = online.rows[0];
+        return { id: pending.rows[0].id, deviceId: pending.rows[0].device_id, installationId, pending: true, expiresAt: new Date(pending.rows[0].expires_at).toISOString(), maxActiveSessions: Number(user.rows[0].max_active_sessions || 3), currentDevice: { deviceId: od.device_id, displayName: od.display_name, clientType: od.client_type, osFamily: od.os_family, browserFamily: od.browser_family, lastSeenAt: od.last_seen_at ? new Date(od.last_seen_at).toISOString() : null } };
+      }
       const active = await client.query(`select id from app.user_sessions where user_id=$1 and admission_status in ('pending','active') and expires_at > now() order by created_at desc`, [user.rows[0].id]);
       const keep = Math.max(1, Number(user.rows[0].max_active_sessions || 3) - 1);
       for (const old of active.rows.slice(keep)) {
@@ -436,6 +448,60 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
       const changed = await client.query(`update app.user_sessions set admission_status='revoked',is_online=false,revoked_at=now(),revoked_reason='user_request',provider_revocation_status='pending',revoke_retry_at=now() where id=$1 and user_id=$2 and admission_status in ('pending','active') and expires_at > now() returning id`, [sessionId, user.rows[0].id]);
       if (!changed.rowCount) throw new Error('会话不存在或已经失效');
       await client.query(`insert into app.session_actions(actor_user_id,target_user_id,target_session_id,action_type,reason) values($1,$1,$2,'revoke_one','user_request')`, [user.rows[0].id, sessionId]);
+      await client.query('commit');
+      return { success: true, sessionId };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function getSessionStatus(appwriteUserId, sessionId) {
+    if (!sessionId) return { admissionStatus: 'none' };
+    const r = await pool.query(`select s.id,s.admission_status,s.expires_at from app.user_sessions s join app.user_accounts u on u.id=s.user_id where u.appwrite_user_id=$1 and s.id=$2`, [appwriteUserId, sessionId]);
+    if (!r.rowCount) return { admissionStatus: 'none' };
+    let status = r.rows[0].admission_status;
+    if ((status === 'pending' || status === 'active') && new Date(r.rows[0].expires_at).getTime() <= Date.now()) status = 'expired';
+    return { admissionStatus: status, sessionId: r.rows[0].id, expiresAt: new Date(r.rows[0].expires_at).toISOString() };
+  }
+
+  async function getPendingTakeover(appwriteUserId) {
+    const r = await pool.query(`select s.id,s.created_at,d.display_name,d.client_type,d.os_family,d.browser_family
+      from app.user_sessions s join app.user_accounts u on u.id=s.user_id join app.user_devices d on d.id=s.device_id
+      where u.appwrite_user_id=$1 and s.admission_status='pending' and s.expires_at > now()
+      order by s.created_at desc limit 1`, [appwriteUserId]);
+    if (!r.rowCount) return null;
+    const x = r.rows[0];
+    return { sessionId: x.id, device: { displayName: x.display_name, clientType: x.client_type, osFamily: x.os_family, browserFamily: x.browser_family }, createdAt: new Date(x.created_at).toISOString() };
+  }
+
+  async function admitPendingSession(appwriteUserId, sessionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id,max_active_sessions from app.user_accounts where appwrite_user_id=$1 and status='active' for update`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const target = await client.query(`select id from app.user_sessions where id=$1 and user_id=$2 and admission_status='pending' and expires_at > now() for update`, [sessionId, user.rows[0].id]);
+      if (!target.rowCount) throw new Error('待确认登录不存在或已过期');
+      const active = await client.query(`select id from app.user_sessions where user_id=$1 and admission_status in ('pending','active') and expires_at > now() order by created_at desc`, [user.rows[0].id]);
+      const keep = Math.max(1, Number(user.rows[0].max_active_sessions || 3));
+      for (const old of active.rows.slice(keep)) {
+        await client.query(`update app.user_sessions set admission_status='revoked',revoked_at=now(),revoked_reason='session_limit',provider_revocation_status='pending',revoke_retry_at=now() where id=$1`, [old.id]);
+      }
+      await client.query(`update app.user_sessions set is_online=false where user_id=$1 and admission_status='active'`, [user.rows[0].id]);
+      await client.query(`update app.user_sessions set admission_status='active',is_online=true,last_seen_at=now() where id=$1`, [sessionId]);
+      await client.query(`insert into app.session_actions(actor_user_id,target_user_id,target_session_id,action_type,reason) values($1,$1,$2,'admit_takeover','user_confirm')`, [user.rows[0].id, sessionId]);
+      await client.query('commit');
+      return { success: true, sessionId };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async function denyPendingSession(appwriteUserId, sessionId) {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const user = await client.query(`select id from app.user_accounts where appwrite_user_id=$1 and status='active'`, [appwriteUserId]);
+      if (!user.rowCount) throw new Error('用户不存在，请重新登录');
+      const changed = await client.query(`update app.user_sessions set admission_status='denied' where id=$1 and user_id=$2 and admission_status='pending' and expires_at > now() returning id`, [sessionId, user.rows[0].id]);
+      if (!changed.rowCount) throw new Error('待确认登录不存在或已处理');
+      await client.query(`insert into app.session_actions(actor_user_id,target_user_id,target_session_id,action_type,reason) values($1,$1,$2,'deny_takeover','user_deny')`, [user.rows[0].id, sessionId]);
       await client.query('commit');
       return { success: true, sessionId };
     } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
@@ -3498,5 +3564,5 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getSignupGiftPolicy, setSignupGiftPolicy, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminListUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, listPlatformApiKeysForRuntime, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, fetchPlatformApiKeyModels, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, shareAssetToTeamWorkspace, createGenerationTask, getGenerationTask, settleTextTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, getSessionStatus, getPendingTakeover, admitPendingSession, denyPendingSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getSignupGiftPolicy, setSignupGiftPolicy, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminListUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, listPlatformApiKeysForRuntime, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, fetchPlatformApiKeyModels, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, shareAssetToTeamWorkspace, createGenerationTask, getGenerationTask, settleTextTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

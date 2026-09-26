@@ -26,6 +26,7 @@ import EnvironmentBadge from '@/components/EnvironmentBadge'
 import { cn } from '@/lib/utils'
 import AuthModal from '@/components/AuthModal'
 import InviteModal from '@/components/InviteModal'
+import TakeoverGuard from '@/components/TakeoverGuard'
 import { RouteErrorBoundary } from '@/components/states/RouteErrorBoundary'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useBillingStore } from '@/stores/useBillingStore'
@@ -519,6 +520,9 @@ export default function AppLayout() {
 
       {/* 邀请有礼弹窗 */}
       {inviteModalOpen && <InviteModal onClose={() => setInviteModalOpen(false)} />}
+
+      {/* 设备登录冲突确认（新设备接管 / 旧设备允许或拒绝） */}
+      <TakeoverGuard />
 
       {/* 首次访问语言建议：顶部居中提示，不阻塞页面操作 */}
       {suggested && (

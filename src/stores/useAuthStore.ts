@@ -267,8 +267,12 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem(BILLING_TOKEN_USER_KEY);
         const appwriteJwt = await account.createJWT();
         const inviteCode = new URLSearchParams(window.location.search).get('invite') || undefined;
-        await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode, appwriteJwt: appwriteJwt.jwt });
+        const loginRes = await billingApi.login({ userId: authUser.id, email: authUser.email, inviteCode, appwriteJwt: appwriteJwt.jwt });
         localStorage.setItem(BILLING_TOKEN_USER_KEY, authUser.id);
+        if (loginRes?.session?.pending) {
+          try { sessionStorage.setItem("pending_takeover_device", JSON.stringify(loginRes.session.currentDevice || {})); } catch { /* ignore */ }
+          return;
+        }
         try {
           const postgresTeams = await api.get<Team[]>("/teams");
           set({ teams: postgresTeams, currentTeam: postgresTeams[0] || null });

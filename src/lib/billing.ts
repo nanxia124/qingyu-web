@@ -55,6 +55,7 @@ export interface BillingUser {
   totalSpent: number;
   workspaceId?: string;
   createdAt: number;
+  admissionStatus?: "pending" | "active" | "denied" | "expired" | "none";
 }
 export interface ModelCreditQuote {
   id: string;
@@ -154,6 +155,10 @@ export const billingApi = {
     request("/api/billing/login", { method: "POST", body: { ...getBrowserDeviceInfo(navigator.userAgent, navigator.platform), ...body, installationId: body.installationId || getInstallationId(), clientType: body.clientType || "web" } }),
   logout: () => request<{ success: boolean }>("/api/billing/logout", { method: "POST", body: {} }),
   me: () => request<{ user: BillingUser; settings: any }>("/api/billing/me"),
+  sessionStatus: () => request<{ admissionStatus: string; sessionId?: string; expiresAt?: string }>("/api/billing/session-status"),
+  pendingTakeover: () => request<{ request: null | { sessionId: string; device: { displayName?: string; clientType?: string; osFamily?: string; browserFamily?: string }; createdAt: string } }>("/api/billing/pending-takeover"),
+  activateTakeover: (sessionId: string) => request<{ success: boolean }>(`/api/billing/pending-takeover/${sessionId}/activate`, { method: "POST", body: {} }),
+  denyTakeover: (sessionId: string) => request<{ success: boolean }>(`/api/billing/pending-takeover/${sessionId}/deny`, { method: "POST", body: {} }),
   quote: (body: { model: string; taskType: ModelCreditQuote["taskType"]; prompt?: string; parameters?: Record<string, unknown>; quantity?: number }) =>
     request<ModelCreditQuote>("/api/billing/quote", { method: "POST", body }),
   renewalStatus: () => request<RenewalStatus>("/api/billing/renewal-status"),

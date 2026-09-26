@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
-import { App as AntdApp } from "antd";
+import { App as AntdApp, InputNumber } from "antd";
 import { useTranslation } from 'react-i18next'
 import { adminBillingApi, type BillingUser, type Order, type Plan, type InvoiceRequest } from "@/lib/billing";
-import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, FileText } from "lucide-react";
+import { Users as UsersIcon, Receipt, Ticket, Crown, Wallet, Save, FileText, Gift } from "lucide-react";
 
 export default function AdminBillingPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "invoices">("stats");
+  const { message } = AntdApp.useApp();
+  const [tab, setTab] = useState<"stats" | "users" | "orders" | "codes" | "plans" | "invoices" | "signup-gift">("stats");
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<BillingUser[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -15,6 +16,8 @@ export default function AdminBillingPage() {
   const [invoices, setInvoices] = useState<(InvoiceRequest & { userEmail?: string })[]>([]);
   const [plansDraft, setPlansDraft] = useState<Record<string, Plan>>({});
   const [savingPlanId, setSavingPlanId] = useState<string>("");
+  const [signupGiftDraft, setSignupGiftDraft] = useState<number | null>(null);
+  const [savingSignupGift, setSavingSignupGift] = useState(false);
   const [msg, setMsg] = useState("");
   // 生成兑换码表单
   const [genForm, setGenForm] = useState({ count: 10, denomination: 100, kind: "quota", days: 0 });
@@ -35,6 +38,10 @@ export default function AdminBillingPage() {
         const draft: Record<string, Plan> = {};
         list.forEach(p => { draft[p.id] = { ...p, features: [...p.features] }; });
         setPlansDraft(draft);
+      }
+      if (t === "signup-gift") {
+        const policy = await adminBillingApi.signupGift();
+        setSignupGiftDraft(policy.amount);
       }
     } catch (e: any) {
       setMsg(e.message);
@@ -128,6 +135,22 @@ export default function AdminBillingPage() {
       }
     });
   };
+  const saveSignupGift = async () => {
+    if (signupGiftDraft == null || !Number.isFinite(signupGiftDraft) || signupGiftDraft < 0) {
+      message.error(t("pages.admin.signupGift.invalid"));
+      return;
+    }
+    setSavingSignupGift(true);
+    try {
+      const policy = await adminBillingApi.updateSignupGift(signupGiftDraft);
+      setSignupGiftDraft(policy.amount);
+      message.success(t("pages.admin.signupGift.saved"));
+    } catch (error: any) {
+      message.error(error.message || t("pages.admin.signupGift.saveFailed"));
+    } finally {
+      setSavingSignupGift(false);
+    }
+  };
   const updatePlanDraft = (planId: string, field: keyof Plan, value: any) => {
     setPlansDraft(prev => ({
       ...prev,
@@ -142,6 +165,7 @@ export default function AdminBillingPage() {
     ["invoices", "发票审核", FileText],
     ["codes", t("pages.admin.billing.tabs.codes"), Ticket],
     ["plans", t("pages.admin.billing.tabs.plans"), Crown],
+    ["signup-gift", t("pages.admin.signupGift.tab"), Gift],
   ];
 
   return (
@@ -177,6 +201,38 @@ export default function AdminBillingPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {tab === "signup-gift" && (
+        <section className="max-w-xl rounded-xl bg-card p-5">
+          <h2 className="text-base font-semibold text-text">{t("pages.admin.signupGift.title")}</h2>
+          <p className="mt-2 text-sm text-gray-500">{t("pages.admin.signupGift.description")}</p>
+          <div className="mt-5 flex items-center gap-3">
+            <label htmlFor="signup-gift-amount" className="text-sm text-text">{t("pages.admin.signupGift.amount")}</label>
+            <InputNumber
+              id="signup-gift-amount"
+              min={0}
+              max={99999999999999}
+              precision={6}
+              value={signupGiftDraft}
+              onChange={value => setSignupGiftDraft(value)}
+              disabled={savingSignupGift}
+              bordered={false}
+              className="bg-secondary px-2 py-1 text-text"
+              aria-label={t("pages.admin.signupGift.amount")}
+            />
+            <span className="text-sm text-gray-500">{t("pages.admin.signupGift.unit")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={saveSignupGift}
+            disabled={savingSignupGift || signupGiftDraft == null}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
+          >
+            <Save size={15} />
+            {savingSignupGift ? t("pages.admin.signupGift.saving") : t("pages.admin.signupGift.save")}
+          </button>
+        </section>
       )}
 
       {/* 用户 */}

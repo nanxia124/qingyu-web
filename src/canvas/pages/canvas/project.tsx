@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Group, Video } from "lucide-react";
@@ -45,7 +45,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@canvas/components/ca
 import { CanvasSidePanel } from "@canvas/components/canvas/canvas-side-panel";
 import { CanvasZoomControls } from "@canvas/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@canvas/stores/use-agent-store";
-import { acknowledgeCanvasSyncIssue, subscribeCanvasSyncIssues, useCanvasStore } from "@canvas/stores/canvas/use-canvas-store";
+import { acceptRemoteCanvasVersion, acknowledgeCanvasSyncIssue, forcePushLocalCanvas, subscribeCanvasSyncIssues, useCanvasStore } from "@canvas/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@canvas/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@canvas/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@canvas/lib/canvas/canvas-resource-references";
@@ -161,12 +161,20 @@ function InfiniteCanvasPage() {
     useEffect(() => subscribeCanvasSyncIssues((issue) => {
         if (issue.projectId !== projectId) return;
         if (issue.kind === "VERSION_CONFLICT") {
-            message.warning("云端画布已有更新版本。本机草稿已保留，暂未覆盖云端内容；请先导出本机草稿，再决定如何合并。", 8);
+            modal.confirm({
+                title: t("canvas.projectPage.syncConflictTitle"),
+                content: t("canvas.projectPage.syncConflictDescription"),
+                okText: t("canvas.projectPage.syncConflictUseRemote"),
+                okButtonProps: { danger: true },
+                cancelText: t("canvas.projectPage.syncConflictKeepLocal"),
+                onOk: () => void acceptRemoteCanvasVersion(issue.projectId),
+                onCancel: () => void forcePushLocalCanvas(issue.projectId),
+            });
         } else {
-            message.error("本机画布已保存，但云端同步失败；请检查网络后重试。", 8);
+            message.error(t("canvas.projectPage.syncFailed"), 8);
         }
         acknowledgeCanvasSyncIssue(issue.id);
-    }), [message, projectId]);
+    }), [message, modal, t, projectId]);
     const localAgentConnected = useAgentStore((state) => state.connected);
     const localAgentActivity = useAgentStore((state) => state.activity);
     const localAgentEnabled = useAgentStore((state) => state.enabled);
@@ -221,7 +229,7 @@ function InfiniteCanvasPage() {
     const [chatSessions, setChatSessions] = useState<CanvasAssistantSession[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     const [viewport, setViewport] = useState<ViewportTransform>({ x: 0, y: 0, k: 1 });
-    const [canvasTool, setCanvasTool] = useState<"select" | "pan">("pan");
+    const [canvasTool, setCanvasTool] = useState<"select" | "pan">("select");
     const [size, setSize] = useState({ width: 1200, height: 720 });
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
     const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);

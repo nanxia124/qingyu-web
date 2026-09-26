@@ -48,6 +48,8 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
 let canvasWriteQueue: Promise<void> = Promise.resolve();
 const canvasServerVersions = new Map<string, number>();
+const canvasSyncedSnapshots = new Map<string, string>();
+const pendingConflictRemotes = new Map<string, CanvasProject>();
 export type CanvasSyncIssue = { id: string; kind: "VERSION_CONFLICT" | "SYNC_FAILED"; projectId: string; title: string };
 const pendingCanvasSyncIssues = new Map<string, CanvasSyncIssue>();
 const canvasSyncIssueListeners = new Set<(issue: CanvasSyncIssue) => void>();
@@ -109,7 +111,10 @@ async function syncCanvasState(value: PersistedCanvasState, storageName: string)
     if (!response.ok) throw new Error(result.error || "云端保存失败");
     for (const saved of result.versions || []) {
         canvasServerVersions.set(saved.id, saved.serverVersion);
+        const syncedProject = value.projects.find((project) => project.id === saved.id);
+        if (syncedProject) canvasSyncedSnapshots.set(saved.id, canvasProjectContent(syncedProject));
     }
+    await localForageStorage.setItem(`${storageName}:synced_snapshots`, JSON.stringify(Object.fromEntries(canvasSyncedSnapshots)));
     const stored = await localForageStorage.getItem(storageName);
     if (stored) {
         try {
@@ -369,8 +374,17 @@ function mergeRemoteCanvasState(local: PersistedCanvasState, remote: PersistedCa
         const remoteProject = remoteById.get(localProject.id);
         if (!remoteProject) { shouldSync = true; return localProject; }
         remoteById.delete(localProject.id);
-        if (canvasProjectContent(localProject) === canvasProjectContent(remoteProject)) {
+        const localContent = canvasProjectContent(localProject);
+        const remoteContent = canvasProjectContent(remoteProject);
+        if (localContent === remoteContent) {
             canvasServerVersions.set(remoteProject.id, remoteProject.serverVersion || 1);
+            canvasSyncedSnapshots.set(remoteProject.id, remoteContent);
+            return remoteProject;
+        }
+        const lastSyncedContent = canvasSyncedSnapshots.get(localProject.id);
+        if (lastSyncedContent !== undefined && localContent === lastSyncedContent) {
+            canvasServerVersions.set(remoteProject.id, remoteProject.serverVersion || 1);
+            canvasSyncedSnapshots.set(remoteProject.id, remoteContent);
             return remoteProject;
         }
         if (localProject.serverVersion === remoteProject.serverVersion) {
@@ -378,6 +392,7 @@ function mergeRemoteCanvasState(local: PersistedCanvasState, remote: PersistedCa
             shouldSync = true;
             return localProject;
         }
+        pendingConflictRemotes.set(localProject.id, remoteProject);
         publishCanvasSyncIssue({ kind: "VERSION_CONFLICT", projectId: localProject.id, title: localProject.title || "画布" });
         return localProject;
     });
@@ -386,6 +401,13 @@ function mergeRemoteCanvasState(local: PersistedCanvasState, remote: PersistedCa
 
 const canvasStorage: PersistStorage<CanvasStore> = {
     getItem: async (name) => {
+        const snapshotsRaw = await Promise.resolve(localForageStorage.getItem(`${name}:synced_snapshots`)).catch(() => null);
+        if (snapshotsRaw) {
+            try {
+                const parsed = JSON.parse(snapshotsRaw) as Record<string, string>;
+                for (const [key, value] of Object.entries(parsed)) canvasSyncedSnapshots.set(key, value);
+            } catch { /* 忽略损坏的指纹缓存 */ }
+        }
         const value = await localForageStorage.getItem(name);
         if (!value) {
             const remote = await fetchRemoteCanvasState();
@@ -455,6 +477,30 @@ const canvasStorage: PersistStorage<CanvasStore> = {
     },
     removeItem: (name) => localForageStorage.removeItem(name),
 };
+
+export async function acceptRemoteCanvasVersion(projectId: string) {
+    const remoteProject = pendingConflictRemotes.get(projectId);
+    if (!remoteProject) return;
+    pendingConflictRemotes.delete(projectId);
+    canvasServerVersions.set(projectId, remoteProject.serverVersion || 1);
+    canvasSyncedSnapshots.set(projectId, canvasProjectContent(remoteProject));
+    const hydrated = await hydrateCanvasText({ projects: [remoteProject], deletedProjects: [] });
+    const hydratedProject = hydrated.projects[0];
+    const current = useCanvasStore.getState().projects;
+    const nextProjects = current.map((project) => (project.id === projectId ? hydratedProject : project));
+    useCanvasStore.setState({ projects: nextProjects });
+}
+
+export async function forcePushLocalCanvas(projectId: string) {
+    const remoteProject = pendingConflictRemotes.get(projectId);
+    if (!remoteProject) return;
+    pendingConflictRemotes.delete(projectId);
+    const remoteVersion = remoteProject.serverVersion || 1;
+    canvasServerVersions.set(projectId, remoteVersion);
+    const current = useCanvasStore.getState().projects;
+    const nextProjects = current.map((project) => (project.id === projectId ? { ...project, serverVersion: remoteVersion } : project));
+    useCanvasStore.setState({ projects: nextProjects });
+}
 
 export const useCanvasStore = create<CanvasStore>()(
     persist(

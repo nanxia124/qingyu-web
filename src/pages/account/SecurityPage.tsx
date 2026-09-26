@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from "@/stores/useAuthStore";
 import { ApiError } from "@/lib/api";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function SecurityPage() {
   const { t } = useTranslation()
@@ -9,24 +10,56 @@ export default function SecurityPage() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [oldError, setOldError] = useState("");
+  const [newError, setNewError] = useState("");
+  const [confirmError, setConfirmError] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const oldRef = useRef<HTMLInputElement>(null);
+  const newRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+
+  const validateNewPassword = (pw: string): string => {
+    if (pw.length < 8) return t("pages.account.security.newPwdMin");
+    if (!/[a-zA-Z]/.test(pw) || !/\d/.test(pw)) return t("pages.account.security.pwdNeedLetterAndDigit");
+    return "";
+  };
+
+  const handleOldChange = (v: string) => {
+    setOldPassword(v);
+    if (oldError) setOldError("");
+  };
+
+  const handleNewChange = (v: string) => {
+    setNewPassword(v);
+    if (newError) setNewError("");
+    if (confirmPassword) {
+      setConfirmError(v !== confirmPassword ? t("pages.account.security.mismatch") : "");
+    }
+  };
+
+  const handleConfirmChange = (v: string) => {
+    setConfirmPassword(v);
+    if (!v) { setConfirmError(""); return; }
+    setConfirmError(v !== newPassword ? t("pages.account.security.mismatch") : "");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
 
-    // 校验
-    if (!oldPassword) {
-      setMessage({ type: "error", text: t("pages.account.security.curPwdRequired") });
-      return;
+    let firstError: "old" | "new" | "confirm" | null = null;
+    if (!oldPassword) { setOldError(t("pages.account.security.curPwdRequired")); firstError = "old"; }
+    const newErr = validateNewPassword(newPassword);
+    if (newErr) { setNewError(newErr); if (!firstError) firstError = "new"; }
+    if (newPassword && confirmPassword !== newPassword) {
+      setConfirmError(t("pages.account.security.mismatch"));
+      if (!firstError) firstError = "confirm";
     }
-    if (newPassword.length < 6) {
-      setMessage({ type: "error", text: t("pages.account.security.newPwdMin") });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setMessage({ type: "error", text: t("pages.account.security.mismatch") });
+    if (firstError) {
+      if (firstError === "old") oldRef.current?.focus();
+      else if (firstError === "new") newRef.current?.focus();
+      else confirmRef.current?.focus();
       return;
     }
 
@@ -37,11 +70,16 @@ export default function SecurityPage() {
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setOldError("");
+      setNewError("");
+      setConfirmError("");
     } catch (err: any) {
-      if (err instanceof ApiError) {
-        setMessage({ type: "error", text: err.message });
+      const msg = err instanceof ApiError ? err.message : (err?.message || t("pages.account.security.changeFailed"));
+      if (typeof msg === "string" && /password|密码|current|old/i.test(msg)) {
+        setOldError(msg);
+        oldRef.current?.focus();
       } else {
-        setMessage({ type: "error", text: t("pages.account.security.changeFailed") });
+        setMessage({ type: "error", text: msg });
       }
     } finally {
       setSaving(false);
@@ -67,35 +105,42 @@ export default function SecurityPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-text mb-2">{t("pages.account.security.curPwd")}</label>
-          <input
-            type="password"
+          <PasswordInput
             value={oldPassword}
-            onChange={(e) => setOldPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
+            onChange={handleOldChange}
+            error={!!oldError}
+            inputRef={oldRef}
             placeholder={t("pages.account.security.curPwdPh")}
           />
+          {oldError && <p className="mt-1 text-xs text-red-400">{oldError}</p>}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-text mb-2">{t("pages.account.security.newPwd")}</label>
-          <input
-            type="password"
+          <PasswordInput
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
+            onChange={handleNewChange}
+            error={!!newError}
+            inputRef={newRef}
             placeholder={t("pages.account.security.newPwdPh")}
           />
+          {newError && <p className="mt-1 text-xs text-red-400">{newError}</p>}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-text mb-2">{t("pages.account.security.confirmPwd")}</label>
-          <input
-            type="password"
+          <PasswordInput
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-secondary border border-border text-text placeholder:text-text-muted focus:border-accent outline-none"
+            onChange={handleConfirmChange}
+            error={!!confirmError}
+            inputRef={confirmRef}
             placeholder={t("pages.account.security.confirmPwdPh")}
           />
+          {confirmError
+            ? <p className="mt-1 text-xs text-red-400">{confirmError}</p>
+            : (newPassword && confirmPassword === newPassword)
+              ? <p className="mt-1 text-xs text-green-400">{t("pages.account.security.pwMatch")}</p>
+              : null}
         </div>
 
         <div className="flex justify-end">

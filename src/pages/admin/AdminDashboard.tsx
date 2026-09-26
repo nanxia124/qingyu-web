@@ -4,6 +4,7 @@ import { ChevronRight, Save, RefreshCw } from "lucide-react";
 import ModelCatalog from "./ModelCatalog";
 import { App } from 'antd';
 import { adminBillingApi } from "@/lib/billing";
+import { PasswordInput } from "@/components/PasswordInput";
 
 const API = import.meta.env.VITE_API_URL || "";
 // 与后端 KEY_MAX_CONCURRENCY 默认值保持一致
@@ -257,6 +258,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     const [loading, setLoading] = useState(true);
     const [showAdd, setShowAdd] = useState(false);
     const [form, setForm] = useState({ name: "", provider: "openai", base_url: "", api_key: "", model: "", max_concurrency: "" });
+    const [formErrors, setFormErrors] = useState<{ name: string; base_url: string; api_key: string }>({ name: "", base_url: "", api_key: "" });
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [testingId, setTestingId] = useState<number | null>(null);
     const [testResult, setTestResult] = useState<Record<number, { ok: boolean; message: string }>>({});
@@ -265,6 +267,12 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     const [pwForm, setPwForm] = useState({ oldPassword: "", newPassword: "", confirmPassword: "" });
     const [pwError, setPwError] = useState("");
     const [pwSuccess, setPwSuccess] = useState(false);
+    const [pwOldError, setPwOldError] = useState("");
+    const [pwNewError, setPwNewError] = useState("");
+    const [pwConfirmError, setPwConfirmError] = useState("");
+    const pwOldRef = useRef<HTMLInputElement>(null);
+    const pwNewRef = useRef<HTMLInputElement>(null);
+    const pwConfirmRef = useRef<HTMLInputElement>(null);
     const [models, setModels] = useState<string[]>([]);
     const [loadingModels, setLoadingModels] = useState(false);
     const [showModelsModal, setShowModelsModal] = useState(false);
@@ -554,10 +562,14 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         const modelStr = selectedModels.length > 0 ? selectedModels.join(",") : form.model;
         const payload = { ...form, model: modelStr };
 
-        // 新增模式：前端先校验必填项
+        // 新增模式：前端先校验必填项，字段级报错
         if (!editId) {
-            if (!payload.name || !payload.base_url || !payload.api_key) {
-                message.error(t("pages.admin.dashboard.fillRequired"));
+            const errs = { name: "", base_url: "", api_key: "" };
+            if (!payload.name) errs.name = t("pages.admin.dashboard.nameRequired");
+            if (!payload.base_url) errs.base_url = t("pages.admin.dashboard.apiUrlRequired");
+            if (!payload.api_key) errs.api_key = t("pages.admin.dashboard.apiKeyRequired");
+            if (errs.name || errs.base_url || errs.api_key) {
+                setFormErrors(errs);
                 return;
             }
         } else if (!payload.api_key) {
@@ -735,16 +747,43 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         }
     };
 
+    const validatePw = (pw: string): string => {
+        if (pw.length < 8) return t("pages.admin.dashboard.pwMin");
+        if (!/[a-zA-Z]/.test(pw) || !/\d/.test(pw)) return t("pages.admin.dashboard.pwNeedLetterAndDigit");
+        return "";
+    };
+    const handlePwOldChange = (v: string) => {
+        setPwForm({ ...pwForm, oldPassword: v });
+        if (pwOldError) setPwOldError("");
+    };
+    const handlePwNewChange = (v: string) => {
+        setPwForm({ ...pwForm, newPassword: v });
+        if (pwNewError) setPwNewError("");
+        if (pwForm.confirmPassword) {
+            setPwConfirmError(v !== pwForm.confirmPassword ? t("pages.admin.dashboard.pwMismatch") : "");
+        }
+    };
+    const handlePwConfirmChange = (v: string) => {
+        setPwForm({ ...pwForm, confirmPassword: v });
+        if (!v) { setPwConfirmError(""); return; }
+        setPwConfirmError(v !== pwForm.newPassword ? t("pages.admin.dashboard.pwMismatch") : "");
+    };
     const handleChangePw = async (e: React.FormEvent) => {
         e.preventDefault();
         setPwError("");
         setPwSuccess(false);
-        if (pwForm.newPassword !== pwForm.confirmPassword) {
-            setPwError(t("pages.admin.dashboard.pwMismatch"));
-            return;
+        let firstError: "old" | "new" | "confirm" | null = null;
+        if (!pwForm.oldPassword) { setPwOldError(t("pages.admin.dashboard.pwOldRequired")); firstError = "old"; }
+        const newErr = validatePw(pwForm.newPassword);
+        if (newErr) { setPwNewError(newErr); if (!firstError) firstError = "new"; }
+        if (pwForm.newPassword && pwForm.confirmPassword !== pwForm.newPassword) {
+            setPwConfirmError(t("pages.admin.dashboard.pwMismatch"));
+            if (!firstError) firstError = "confirm";
         }
-        if (pwForm.newPassword.length < 8) {
-            setPwError(t("pages.admin.dashboard.pwMin"));
+        if (firstError) {
+            if (firstError === "old") pwOldRef.current?.focus();
+            else if (firstError === "new") pwNewRef.current?.focus();
+            else pwConfirmRef.current?.focus();
             return;
         }
         try {
@@ -757,9 +796,14 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
             if (!res.ok) throw new Error(data.error);
             setPwSuccess(true);
             setPwForm({ oldPassword: "", newPassword: "", confirmPassword: "" });
+            setPwOldError(""); setPwNewError(""); setPwConfirmError("");
             setTimeout(() => setShowChangePw(false), 2000);
         } catch (err: any) {
-            setPwError(err.message);
+            if (err && err.message && err.message.indexOf("原密码") !== -1) {
+                setPwOldError(err.message);
+            } else {
+                setPwError(err.message);
+            }
         }
     };
 
@@ -963,18 +1007,18 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                         <div className="grid gap-4">
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.oldPw")}</label>
-                                <input type="password" value={pwForm.oldPassword} onChange={e => setPwForm({...pwForm, oldPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
+                                <PasswordInput value={pwForm.oldPassword} onChange={handlePwOldChange} error={!!pwOldError} inputRef={pwOldRef} />
+                                {pwOldError && <p className="mt-1 text-xs text-red-400">{pwOldError}</p>}
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.newPw")}</label>
-                                <input type="password" value={pwForm.newPassword} onChange={e => setPwForm({...pwForm, newPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
+                                <PasswordInput value={pwForm.newPassword} onChange={handlePwNewChange} error={!!pwNewError} inputRef={pwNewRef} />
+                                {pwNewError && <p className="mt-1 text-xs text-red-400">{pwNewError}</p>}
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.confirmPw")}</label>
-                                <input type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({...pwForm, confirmPassword: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" />
+                                <PasswordInput value={pwForm.confirmPassword} onChange={handlePwConfirmChange} error={!!pwConfirmError} inputRef={pwConfirmRef} />
+                                {pwConfirmError ? <p className="mt-1 text-xs text-red-400">{pwConfirmError}</p> : (pwForm.newPassword && pwForm.confirmPassword === pwForm.newPassword) ? <p className="mt-1 text-xs text-green-400">{t("pages.admin.dashboard.pwMatch")}</p> : null}
                             </div>
                         </div>
                         <div className="mt-4 flex gap-2">
@@ -1014,8 +1058,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.name")}</label>
-                                <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder={t("pages.admin.dashboard.namePh")} />
+                                <input value={form.name} onChange={e => { setForm({...form, name: e.target.value}); if (formErrors.name) setFormErrors({...formErrors, name: ""}); }}
+                                    className={`w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none ${formErrors.name ? "ring-1 ring-red-500" : "focus:ring-1 focus:ring-accent"}`} placeholder={t("pages.admin.dashboard.namePh")} />
+                                {formErrors.name && <p className="mt-1 text-xs text-red-400">{formErrors.name}</p>}
                             </div>
                             <div>
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.provider")}</label>
@@ -1029,13 +1074,15 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.apiUrl")}</label>
-                                <input value={form.base_url} onChange={e => setForm({...form, base_url: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder="https://api.openai.com/v1" />
+                                <input value={form.base_url} onChange={e => { setForm({...form, base_url: e.target.value}); if (formErrors.base_url) setFormErrors({...formErrors, base_url: ""}); }}
+                                    className={`w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none ${formErrors.base_url ? "ring-1 ring-red-500" : "focus:ring-1 focus:ring-accent"}`} placeholder="https://api.openai.com/v1" />
+                                {formErrors.base_url && <p className="mt-1 text-xs text-red-400">{formErrors.base_url}</p>}
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.apiKey")}{editId && t("pages.admin.dashboard.apiKeyEdit")}</label>
-                                <input type="password" value={form.api_key} onChange={e => setForm({...form, api_key: e.target.value})}
-                                    className="w-full rounded-lg bg-secondary px-3 py-2 text-white outline-none" placeholder={editId ? t("pages.admin.dashboard.apiKeyEdit") : "sk-..."} />
+                                <PasswordInput value={form.api_key} onChange={v => { setForm({...form, api_key: v}); if (formErrors.api_key) setFormErrors({...formErrors, api_key: ""}); }}
+                                    error={!!formErrors.api_key} placeholder={editId ? t("pages.admin.dashboard.apiKeyEdit") : "sk-..."} />
+                                {formErrors.api_key && <p className="mt-1 text-xs text-red-400">{formErrors.api_key}</p>}
                             </div>
                             <div className="col-span-2">
                                 <label className="mb-1 block text-sm text-gray-500">{t("pages.admin.dashboard.concurrency")} {keyMaxConcurrency}）</label>

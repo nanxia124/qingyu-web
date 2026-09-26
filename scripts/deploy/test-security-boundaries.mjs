@@ -313,6 +313,8 @@ try {
 
   if (process.argv.includes('--nginx')) {
     const nginxSource = await readFile(path.join(scriptDirectory, 'nginx-qingyu-web.conf'), 'utf8');
+    assert.equal(nginxSource.split('proxy_redirect ~^(/.*)$ /console$1;').length - 1, 2,
+      'HTTP 与 HTTPS 管理页都必须把上游根路径跳转保留在 /console/ 下');
     for (const legacyScript of ['step_nginx.sh', 'step_nginx_api.sh']) {
       const legacySource = await readFile(path.join(scriptDirectory, legacyScript), 'utf8');
       assert.ok(legacySource.includes('location = /console { return 301 /console/; }'), `${legacyScript} 必须兼容不带尾斜杠的控制台地址`);
@@ -344,8 +346,14 @@ try {
     await writeFile(path.join(directory, 'nginx.conf'), `events {}\nhttp { include /etc/nginx/mime.types; access_log off; ${nginxConfig}
 server {
   listen 8081;
+  absolute_redirect off;
   root /test/appwrite;
   index index.html;
+  location = / {
+    if ($http_accept ~* "text/html") { return 301 /sign-in; }
+    try_files /index.html =404;
+  }
+  location = /sign-in { default_type text/plain; return 200 'mock-appwrite-sign-in'; }
   location /v1/ { default_type application/json; return 200 '{"version":"mock-appwrite"}'; }
 }
 server {
@@ -378,6 +386,13 @@ for protocol in http https; do
   grep -q 'href="/console/apple-touch-icon.png"' /test/console.html
   grep -q 'src="/console/logo.svg"' /test/console.html
   grep -q 'src="/appwrite-zh.js"' /test/console.html
+  curl -ksS -D /test/console-login-redirect-headers -o /dev/null \
+    -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' \
+    "$protocol://127.0.0.1/console/"
+  grep -qi '^Location: .*/console/sign-in' /test/console-login-redirect-headers
+  status=$(curl -ks -o /test/console-sign-in -w '%{http_code}' "$protocol://127.0.0.1/console/sign-in")
+  test "$status" = 200
+  grep -q 'mock-appwrite-sign-in' /test/console-sign-in
   curl -ks -o /test/appwrite-zh.js "$protocol://127.0.0.1/appwrite-zh.js"
   grep -q 'appwriteTranslationLoaded = true' /test/appwrite-zh.js
   status=$(curl -ks -o /test/console.css -w '%{http_code}|%{content_type}' "$protocol://127.0.0.1/console/assets/index.css")

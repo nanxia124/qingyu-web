@@ -2164,6 +2164,33 @@ async function handleBilling(req, res, pathname, method, url) {
       return sendJSON(res, 200, billingPlans[idx]);
     }
 
+    // GET /api/admin/billing/signup-gift
+    if (pathname === "/api/admin/billing/signup-gift" && method === "GET") {
+      if (postgresBilling) return sendJSON(res, 200, await postgresBilling.getSignupGiftPolicy());
+      return sendJSON(res, 200, { amount: Number(billingSettings.registeredBonusQuota ?? 0), effectiveAt: null });
+    }
+    // PUT /api/admin/billing/signup-gift { amount }
+    if (pathname === "/api/admin/billing/signup-gift" && method === "PUT") {
+      const body = await parseBody(req);
+      const amount = body && body.amount;
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount > 99999999999999 || Number(amount.toFixed(6)) !== amount) {
+        return sendJSON(res, 400, { error: "赠分数必须是 0 到 99999999999999 之间、最多 6 位小数的数字" });
+      }
+      try {
+        if (postgresBilling) {
+          return sendJSON(res, 200, await postgresBilling.setSignupGiftPolicy(amount, {
+            actor: (adminIdentity && adminIdentity.sub) || "admin",
+            ip: req.socket.remoteAddress,
+          }));
+        }
+        billingSettings = { ...billingSettings, registeredBonusQuota: amount };
+        saveJSON(SETTINGS_FILE, billingSettings);
+        return sendJSON(res, 200, { amount, effectiveAt: new Date().toISOString() });
+      } catch (error) {
+        return sendJSON(res, 400, { error: error.message || "保存注册赠分设置失败" });
+      }
+    }
+
     // GET /api/admin/billing/settings
     if (pathname === "/api/admin/billing/settings" && method === "GET") {
       if (postgresBilling) billingSettings = await postgresBilling.getSystemSetting("billing", billingSettings);

@@ -68,15 +68,16 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
             if (event.key === "Control") setIsControlPressed(true);
             if (event.code !== "Space") return;
             const target = event.target instanceof Element ? event.target : null;
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true']")) return;
-            event.preventDefault();
+            const inField = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true']");
+            if (!inField) event.preventDefault();
             setIsSpacePressed(true);
         };
 
         const handleKeyUp = (event: KeyboardEvent) => {
             if (event.code === "Space") {
                 const target = event.target instanceof Element ? event.target : null;
-                if (!(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true']"))) event.preventDefault();
+                const inField = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true']");
+                if (!inField) event.preventDefault();
                 setIsSpacePressed(false);
             }
             if (event.key === "Control") setIsControlPressed(false);
@@ -90,12 +91,12 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
             document.body.style.cursor = "";
         };
 
-        window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("keyup", handleKeyUp);
+        window.addEventListener("keydown", handleKeyDown, true);
+        window.addEventListener("keyup", handleKeyUp, true);
         window.addEventListener("blur", handleBlur);
         return () => {
-            window.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener("keyup", handleKeyUp);
+            window.removeEventListener("keydown", handleKeyDown, true);
+            window.removeEventListener("keyup", handleKeyUp, true);
             window.removeEventListener("blur", handleBlur);
         };
     }, []);
@@ -134,10 +135,10 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         const onPanelZoom = Boolean(target?.closest("[data-canvas-panel-zoom]"));
         const spaceHeld = event.nativeEvent.getModifierState("Space");
         const panGesture = event.button === 1 || (event.button === 0 && spaceHeld);
-        if (!(panGesture && onPanelZoom) && target?.closest("[data-canvas-no-zoom]")) return;
+        if (target?.closest("[data-canvas-no-zoom]") && !onPanelZoom) return;
         if (target?.closest("[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
-        const temporaryTool = event.ctrlKey || spaceHeld;
+        const temporaryTool = spaceHeld;
         const activeTool = temporaryTool ? (tool === "select" ? "pan" : "select") : tool;
         const shouldPan = event.button === 1 || (event.button === 0 && activeTool === "pan" && (isBackgroundClick || onPanelZoom));
 

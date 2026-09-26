@@ -127,6 +127,10 @@ export interface InvoiceRequest {
   completedAt: number | null;
   orders: InvoiceOrderItem[];
 }
+export interface SignupGiftPolicy {
+  amount: number;
+  effectiveAt: string | null;
+}
 
 // ---------------- 客户接口 ----------------
 // 从完整浏览器信息生成设备名称，避免截断后丢失浏览器标识。
@@ -187,6 +191,9 @@ export const adminBillingApi = {
   getSettings: () => request<any>("/api/admin/billing/settings", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   updateSettings: (settings: any) =>
     request<any>("/api/admin/billing/settings", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: settings }),
+  signupGift: () => request<SignupGiftPolicy>("/api/admin/billing/signup-gift", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
+  updateSignupGift: (amount: number) =>
+    request<SignupGiftPolicy>("/api/admin/billing/signup-gift", { method: "PUT", token: localStorage.getItem(ADMIN_TOKEN_KEY) || "", body: { amount } }),
   supplierBalance: () => request<any>("/api/admin/billing/supplier/balance", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   supplierKeyLimits: () => request<any>("/api/admin/billing/supplier/key-limits", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),
   supplierModels: () => request<any>("/api/admin/billing/supplier/models", { token: localStorage.getItem(ADMIN_TOKEN_KEY) || "" }),

@@ -45,4 +45,4 @@
 
 ## 计费额度
 
-- 免费生图额度以 `app.daily_usage_reservations` 中当天 `image_gen` 的 `reserved` 和 `committed` 记录为准；前端展示和禁用按钮必须使用 `/api/billing/me` 返回的 `dailyUsed` / `dailyLimit`。
+- 新用户一次性赠分数由管理员后台设置；设为 0 时暂停赠分。设置只影响保存后注册的新用户，已到账积分不变。

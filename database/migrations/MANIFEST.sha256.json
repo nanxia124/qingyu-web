@@ -68,5 +68,6 @@
   "0067_generation_media_failure_accounting.sql": "b9c07ed0e0471d99e068e4eda1ea8aadfb4e3907b3616b928462574b3ddd1998",
   "0068_model_credit_pricing.sql": "b8be4c86de31cb1fba8dfdce851c5634a4f1f4b999c4a23b673720275ac1b240",
   "0069_chat_conversations.sql": "55af18f8ece5468f2731769cd6aecc2055b7e768ccbbef6559c27fbaca540e9e",
-  "0070_remove_daily_free_quota.sql": "636d9f454fd33713ef7f0a28299f716dd67628a80ebfb4c03809c9629a9d9016"
+  "0070_remove_daily_free_quota.sql": "c85eb1b363bc6d63d75e82f7c6bb0a05ab9011352e3fb57b8c0700534a346c61",
+  "0072_admin_configurable_signup_gift.sql": "bfc3dfbd851ef70badd603c8438c88ecd2b8602d5e92e1edf3968be250ac62b1"
 }

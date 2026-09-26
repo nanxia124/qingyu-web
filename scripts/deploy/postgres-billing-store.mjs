@@ -334,11 +334,13 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
       if (userResult.rows[0].is_new && Number.isFinite(createdTime)) {
         const policy = await client.query(`select amount,effective_at from app.credit_system_policies where policy_key='signup_gift'`);
         if (policy.rowCount && createdTime >= new Date(policy.rows[0].effective_at).getTime()) {
-          const account = await client.query(`select id from app.quota_accounts where workspace_id=$1 and quota_code='monthly' for update`, [workspaceId]);
           const amount = Number(policy.rows[0].amount);
-          const grant = await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata)
-            values($1,$2,'grant',$3,$4,$5::jsonb) on conflict(idempotency_key) do nothing returning id`, [account.rows[0].id, workspaceId, amount, `grant:signup:${userId}`, JSON.stringify({ source: 'signup', appwrite_created_at: appwriteCreatedAt })]);
-          if (grant.rowCount) await client.query(`update app.quota_accounts set granted=granted+$2,version=version+1,updated_at=now() where id=$1`, [account.rows[0].id, amount]);
+          if (amount > 0) {
+            const account = await client.query(`select id from app.quota_accounts where workspace_id=$1 and quota_code='monthly' for update`, [workspaceId]);
+            const grant = await client.query(`insert into app.quota_ledger(account_id,workspace_id,entry_type,amount,idempotency_key,metadata)
+              values($1,$2,'grant',$3,$4,$5::jsonb) on conflict(idempotency_key) do nothing returning id`, [account.rows[0].id, workspaceId, amount, `grant:signup:${userId}`, JSON.stringify({ source: 'signup', appwrite_created_at: appwriteCreatedAt })]);
+            if (grant.rowCount) await client.query(`update app.quota_accounts set granted=granted+$2,version=version+1,updated_at=now() where id=$1`, [account.rows[0].id, amount]);
+          }
         }
       }
       await client.query("commit");
@@ -601,6 +603,37 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     const r = await pool.query(`insert into app.system_settings(setting_key,setting_value) values($1,$2::jsonb)
       on conflict(setting_key) do update set setting_value=excluded.setting_value,updated_at=now() returning setting_value`, [settingKey, JSON.stringify(value ?? {})]);
     return r.rows[0].setting_value;
+  }
+
+  async function getSignupGiftPolicy() {
+    const r = await pool.query(`select amount,effective_at from app.credit_system_policies where policy_key='signup_gift'`);
+    if (!r.rowCount) throw new Error('注册赠分设置不存在');
+    return { amount: Number(r.rows[0].amount), effectiveAt: new Date(r.rows[0].effective_at).toISOString() };
+  }
+
+  async function setSignupGiftPolicy(amountInput, { actor = 'admin', ip = null } = {}) {
+    const amount = Number(amountInput);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 99999999999999) throw new Error('赠分数必须是 0 到 99999999999999 之间的数字');
+    const normalizedAmount = Number(amount.toFixed(6));
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query(`select amount from app.credit_system_policies where policy_key='signup_gift' for update`);
+      if (!current.rowCount) throw new Error('注册赠分设置不存在');
+      const previousAmount = Number(current.rows[0].amount);
+      const updated = await client.query(`update app.credit_system_policies
+        set amount=$1,effective_at=case when amount is distinct from $1 then now() else effective_at end
+        where policy_key='signup_gift' returning amount,effective_at`, [normalizedAmount]);
+      if (previousAmount !== normalizedAmount) {
+        await client.query(`select app.write_admin_audit($1,$2,NULL,$3,$4,$5,$6::jsonb,$7::inet)`, [
+          String(actor).slice(0, 160), 'billing.signup_gift.update', 'credit_system_policy', 'signup_gift',
+          `注册赠分设置从 ${previousAmount} 调整为 ${normalizedAmount}`,
+          JSON.stringify({ previousAmount, amount: normalizedAmount }), ip,
+        ]);
+      }
+      await client.query('commit');
+      return { amount: Number(updated.rows[0].amount), effectiveAt: new Date(updated.rows[0].effective_at).toISOString() };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 
   async function applyMembershipPeriod(client, { workspaceId, planId, planVersionId, billingInterval, eventKey, orderId = null, redemptionId = null }) {
@@ -3465,5 +3498,5 @@ export async function createPostgresBillingStore({ pool: injectedPool } = {}) {
     return r.rowCount === 1;
   }
 
-  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminListUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, listPlatformApiKeysForRuntime, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, fetchPlatformApiKeyModels, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, shareAssetToTeamWorkspace, createGenerationTask, getGenerationTask, settleTextTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
+  return { ensureAdminAccount, getAdminAccount, touchAdminLogin, changeAdminPassword, upgradeAdminPasswordHash, reserveAdminLoginAttempt, clearAdminLoginAttempts, ensureUser, registerSession, listSessions, isSessionActive, isSessionAdmitted, revokeSession, listSyncEvents, ackSyncCursor, getUser: async id => publicUser(await getUser(id)), createFeedback, recordProviderUsage, completeProviderUsage, recordPaymentEvent, processPaymentEvent, processRecoverablePaymentEvents, plans, updatePlan, getSystemSetting, setSystemSetting, getSignupGiftPolicy, setSignupGiftPolicy, getRenewalStatus, createOrder, payOrder, listOrders, createRefundRequest, listRefunds, adminRefunds, adminUpdateRefund, listTransactions, createInvoiceRequest, listMyInvoiceRequests, adminListInvoiceRequests, adminUpdateInvoiceRequest, adminUnknownUsage, adminReconcileUsage, adminStats, adminQuotaAudit, adminUsers, adminListUsers, adminAdjustBalance, adminOrders, inviteInfo, redeemCode, adminListCodes, createContentEdit, listPlatformApiKeys, listPlatformApiKeysForRuntime, createPlatformApiKey, updatePlatformApiKey, deletePlatformApiKey, fetchPlatformApiKeyModels, listPlatformApiKeyStats, listPlatformApiKeyHistory, listPlatformApiKeyUsage, listModelCatalog, createModelCatalog, addModelCatalogChannelModel, removeModelCatalogChannelModel, listPublicModelCatalogChannels, listPlatformModelRoutes, bulkCreateModelCatalog, createModelCreditQuote, updateModelCatalog, deleteModelCatalog, saveCanvasSnapshot, listCanvasSnapshots, saveAgentSnapshot, listChatConversations, createChatConversation, getChatConversation, listChatMessages, appendChatMessage, updateChatConversation, deleteChatConversation, listTeams, createTeam, listTeamMembers, inviteToTeam, acceptTeamInvitation, updateTeamMember, listDepartments, createDepartment, createJobTitle, listAssets, listFavorites, deleteAsset, restoreAsset, toggleFavorite, toggleAssetLike, listAssetComments, createAssetComment, getAssetUploadScope, createAssetUploadSession, getAssetUploadSession, recordAssetUploadPart, beginAssetUploadCompletion, failAssetUploadSession, enqueueAssetUploadRecovery, claimFileUploadRecoveryJobs, finishFileUploadRecoveryJob, cancelFileUploadRecoveryJob, retryFileUploadRecoveryJob, getGenerationOutputRecoveryContext, finishGeneratedOutputRecoveryJob, failGeneratedOutputRecoveryJob, createAssetFromFile, createAssetFromGeneratedOutput, getAssetFile, getDerivedFile, shareAssetToTeamWorkspace, createGenerationTask, getGenerationTask, settleTextTask, listGenerationInputFiles, listMyGenerationTasks, markTaskRunning, beginGenerationAttempt, setGenerationAttemptProviderTask, reserveGeneratedOutput, completeGenerationAttempt, settleGenerationTaskIfComplete, settleTaskSuccess, failTask, recordGeneratedOutput, listGeneratedOutputs, reapStaleTasks, listRecoverableTasks, writeAdminAudit, listAdminAuditLogs, adminReconciliation, listAlerts, ackAlert, close: () => pool.end() };
 }

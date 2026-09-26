@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next'
 import { QingyuLogoIcon } from "@/components/layout/SidebarIcons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { AppwriteException } from "appwrite";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function ResetPasswordPage() {
   const { t } = useTranslation()
@@ -16,15 +17,38 @@ export default function ResetPasswordPage() {
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [confirmError, setConfirmError] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
 
-  // 缺少参数时直接报错
   useEffect(() => {
     if (!userId || !secret) {
       setMessage({ type: "error", text: t("pages.resetPwd.invalid") });
     }
   }, [userId, secret]);
+
+  const validatePassword = (pw: string): string => {
+    if (pw.length < 8) return t("pages.resetPwd.pwdMin");
+    if (!/[a-zA-Z]/.test(pw) || !/\d/.test(pw)) return t("pages.resetPwd.pwdNeedLetterAndDigit");
+    return "";
+  };
+
+  const handlePasswordChange = (v: string) => {
+    setPassword(v);
+    if (passwordError) setPasswordError("");
+    if (confirm) {
+      setConfirmError(v !== confirm ? t("pages.resetPwd.mismatch") : "");
+    }
+  };
+
+  const handleConfirmChange = (v: string) => {
+    setConfirm(v);
+    if (!v) { setConfirmError(""); return; }
+    setConfirmError(v !== password ? t("pages.resetPwd.mismatch") : "");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,12 +58,16 @@ export default function ResetPasswordPage() {
       setMessage({ type: "error", text: t("pages.resetPwd.invalidOnly") });
       return;
     }
-    if (password.length < 6) {
-      setMessage({ type: "error", text: t("pages.resetPwd.pwdMin") });
-      return;
+    let firstError: "password" | "confirm" | null = null;
+    const pwErr = validatePassword(password);
+    if (pwErr) { setPasswordError(pwErr); firstError = "password"; }
+    if (password && confirm !== password) {
+      setConfirmError(t("pages.resetPwd.mismatch"));
+      if (!firstError) firstError = "confirm";
     }
-    if (password !== confirm) {
-      setMessage({ type: "error", text: t("pages.resetPwd.mismatch") });
+    if (firstError) {
+      if (firstError === "password") passwordRef.current?.focus();
+      else confirmRef.current?.focus();
       return;
     }
 
@@ -82,21 +110,31 @@ export default function ResetPasswordPage() {
 
         {userId && secret && !message?.type.includes("success") && (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <input
-              type="password"
-              placeholder={t("pages.resetPwd.newPwdPh")}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-              className="w-full px-4 py-3 rounded-[12px] bg-secondary border border-border text-gray-200 placeholder:text-gray-500 focus:border-accent outline-none"
-            />
-            <input
-              type="password"
-              placeholder={t("pages.resetPwd.confirmPh")}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="w-full px-4 py-3 rounded-[12px] bg-secondary border border-border text-gray-200 placeholder:text-gray-500 focus:border-accent outline-none"
-            />
+            <div>
+              <PasswordInput
+                value={password}
+                onChange={handlePasswordChange}
+                error={!!passwordError}
+                inputRef={passwordRef}
+                autoFocus
+                placeholder={t("pages.resetPwd.newPwdPh")}
+              />
+              {passwordError && <p className="mt-1 text-xs text-red-400">{passwordError}</p>}
+            </div>
+            <div>
+              <PasswordInput
+                value={confirm}
+                onChange={handleConfirmChange}
+                error={!!confirmError}
+                inputRef={confirmRef}
+                placeholder={t("pages.resetPwd.confirmPh")}
+              />
+              {confirmError
+                ? <p className="mt-1 text-xs text-red-400">{confirmError}</p>
+                : (password && confirm === password)
+                  ? <p className="mt-1 text-xs text-green-400">{t("pages.resetPwd.pwMatch")}</p>
+                  : null}
+            </div>
             <button
               type="submit"
               disabled={saving}

@@ -30,6 +30,11 @@ function getToken(): string | null {
   }
 }
 
+function isAdminApiPath(path: string): boolean {
+  const pathname = path.split("?", 1)[0];
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   body?: any;
@@ -63,8 +68,9 @@ export async function apiRequest<T = any>(
     ...customHeaders,
   };
 
-  // 带上 token
-  const token = getToken();
+  // 管理员令牌只发送给后台接口；普通业务接口使用 HttpOnly 登录 Cookie。
+  const adminRequest = isAdminApiPath(url);
+  const token = adminRequest ? getToken() : null;
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -79,7 +85,7 @@ export async function apiRequest<T = any>(
       headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
-      credentials: token ? "omit" : "include",
+      credentials: adminRequest ? "omit" : "include",
     });
 
     clearTimeout(timeoutId);
@@ -151,14 +157,12 @@ export const api = {
    * 文件不会把 token 放到 URL 里，而是通过请求头发送，避免分享链接时泄露登录凭证。
    */
   fetchAssetBlob: async (assetId: string): Promise<Blob> => {
-    const token = getToken();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(`${BASE_URL}/assets/${encodeURIComponent(assetId)}/content`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: controller.signal,
-        credentials: token ? "omit" : "include",
+        credentials: "include",
       });
       if (!res.ok) {
         let message = `文件读取失败 (${res.status})`;

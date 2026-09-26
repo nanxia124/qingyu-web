@@ -22,7 +22,7 @@ interface ApiKey {
     created_at: number;
 }
 
-type UsageRange = "today" | "d7" | "d30";
+type HistoryRange = "all" | "d1" | "d3" | "d7" | "d30" | "d90" | "d365" | "custom";
 type ApiUsageEntry = {
     id: string;
     requestId: string | null;
@@ -281,7 +281,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
     const [providerOpen, setProviderOpen] = useState(false);
     const providerRef = useRef<HTMLDivElement>(null);
     const [keyStats, setKeyStats] = useState<Record<number, any>>({});
-    const [keyHistory, setKeyHistory] = useState<Record<number, any>>({});
+    const [keyHistoryByRange, setKeyHistoryByRange] = useState<Record<string, Record<number, any>>>({});
+    const [rangeByKey, setRangeByKey] = useState<Record<number, HistoryRange>>({});
+    const [customByKey, setCustomByKey] = useState<Record<number, { start: string; end: string }>>({});
     const [expandedUsageKey, setExpandedUsageKey] = useState<string | null>(null);
     const [usagePages, setUsagePages] = useState<Record<string, ApiUsagePage>>({});
     const [usageErrors, setUsageErrors] = useState<Record<string, string>>({});
@@ -406,23 +408,43 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         } catch { /* 忽略 */ }
     };
 
-    const fetchKeyHistory = async () => {
+    const fetchKeyHistoryRange = async (rangeKey: string) => {
         try {
-            const res = await fetch(`${API}/api/admin/key-history`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) setKeyHistory(await res.json());
+            let url = `${API}/api/admin/key-history?range=`;
+            if (rangeKey.startsWith("custom:")) {
+                const parts = rangeKey.split(":");
+                url += `custom&start=${encodeURIComponent(parts[1])}&end=${encodeURIComponent(parts[2])}`;
+            } else {
+                url += encodeURIComponent(rangeKey);
+            }
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) {
+                const data = await res.json();
+                setKeyHistoryByRange(cur => ({ ...cur, [rangeKey]: data }));
+            }
         } catch { /* 忽略 */ }
     };
 
-    const usageDetailKey = (channelId: number, range: UsageRange, capability: string) => `${channelId}:${range}:${capability}`;
+    const rangeKeyFor = (channelId: number): string | null => {
+        const r = rangeByKey[channelId] || "d7";
+        if (r === "custom") {
+            const c = customByKey[channelId];
+            if (!c || !c.start || !c.end) return null;
+            return `custom:${c.start}:${c.end}`;
+        }
+        return r;
+    };
 
-    const loadKeyUsage = async (channelId: number, range: UsageRange, capability: string, offset = 0) => {
-        const detailKey = usageDetailKey(channelId, range, capability);
+    const usageDetailKey = (channelId: number, range: HistoryRange, capability: string, start?: string, end?: string) =>
+        `${channelId}:${range}:${capability}:${range === "custom" ? `${start || ""}:${end || ""}` : ""}`;
+
+    const loadKeyUsage = async (channelId: number, range: HistoryRange, capability: string, offset = 0, start?: string, end?: string) => {
+        const detailKey = usageDetailKey(channelId, range, capability, start, end);
         setLoadingUsageKey(detailKey);
         setUsageErrors(current => ({ ...current, [detailKey]: "" }));
         try {
             const params = new URLSearchParams({ range, capability, limit: "50", offset: String(offset) });
+            if (range === "custom" && start && end) { params.set("start", start); params.set("end", end); }
             const response = await fetch(`${API}/api/admin/api-keys/${channelId}/usage?${params}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -436,17 +458,17 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         }
     };
 
-    const toggleKeyUsage = (channelId: number, range: UsageRange, capability = "全部") => {
-        const detailKey = usageDetailKey(channelId, range, capability);
+    const toggleKeyUsage = (channelId: number, range: HistoryRange, capability = "全部", start?: string, end?: string) => {
+        const detailKey = usageDetailKey(channelId, range, capability, start, end);
         if (expandedUsageKey === detailKey) {
             setExpandedUsageKey(null);
             return;
         }
         setExpandedUsageKey(detailKey);
-        void loadKeyUsage(channelId, range, capability);
+        void loadKeyUsage(channelId, range, capability, 0, start, end);
     };
 
-    const renderKeyUsageDetails = (channelId: number, range: UsageRange, capability: string) => {
+    const renderKeyUsageDetails = (channelId: number, range: HistoryRange, capability: string, start?: string, end?: string) => {
         const detailKey = usageDetailKey(channelId, range, capability);
         if (expandedUsageKey !== detailKey) return null;
         const page = usagePages[detailKey];
@@ -459,7 +481,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
         return (
             <div className="mt-2 w-full basis-full space-y-2 rounded-lg bg-secondary p-3 text-xs text-gray-400">
                 {loadingUsageKey === detailKey && <div>正在读取调用明细…</div>}
-                {usageErrors[detailKey] && <div role="alert" className="flex items-center justify-between gap-2 text-red-300"><span>{usageErrors[detailKey]}</span><button type="button" onClick={() => void loadKeyUsage(channelId, range, capability, page?.offset || 0)} className="rounded px-2 py-1 hover:bg-border">重试</button></div>}
+                {usageErrors[detailKey] && <div role="alert" className="flex items-center justify-between gap-2 text-red-300"><span>{usageErrors[detailKey]}</span><button type="button" onClick={() => void loadKeyUsage(channelId, range, capability, page?.offset || 0, start, end)} className="rounded px-2 py-1 hover:bg-border">重试</button></div>}
                 {page && page.items.map(entry => (
                     <div key={entry.id} className="space-y-1 rounded-md bg-input px-3 py-2">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -479,8 +501,8 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                     <div className="flex items-center justify-between pt-1">
                         <span>{page.offset + 1}–{Math.min(page.offset + page.limit, page.total)} / {page.total}</span>
                         <div className="flex gap-2">
-                            <button type="button" disabled={page.offset === 0 || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, Math.max(0, page.offset - page.limit))} className="rounded bg-input px-2 py-1 disabled:opacity-40">上一页</button>
-                            <button type="button" disabled={page.offset + page.limit >= page.total || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, page.offset + page.limit)} className="rounded bg-input px-2 py-1 disabled:opacity-40">下一页</button>
+                            <button type="button" disabled={page.offset === 0 || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, Math.max(0, page.offset - page.limit), start, end)} className="rounded bg-input px-2 py-1 disabled:opacity-40">上一页</button>
+                            <button type="button" disabled={page.offset + page.limit >= page.total || loadingUsageKey === detailKey} onClick={() => void loadKeyUsage(channelId, range, capability, page.offset + page.limit, start, end)} className="rounded bg-input px-2 py-1 disabled:opacity-40">下一页</button>
                         </div>
                     </div>
                 )}
@@ -490,11 +512,22 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
 
     useEffect(() => {
         fetchKeyStats();
-        fetchKeyHistory();
+        fetchKeyHistoryRange("d7");
         const t = setInterval(fetchKeyStats, 3000);
-        const t2 = setInterval(fetchKeyHistory, 15000);
+        const t2 = setInterval(() => {
+            Object.keys(keyHistoryByRange).forEach(rk => { void fetchKeyHistoryRange(rk); });
+        }, 15000);
         return () => { clearInterval(t); clearInterval(t2); };
     }, [token]);
+
+    useEffect(() => {
+        const need = new Set<string>();
+        for (const id of Object.keys(rangeByKey)) {
+            const rk = rangeKeyFor(Number(id));
+            if (rk) need.add(rk);
+        }
+        need.forEach(rk => { if (!keyHistoryByRange[rk]) void fetchKeyHistoryRange(rk); });
+    }, [rangeByKey, customByKey, keys]);
 
     const fetchKeys = async () => {
         try {
@@ -593,6 +626,7 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                 return; // 保留弹窗，方便用户改完重存
             }
             // 只有成功才关闭并刷新列表
+            message.success(editId ? t("pages.admin.dashboard.saveSuccess") : t("pages.admin.dashboard.createSuccess"));
             setShowAdd(false);
             setEditId(null);
             setForm({ name: "", provider: "openai", base_url: "", api_key: "", model: "", max_concurrency: "" });
@@ -1186,9 +1220,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                 {run.items.map(m => {
                                                                                     const sel = selectedModels.includes(m);
                                                                                     return (
-                                                                                        <div key={m} className="group/row flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-2 hover:bg-surface-hover">
+                                                                                        <div key={m} className={`group/row flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${sel ? "bg-[#5051F8]/15" : "bg-secondary hover:bg-surface-hover"}`}>
                                                                                             {rowLogo}
-                                                                                            <span className="truncate text-sm text-gray-600">{prettyModel(m)}</span>
+                                                                                            <span className={`truncate text-sm ${sel ? "text-white" : "text-gray-300"}`}>{prettyModel(m)}</span>
                                                                                             <button type="button" onClick={() => toggleModel(m)}
                                                                                                 className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-all ${sel ? "bg-[#5051F8] text-white" : "border border-gray-600 text-gray-500 opacity-0 hover:border-gray-300 hover:text-white group-hover/row:opacity-100"}`}>
                                                                                                 {sel ? (
@@ -1354,87 +1388,88 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                         );
                                                     })()}
                                                     {(() => {
-                                                        const h = keyHistory[k.id];
-                                                        if (!h) return null;
+                                                        const curRange = rangeByKey[k.id] || "d7";
+                                                        const rk = rangeKeyFor(k.id);
+                                                        const h = rk ? keyHistoryByRange[rk]?.[k.id] : null;
+                                                        const custom = customByKey[k.id];
+                                                        const s = custom?.start || "";
+                                                        const e = custom?.end || "";
                                                         const fmtCalls = (n: number) => n >= 10000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
                                                         const pct = (v: number | null) => v == null ? "—" : v + "%";
                                                         const rateCls = (v: number | null) =>
                                                             v == null ? "text-gray-500" : v >= 90 ? "text-emerald-300" : v >= 60 ? "text-amber-300" : "text-red-300";
                                                         const failCls = (n: number) => n > 0 ? "text-red-300" : "text-emerald-300";
                                                         const CAPS = ["图片", "文本", "视频"];
-                                                        // 整体汇总（不分能力）
-                                                        const today = h.d1?._all;
-                                                        const week = h.d7?._all;
-                                                        const windowRows = (wKey: string, label: string, showLatency: boolean) => {
-                                                            const w = h[wKey] || {};
-                                                            const caps = CAPS.filter(c => (w[c]?.calls || 0) > 0);
-                                                            if (caps.length === 0) return null;
-                                                            return (
-                                                                <div className="space-y-0.5">
-                                                                    <div className="text-xs text-gray-500">{label}</div>
-                                                                    {caps.map(c => {
-                                                                        const m = w[c];
-                                                                        return (
-                                                                            <div key={c} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                <span className="w-8 shrink-0 text-gray-500">{c}</span>
-                                                                                <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(m.calls)}</span></span>
-                                                                                <span className="text-gray-500">成功 <span className="text-emerald-300">{m.successes}</span></span>
-                                                                                <span className="text-gray-500">失败 <span className={failCls(m.failures)}>{m.failures}</span></span>
-                                                                                <span className="text-gray-500">成功率 <span className={rateCls(m.successRate)}>{pct(m.successRate)}</span></span>
-                                                                                <span className="text-gray-500">失败率 <span className={rateCls(m.failRate)}>{pct(m.failRate)}</span></span>
-                                                                                <span className="text-gray-500">连接率 <span className={rateCls(m.connRate)}>{pct(m.connRate)}</span></span>
-                                                                                {showLatency && <span className="text-gray-500">日均连接率 <span className={rateCls(m.avgConnRate)}>{pct(m.avgConnRate)}</span></span>}
-                                                                                {showLatency && m.avgLatencyMs != null && <span className="text-gray-500">平均延迟 <span className="text-gray-200">{m.avgLatencyMs}ms</span></span>}
-                                                                                <button type="button" onClick={() => toggleKeyUsage(k.id, showLatency ? "d7" : "d30", c)} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
-                                                                                {renderKeyUsageDetails(k.id, showLatency ? "d7" : "d30", c)}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            );
-                                                        };
-                                                        const d7 = windowRows("d7", "近7天分能力", true);
-                                                        const d30 = windowRows("d30", "近30天分能力", false);
-                                                        const hasSummary = (today && today.calls > 0) || (week && week.calls > 0);
-                                                        if (!hasSummary && !d7 && !d30) return null;
+                                                        const RANGE_BUTTONS: Array<{ key: HistoryRange; label: string }> = [
+                                                            { key: "all", label: t("pages.admin.dashboard.rangeAll") },
+                                                            { key: "d1", label: t("pages.admin.dashboard.rangeD1") },
+                                                            { key: "d3", label: t("pages.admin.dashboard.rangeD3") },
+                                                            { key: "d7", label: t("pages.admin.dashboard.rangeD7") },
+                                                            { key: "d30", label: t("pages.admin.dashboard.rangeD30") },
+                                                            { key: "d90", label: t("pages.admin.dashboard.rangeD90") },
+                                                            { key: "d365", label: t("pages.admin.dashboard.rangeD365") },
+                                                            { key: "custom", label: t("pages.admin.dashboard.rangeCustom") },
+                                                        ];
                                                         return (
-                                                            <div className="space-y-2 border-t border-border pt-2">
-                                                                {hasSummary && (
-                                                                    <div className="space-y-0.5">
-                                                                        {today && today.calls > 0 && (
-                                                                            <div>
-                                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                    <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.todayCalls")}（上海时间）</span>
-                                                                                    <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(today.calls)}</span></span>
-                                                                                    <span className="text-gray-500">成功 <span className="text-emerald-300">{today.successes}</span></span>
-                                                                                    <span className="text-gray-500">失败 <span className={failCls(today.failures)}>{today.failures}</span></span>
-                                                                                    <span className="text-gray-500">进行中 <span className="text-amber-300">{today.inFlight}</span></span>
-                                                                                    <span className="text-gray-500">已释放 <span>{today.released}</span></span>
-                                                                                    <span className="text-gray-500">结果未知 <span className="text-amber-300">{today.unknown}</span></span>
-                                                                                    <button type="button" onClick={() => toggleKeyUsage(k.id, "today")} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
-                                                                                </div>
-                                                                                {renderKeyUsageDetails(k.id, "today", "全部")}
-                                                                            </div>
-                                                                        )}
-                                                                        {week && week.calls > 0 && (
-                                                                            <div>
-                                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
-                                                                                    <span className="w-16 shrink-0 text-gray-600">{t("pages.admin.dashboard.weekCalls")}</span>
-                                                                                    <span className="text-gray-500">调用 <span className="text-gray-200">{fmtCalls(week.calls)}</span></span>
-                                                                                    <span className="text-gray-500">成功 <span className="text-emerald-300">{week.successes}</span></span>
-                                                                                    <span className="text-gray-500">失败 <span className={failCls(week.failures)}>{week.failures}</span></span>
-                                                                                    <span className="text-gray-500">进行中 <span className="text-amber-300">{week.inFlight}</span></span>
-                                                                                    <span className="text-gray-500">已释放 <span>{week.released}</span></span>
-                                                                                    <span className="text-gray-500">结果未知 <span className="text-amber-300">{week.unknown}</span></span>
-                                                                                    <button type="button" onClick={() => toggleKeyUsage(k.id, "d7")} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">明细</button>
-                                                                                </div>
-                                                                                {renderKeyUsageDetails(k.id, "d7", "全部")}
-                                                                            </div>
-                                                                        )}
+                                                            <div className="space-y-1.5 border-t border-border pt-2">
+                                                                <div className="flex flex-wrap items-center gap-1">
+                                                                    {RANGE_BUTTONS.map(rg => (
+                                                                        <button key={rg.key} type="button"
+                                                                            onClick={() => setRangeByKey(p => ({ ...p, [k.id]: rg.key }))}
+                                                                            className={`rounded px-2 py-0.5 text-xs ${curRange === rg.key ? "bg-[#5051F8] text-white" : "bg-secondary text-gray-400 hover:text-gray-200"}`}>
+                                                                            {rg.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                {curRange === "custom" && (
+                                                                    <div className="flex flex-wrap items-center gap-2 pl-1 text-xs text-gray-400">
+                                                                        <input type="date" value={s}
+                                                                            onChange={ev => setCustomByKey(p => ({ ...p, [k.id]: { start: ev.target.value, end: p[k.id]?.end || "" } }))}
+                                                                            className="rounded bg-secondary px-2 py-0.5 text-gray-200" />
+                                                                        <span>—</span>
+                                                                        <input type="date" value={e}
+                                                                            onChange={ev => setCustomByKey(p => ({ ...p, [k.id]: { start: p[k.id]?.start || "", end: ev.target.value } }))}
+                                                                            className="rounded bg-secondary px-2 py-0.5 text-gray-200" />
                                                                     </div>
                                                                 )}
-                                                                {d7}
-                                                                {d30}
+                                                                {!h ? (
+                                                                    <div className="pl-1 text-xs text-gray-500">{t("pages.admin.dashboard.loading")}</div>
+                                                                ) : (
+                                                                    <>
+                                                                        {h._all && h._all.calls > 0 && (
+                                                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-1 text-xs">
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.calls")} <span className="text-gray-200">{fmtCalls(h._all.calls)}</span></span>
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.success")} <span className="text-emerald-300">{h._all.successes}</span></span>
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.fail")} <span className={failCls(h._all.failures)}>{h._all.failures}</span></span>
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.inFlight")} <span className="text-amber-300">{h._all.inFlight}</span></span>
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.released")} <span>{h._all.released}</span></span>
+                                                                                <span className="text-gray-500">{t("pages.admin.dashboard.unknown")} <span className="text-amber-300">{h._all.unknown}</span></span>
+                                                                                <button type="button" onClick={() => toggleKeyUsage(k.id, curRange, "全部", s, e)} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">{t("pages.admin.dashboard.detail")}</button>
+                                                                                {renderKeyUsageDetails(k.id, curRange, "全部", s, e)}
+                                                                            </div>
+                                                                        )}
+                                                                        {CAPS.filter(c => (h[c]?.calls || 0) > 0).map(c => {
+                                                                            const m = h[c];
+                                                                            return (
+                                                                                <div key={c} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-2 text-xs">
+                                                                                    <span className="w-8 shrink-0 text-gray-500">{c}</span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.calls")} <span className="text-gray-200">{fmtCalls(m.calls)}</span></span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.success")} <span className="text-emerald-300">{m.successes}</span></span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.fail")} <span className={failCls(m.failures)}>{m.failures}</span></span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.successRate")} <span className={rateCls(m.successRate)}>{pct(m.successRate)}</span></span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.failRate")} <span className={rateCls(m.failRate)}>{pct(m.failRate)}</span></span>
+                                                                                    <span className="text-gray-500">{t("pages.admin.dashboard.connRate")} <span className={rateCls(m.connRate)}>{pct(m.connRate)}</span></span>
+                                                                                    {m.avgLatencyMs != null && <span className="text-gray-500">{t("pages.admin.dashboard.avgLatency")} <span className="text-gray-200">{m.avgLatencyMs}ms</span></span>}
+                                                                                    <button type="button" onClick={() => toggleKeyUsage(k.id, curRange, c, s, e)} className="rounded bg-secondary px-2 py-0.5 text-gray-300 hover:text-white">{t("pages.admin.dashboard.detail")}</button>
+                                                                                    {renderKeyUsageDetails(k.id, curRange, c, s, e)}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                        {(!h._all || h._all.calls === 0) && (
+                                                                            <div className="pl-1 text-xs text-gray-500">{t("pages.admin.dashboard.noUsageInRange")}</div>
+                                                                        )}
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         );
                                                     })()}
@@ -1510,9 +1545,9 @@ export default function AdminDashboard({ token, onLogout }: { token: string; onL
                                                                                                 {run.items.map(m => {
                                                                                                     const rowKey = `${k.id}:${m}`;
                                                                                                     const open = expandedModelRows[rowKey] ?? false;
-                                                                                                    const hh = keyHistory[k.id];
-                                                                                                    const d7m = hh?.d7?.models?.[m];
-                                                                                                    const d30m = hh?.d30?.models?.[m];
+                                                                                                    const hh = keyHistoryByRange[rangeKeyFor(k.id) || "d7"]?.[k.id];
+                                                                                                    const d7m = hh?.models?.[m];
+                                                                                                    const d30m = null;
                                                                                                     const pctTxt = (v: number | null | undefined) => (v == null ? "—" : v + "%");
                                                                                                     const rateTxt = (v: number | null | undefined) => v == null ? "text-gray-500" : v >= 90 ? "text-emerald-300" : v >= 60 ? "text-amber-300" : "text-red-300";
                                                                                                     const has = (d7m?.calls || 0) > 0 || (d30m?.calls || 0) > 0;

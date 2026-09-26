@@ -69,5 +69,6 @@
   "0068_model_credit_pricing.sql": "b8be4c86de31cb1fba8dfdce851c5634a4f1f4b999c4a23b673720275ac1b240",
   "0069_chat_conversations.sql": "55af18f8ece5468f2731769cd6aecc2055b7e768ccbbef6559c27fbaca540e9e",
   "0070_remove_daily_free_quota.sql": "c85eb1b363bc6d63d75e82f7c6bb0a05ab9011352e3fb57b8c0700534a346c61",
+  "0071_platform_api_model_text.sql": "b890480e74c9855021a049e7b96d35d690f16f410bfe7b65cd01dca873191036",
   "0072_admin_configurable_signup_gift.sql": "bfc3dfbd851ef70badd603c8438c88ecd2b8602d5e92e1edf3968be250ac62b1"
 }
